@@ -1,0 +1,51 @@
+.auth-layout {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.auth-card {
+  width: min(500px, 100%);
+}
+
+.back-link {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: .92rem;
+}
+
+.auth-form label {
+  display: block;
+  margin: .9rem 0 .35rem;
+  font-size: .92rem;
+  color: var(--muted);
+}
+
+.auth-form input {
+  width: 100%;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  color: var(--txt);
+  padding: .75rem;
+}
+
+.divider {
+  text-align: center;
+  color: var(--muted);
+  margin: 1rem 0;
+  font-size: .9rem;
+}
+
+.switch-link {
+  color: var(--muted);
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.switch-link a {
+  color: var(--accent-2);
+  text-decoration: none;
+}

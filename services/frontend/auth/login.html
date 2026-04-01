@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Iniciar sesión | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/auth.css" />
+  </head>
+  <body>
+    <main class="auth-layout">
+      <section class="auth-card card">
+        <a class="back-link" href="/">← Volver al inicio</a>
+        <h1>Iniciar sesión</h1>
+        <p class="subtitle">Accede con Gmail o con correo y contraseña.</p>
+
+        <button class="btn btn-google" type="button">Continuar con Google (Gmail)</button>
+        <p class="divider">o con correo</p>
+
+        <form class="auth-form" id="login-form">
+          <label for="email">Correo electrónico</label>
+          <input id="email" name="email" type="email" placeholder="tu-correo@gmail.com" required />
+
+          <label for="password">Contraseña</label>
+          <input id="password" name="password" type="password" placeholder="********" required />
+
+          <button class="btn btn-primary btn-full" type="submit">Entrar</button>
+        </form>
+
+        <p class="switch-link">¿No tienes cuenta? <a href="/auth/register.html">Regístrate</a></p>
+      </section>
+    </main>
+    <script src="/assets/js/auth.js"></script>
+  </body>
+</html>

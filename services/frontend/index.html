@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>360CR | Control inteligente para PYMES</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/home.css" />
+  </head>
+  <body>
+    <header class="navbar">
+      <div class="logo">360CR</div>
+      <nav>
+        <a href="#features">Funciones</a>
+        <a href="#pricing">Planes</a>
+        <a href="/auth/login.html">Iniciar sesión</a>
+        <a href="#contact">Contacto</a>
+      </nav>
+      <a class="btn btn-primary" href="/auth/login.html">Iniciar sesión</a>
+    </header>
+
+    <main class="container">
+      <section class="hero">
+        <div>
+          <p class="badge">SaaS para emprendedores y pymes</p>
+          <h1>Controla ingresos y gastos con una experiencia moderna.</h1>
+          <p class="subtitle">360CR te ayuda a visualizar flujo de caja, alertas de gastos y desempeño por categorías en tiempo real.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="/auth/register.html">Crear cuenta</a>
+            <a class="btn btn-secondary" href="/auth/login.html">Ya tengo cuenta</a>
+          </div>
+        </div>
+        <div class="card stats">
+          <h3>Resumen mensual</h3>
+          <p><span>Ingresos</span> <strong>$18,400</strong></p>
+          <p><span>Gastos</span> <strong>$11,250</strong></p>
+          <p><span>Margen</span> <strong class="success">+38.9%</strong></p>
+          <div class="progress"><div></div></div>
+        </div>
+      </section>
+
+      <section id="features" class="grid-3">
+        <article class="card">
+          <h3>Dashboard ejecutivo</h3>
+          <p>Visualiza KPIs clave de caja, margen y crecimiento semanal por unidad de negocio.</p>
+        </article>
+        <article class="card">
+          <h3>Alertas inteligentes</h3>
+          <p>Detecta gastos atípicos y recibe recordatorios para no perder control financiero.</p>
+        </article>
+        <article class="card">
+          <h3>Arquitectura modular</h3>
+          <p>Escala por servicios (tenant, billing, ledger) sin bloquear tu operación principal.</p>
+        </article>
+      </section>
+
+      <section id="pricing" class="pricing">
+        <h2>Planes flexibles para cada etapa</h2>
+        <div class="grid-3">
+          <article class="card price-card">
+            <h3>Starter</h3>
+            <p class="price">$19/mes</p>
+            <p>Control básico de ingresos/gastos y reportes simples.</p>
+          </article>
+          <article class="card price-card featured">
+            <h3>Growth</h3>
+            <p class="price">$49/mes</p>
+            <p>Presupuestos, alertas avanzadas y seguimiento de objetivos.</p>
+          </article>
+          <article class="card price-card">
+            <h3>Pro</h3>
+            <p class="price">$99/mes</p>
+            <p>Multi-sucursal, analítica avanzada e integraciones por API.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer id="contact" class="footer">
+      <p>© 2026 360CR · Finanzas claras para crecer mejor.</p>
+    </footer>
+
+    <script src="/assets/js/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,43 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16
+    container_name: cr360-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-cr360}
+      POSTGRES_USER: ${DB_USER:-cr360}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cr360pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./services/backend
+    container_name: cr360-backend
+    restart: unless-stopped
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./services/backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./services/frontend
+    container_name: cr360-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
