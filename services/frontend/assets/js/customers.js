@@ -41,9 +41,36 @@
     console.error(`[Clientes] ${message}`, payload || '');
   }
 
+  function normalizeApiBase(rawBase) {
+    let base = (rawBase || '/api').trim();
+
+    if (!base.startsWith('http') && !base.startsWith('/')) {
+      base = `/${base}`;
+    }
+
+    base = base.replace(/\/+$/, '');
+
+    // Si el usuario pega una ruta de recurso, regresamos al root API.
+    base = base.replace(/\/(customer-types|customers|customer-contacts|customer-addresses)(\/.*)?$/i, '');
+
+    if (!/\/api$/i.test(base)) {
+      base = `${base}/api`;
+    }
+
+    return base;
+  }
+
   function getApiBase() {
-    const value = apiBaseInput.value.trim() || '/api';
-    return value.endsWith('/') ? value.slice(0, -1) : value;
+    const normalized = normalizeApiBase(apiBaseInput.value);
+    if (apiBaseInput.value !== normalized) {
+      logInfo('API base normalizada automáticamente', { from: apiBaseInput.value, to: normalized });
+      apiBaseInput.value = normalized;
+    }
+    return normalized;
+  }
+
+  function apiUrl(path) {
+    return `${getApiBase()}${path}`;
   }
 
   function getOrganizationId() {
@@ -91,7 +118,7 @@
 
     logInfo(`Response ${response.status} ${method} ${url}`, {
       contentType,
-      preview: bodyText.slice(0, 200),
+      preview: bodyText.slice(0, 180),
     });
 
     if (!response.ok) {
@@ -177,34 +204,13 @@
     });
   }
 
-  async function ensureDefaultCustomerTypes() {
-    if (customerTypes.length > 0) {
-      return;
-    }
-
-    const defaults = [
-      { code: 'juridico', name: 'Persona jurídica' },
-      { code: 'fisico', name: 'Persona física' },
-    ];
-
-    for (const item of defaults) {
-      await request(`${getApiBase()}/customer-types/`, {
-        method: 'POST',
-        body: JSON.stringify(item),
-      }).catch((error) => {
-        logInfo('Tipo por defecto existente o no se pudo crear', { item, error: error.message });
-      });
-    }
-  }
-
   async function loadCustomerTypes() {
-    await ensureDefaultCustomerTypes();
-    customerTypes = await request(`${getApiBase()}/customer-types/`);
+    customerTypes = await request(apiUrl('/customer-types/'));
 
     fields.type.innerHTML = customerTypes.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
 
     if (!customerTypes.length) {
-      throw new Error('No hay tipos de cliente configurados.');
+      throw new Error('No hay tipos de cliente configurados. Crea Persona jurídica/física en /api/customer-types/.');
     }
 
     syncPersonKindFromType(fields.type.value);
@@ -213,7 +219,7 @@
   async function loadCustomers() {
     try {
       const organizationId = getOrganizationId();
-      const data = await request(`${getApiBase()}/customers/?organization_id=${organizationId}`);
+      const data = await request(apiUrl(`/customers/?organization_id=${organizationId}`));
       customers = data;
       renderTable();
       setFeedback(`Se cargaron ${data.length} clientes.`);
@@ -250,13 +256,13 @@
       logInfo('Payload cliente', payload);
 
       if (isEdit) {
-        await request(`${getApiBase()}/customers/${id}/`, {
+        await request(apiUrl(`/customers/${id}/`), {
           method: 'PUT',
           body: JSON.stringify(payload),
         });
         setFeedback('Cliente actualizado correctamente.');
       } else {
-        await request(`${getApiBase()}/customers/`, {
+        await request(apiUrl('/customers/'), {
           method: 'POST',
           body: JSON.stringify(payload),
         });
@@ -298,7 +304,7 @@
       }
 
       try {
-        await request(`${getApiBase()}/customers/${id}/`, { method: 'DELETE' });
+        await request(apiUrl(`/customers/${id}/`), { method: 'DELETE' });
         setFeedback('Cliente eliminado correctamente.');
         await loadCustomers();
       } catch (error) {
@@ -315,6 +321,11 @@
       fields.type.value = targetType.id;
     }
     refreshPersonKindLabels();
+  });
+
+  apiBaseInput.addEventListener('blur', () => {
+    const normalized = getApiBase();
+    setFeedback(`API base configurada: ${normalized}`);
   });
 
   fields.type.addEventListener('change', () => syncPersonKindFromType(fields.type.value));
