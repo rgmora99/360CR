@@ -1,0 +1,2 @@
+.line-add {display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;margin:12px 0}
+#totals {font-weight:700;margin-top:10px}
