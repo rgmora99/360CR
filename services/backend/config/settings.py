@@ -20,7 +20,6 @@ INSTALLED_APPS = [
     "apps.finance",
     "apps.platform",
     "apps.customers",
-    "apps.suppliers",
 ]
 
 MIDDLEWARE = [
@@ -57,8 +56,8 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.getenv("DB_NAME", "cr360"),
-        "USER": os.getenv("DB_USER", "usr_cnt"),
-        "PASSWORD": os.getenv("DB_PASSWORD", "usr_cnt"),
+        "USER": os.getenv("DB_USER", "cr360"),
+        "PASSWORD": os.getenv("DB_PASSWORD", "cr360pass"),
         "HOST": os.getenv("DB_HOST", "localhost"),
         "PORT": os.getenv("DB_PORT", "5432"),
     }

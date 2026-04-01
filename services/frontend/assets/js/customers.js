@@ -33,6 +33,14 @@
   let customers = [];
   let customerTypes = [];
 
+  function logInfo(message, payload) {
+    console.info(`[Clientes] ${message}`, payload || '');
+  }
+
+  function logError(message, payload) {
+    console.error(`[Clientes] ${message}`, payload || '');
+  }
+
   function getApiBase() {
     const value = apiBaseInput.value.trim() || '/api';
     return value.endsWith('/') ? value.slice(0, -1) : value;
@@ -70,6 +78,9 @@
   }
 
   async function request(url, options) {
+    const method = options?.method || 'GET';
+    logInfo(`Request ${method} ${url}`);
+
     const response = await fetch(url, {
       headers: { 'Content-Type': 'application/json' },
       ...options,
@@ -77,6 +88,11 @@
 
     const contentType = response.headers.get('content-type') || '';
     const bodyText = await response.text();
+
+    logInfo(`Response ${response.status} ${method} ${url}`, {
+      contentType,
+      preview: bodyText.slice(0, 200),
+    });
 
     if (!response.ok) {
       if (contentType.includes('application/json')) {
@@ -175,7 +191,9 @@
       await request(`${getApiBase()}/customer-types/`, {
         method: 'POST',
         body: JSON.stringify(item),
-      }).catch(() => null);
+      }).catch((error) => {
+        logInfo('Tipo por defecto existente o no se pudo crear', { item, error: error.message });
+      });
     }
   }
 
@@ -200,6 +218,7 @@
       renderTable();
       setFeedback(`Se cargaron ${data.length} clientes.`);
     } catch (error) {
+      logError('Error al cargar clientes', error.message);
       setFeedback(`Error al cargar clientes: ${error.message}`, true);
     }
   }
@@ -228,6 +247,7 @@
       const id = fields.id.value;
       const payload = buildPayload();
       const isEdit = Boolean(id);
+      logInfo('Payload cliente', payload);
 
       if (isEdit) {
         await request(`${getApiBase()}/customers/${id}/`, {
@@ -246,6 +266,7 @@
       resetForm();
       await loadCustomers();
     } catch (error) {
+      logError('No se pudo guardar cliente', error.message);
       setFeedback(`No se pudo guardar: ${error.message}`, true);
     }
   });
@@ -281,6 +302,7 @@
         setFeedback('Cliente eliminado correctamente.');
         await loadCustomers();
       } catch (error) {
+        logError('No se pudo eliminar cliente', error.message);
         setFeedback(`No se pudo eliminar: ${error.message}`, true);
       }
     }
@@ -299,7 +321,12 @@
   searchInput.addEventListener('input', renderTable);
   loadButton.addEventListener('click', loadCustomers);
 
+  logInfo('Inicializando módulo clientes', { apiBase: getApiBase(), organizationId: organizationIdInput.value });
+
   loadCustomerTypes()
     .then(loadCustomers)
-    .catch((error) => setFeedback(`Error inicial: ${error.message}`, true));
+    .catch((error) => {
+      logError('Error inicial módulo clientes', error.message);
+      setFeedback(`Error inicial: ${error.message}`, true);
+    });
 })();
