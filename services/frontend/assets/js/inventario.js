@@ -2,7 +2,14 @@
   const $ = (id) => document.getElementById(id);
   const state = { products: [] };
   const apiBase = () => ($('api-base').value.trim() || '/api').replace(/\/$/, '');
-  const orgId = () => Number($('organization-id').value);
+  function orgId() {
+    const raw = $('organization-id').value?.trim() || '';
+    const numeric = Number(raw.replace(/[^\d]/g, ''));
+    if (!numeric || numeric < 1) {
+      throw new Error('Debe indicar un organization_id válido (entero mayor a 0).');
+    }
+    return numeric;
+  }
   const logPrefix = '[Inventario API]';
 
   async function request(path, options) {

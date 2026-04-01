@@ -11,7 +11,7 @@
 
     const menuItems = [
       { key: 'clientes', label: 'Clientes', href: '/customers.html' },
-      { key: 'proveedores', label: 'Proveedores', href: '#' },
+      { key: 'proveedores', label: 'Proveedores', href: '/suppliers.html' },
       { key: 'agenda', label: 'Agenda', href: '#' },
       { key: 'reportes', label: 'Facturas emitidas', href: '/facturas.html' },
       { key: 'facturacion', label: 'Facturación', href: '/facturacion.html' },
