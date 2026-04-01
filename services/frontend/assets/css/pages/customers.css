@@ -1,22 +1,7 @@
 .page-wrap {
   display: grid;
   gap: 1rem;
-}
-
-.module-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-
-.badge {
-  display: inline-block;
-  background: rgba(122, 247, 215, 0.15);
-  color: var(--accent-2);
-  padding: 0.35rem 0.7rem;
-  border-radius: 999px;
-  margin: 0;
+  margin-top: 1rem;
 }
 
 .module-header h1 {
@@ -25,7 +10,7 @@
 
 .filters {
   display: grid;
-  grid-template-columns: 180px 1fr auto;
+  grid-template-columns: 240px 180px 1fr auto;
   gap: 0.8rem;
   align-items: end;
 }
@@ -88,7 +73,11 @@ td .btn {
   margin-right: 0.35rem;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1200px) {
+  .filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .grid {
     grid-template-columns: 1fr;
   }
