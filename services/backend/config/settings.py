@@ -61,7 +61,7 @@ DATABASES = {
         "HOST": os.getenv("DB_HOST", "localhost"),
         "PORT": os.getenv("DB_PORT", "5432"),
         "OPTIONS": {
-            "options": "-c search_path=cnt"
+            "options": "-c search_path=dev"
         },
         "CONN_MAX_AGE": 60,    # recomendado producción
     
