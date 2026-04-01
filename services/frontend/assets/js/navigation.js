@@ -13,9 +13,9 @@
       { key: 'clientes', label: 'Clientes', href: '/customers.html' },
       { key: 'proveedores', label: 'Proveedores', href: '#' },
       { key: 'agenda', label: 'Agenda', href: '#' },
-      { key: 'reportes', label: 'Reportes', href: '#' },
-      { key: 'facturacion', label: 'Facturación', href: '#' },
-      { key: 'inventario', label: 'Inventario', href: '#' },
+      { key: 'reportes', label: 'Facturas emitidas', href: '/facturas.html' },
+      { key: 'facturacion', label: 'Facturación', href: '/facturacion.html' },
+      { key: 'inventario', label: 'Inventario', href: '/inventario.html' },
       { key: 'marketing', label: 'Marketing automático', href: '#' },
       { key: 'fidelizacion', label: 'Fidelización de clientes', href: '#' },
     ];

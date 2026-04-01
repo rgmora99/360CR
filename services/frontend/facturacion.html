@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Facturación POS | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
+    <link rel="stylesheet" href="/assets/css/pages/facturacion.css" />
+  </head>
+  <body>
+    <div class="dashboard-layout">
+      <aside id="shared-sidebar"></aside>
+      <section class="main-panel">
+        <header id="shared-topbar"></header>
+        <div class="page-wrap">
+          <section class="module-header card">
+            <div>
+              <h1>Facturación Punto de Venta</h1>
+              <p class="subtitle">Emisión de facturas con autocompletado de cliente, PDF y envío por correo.</p>
+            </div>
+            <div class="quick-actions">
+              <a class="btn btn-secondary" href="/inventario.html">Ir a Inventario</a>
+              <a class="btn btn-primary" href="/facturas.html">Ver facturas emitidas</a>
+            </div>
+          </section>
+
+          <section class="card filters">
+            <label>API base<input id="api-base" value="/api" /></label>
+            <label>Organización<input id="organization-id" type="number" min="1" value="1" /></label>
+            <label>Buscar cliente<input id="customer-search" placeholder="Nombre o cédula" /></label>
+            <button class="btn btn-secondary" id="search-customer" type="button">Autocompletar</button>
+          </section>
+
+          <section class="grid single-column">
+            <article class="card">
+              <h2>Cliente</h2>
+              <select id="customer-select"></select>
+              <p id="customer-meta" class="subtitle"></p>
+
+              <h2>Nueva factura</h2>
+              <form id="invoice-form" class="customer-form">
+                <div class="form-grid">
+                  <label>Tipo documento
+                    <select id="document-type"><option value="01">Factura electrónica</option><option value="03">Nota de crédito</option></select>
+                  </label>
+                  <label>Condición venta
+                    <select id="sale-condition"><option value="01">Contado</option><option value="02">Crédito</option></select>
+                  </label>
+                  <label>Medio pago
+                    <select id="payment-method"><option value="01">Efectivo</option><option value="02">Tarjeta</option><option value="03">Transferencia</option></select>
+                  </label>
+                  <label>Moneda<input id="currency" value="CRC" maxlength="3" /></label>
+                </div>
+                <label>Notas<textarea id="notes" rows="3"></textarea></label>
+
+                <div class="line-add">
+                  <select id="line-product"></select>
+                  <input id="line-qty" type="number" min="0.001" step="0.001" value="1" />
+                  <input id="line-discount" type="number" min="0" max="100" step="0.01" value="0" />
+                  <button class="btn btn-secondary" type="button" id="add-line">Agregar línea</button>
+                </div>
+                <div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Desc%</th><th>Subtotal</th><th></th></tr></thead><tbody id="lines-body"></tbody></table></div>
+                <p id="totals"></p>
+                <div class="actions"><button class="btn btn-primary" type="submit">Emitir factura</button></div>
+              </form>
+              <p id="feedback" class="subtitle"></p>
+            </article>
+          </section>
+        </div>
+      </section>
+    </div>
+    <script src="/assets/js/navigation.js"></script>
+    <script>window.renderSharedNavigation({ activeModule: 'facturacion' });</script>
+    <script src="/assets/js/facturacion.js"></script>
+  </body>
+</html>
