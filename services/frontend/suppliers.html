@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Módulo Proveedores | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
+    <link rel="stylesheet" href="/assets/css/pages/suppliers.css" />
+  </head>
+  <body>
+    <div class="dashboard-layout">
+      <aside id="shared-sidebar"></aside>
+
+      <section class="main-panel">
+        <header id="shared-topbar"></header>
+
+        <div class="page-wrap">
+          <section class="module-header card">
+            <div>
+              <p class="badge">Módulo</p>
+              <h1>Gestión de Proveedores</h1>
+              <p class="subtitle">CRUD completo de proveedores por organización, persona física o jurídica.</p>
+            </div>
+          </section>
+
+          <section class="card filters">
+            <label>
+              API base
+              <input id="api-base" type="text" value="/api" />
+            </label>
+            <label>
+              Organización (ID)
+              <input id="organization-id" type="number" min="1" value="1" />
+            </label>
+            <label>
+              Buscar
+              <input id="search" type="text" placeholder="Razón social, código o correo" />
+            </label>
+            <button id="load-suppliers" class="btn btn-primary" type="button">Cargar proveedores</button>
+          </section>
+
+          <section class="grid">
+            <article class="card">
+              <h2 id="form-title">Nuevo proveedor</h2>
+              <form id="supplier-form" class="customer-form">
+                <input type="hidden" id="supplier-id" />
+                <div class="form-grid">
+                  <label>Código<input id="code" required /></label>
+                  <label>Tipo de persona
+                    <select id="person-kind" required>
+                      <option value="legal">Jurídica</option>
+                      <option value="individual">Física</option>
+                    </select>
+                  </label>
+                  <label>Tipo de proveedor<select id="supplier-type" required></select></label>
+                  <label id="legal-name-label">Razón social<input id="legal-name" required /></label>
+                  <label id="trade-name-wrapper">Nombre comercial<input id="trade-name" /></label>
+                  <label id="tax-id-label">Cédula jurídica<input id="tax-id" /></label>
+                  <label>Estado
+                    <select id="status">
+                      <option value="active">Activo</option>
+                      <option value="inactive">Inactivo</option>
+                      <option value="blocked">Bloqueado</option>
+                    </select>
+                  </label>
+                  <label>Correo<input id="email" type="email" /></label>
+                  <label>Teléfono<input id="phone" /></label>
+                  <label>Límite de crédito<input id="credit-limit" type="number" step="0.01" value="0" /></label>
+                  <label>Días de pago<input id="payment-terms-days" type="number" min="0" value="0" /></label>
+                </div>
+                <label>Notas<textarea id="notes" rows="3"></textarea></label>
+                <div class="actions">
+                  <button class="btn btn-primary" type="submit">Guardar</button>
+                  <button id="cancel-edit" class="btn btn-secondary" type="button">Cancelar edición</button>
+                </div>
+              </form>
+            </article>
+
+            <article class="card">
+              <h2>Proveedores registrados</h2>
+              <p class="subtitle" id="feedback">Sin datos cargados.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Tipo</th>
+                      <th>Razón social / Nombre</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="suppliers-body"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <script src="/assets/js/navigation.js"></script>
+    <script>
+      window.renderSharedNavigation({ activeModule: 'proveedores' });
+    </script>
+    <script src="/assets/js/suppliers.js"></script>
+  </body>
+</html>
