@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Panel principal | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
+  </head>
+  <body>
+    <div class="dashboard-layout">
+      <aside class="sidebar card">
+        <div>
+          <div class="logo-block">
+            <strong>360CR</strong>
+            <p>Panel de operación</p>
+          </div>
+          <nav class="sidebar-nav">
+            <a class="active" href="#clientes">Clientes</a>
+            <a href="#proveedores">Proveedores</a>
+            <a href="#agenda">Agenda</a>
+            <a href="#reportes">Reportes</a>
+            <a href="#facturacion">Facturación</a>
+            <a href="#inventario">Inventario</a>
+            <a href="#marketing">Marketing automático</a>
+            <a href="#fidelizacion">Fidelización de clientes</a>
+          </nav>
+        </div>
+        <a class="btn btn-secondary" href="/">Salir</a>
+      </aside>
+
+      <section class="main-panel">
+        <header class="topbar card">
+          <div class="workspace">
+            <p class="label">Emprendimiento activo</p>
+            <strong>Comercial Central S.A.</strong>
+            <p class="subtitle">Equipo: Ventas y Operaciones · Sede: San José</p>
+          </div>
+          <div class="topbar-controls">
+            <label>
+              Negocio
+              <select>
+                <option>Comercial Central S.A.</option>
+                <option>Distribuidora Norte</option>
+                <option>Tienda Express CR</option>
+              </select>
+            </label>
+            <label>
+              Perfil
+              <select>
+                <option>Administrador</option>
+                <option>Ventas</option>
+                <option>Caja</option>
+              </select>
+            </label>
+          </div>
+        </header>
+
+        <main class="content">
+          <section class="hero">
+            <div>
+              <p class="badge">Inicio de sesión exitoso</p>
+              <h1>Panel principal del sistema</h1>
+              <p class="subtitle">Gestiona módulos y equipos en un entorno multiusuario y multiemprendimiento.</p>
+            </div>
+            <div class="card stats">
+              <h3>Resumen del día</h3>
+              <p><span>Gestiones realizadas</span> <strong>24</strong></p>
+              <p><span>Recordatorios activos</span> <strong>5</strong></p>
+              <p><span>Rendimiento semanal</span> <strong class="success">+12.4%</strong></p>
+              <div class="progress"><div></div></div>
+            </div>
+          </section>
+
+          <section class="modules-grid">
+            <article id="clientes" class="card module-card"><h3>Clientes</h3><p>Administra cartera, historial y seguimiento comercial.</p></article>
+            <article id="proveedores" class="card module-card"><h3>Proveedores</h3><p>Controla compras, pagos y desempeño de abastecimiento.</p></article>
+            <article id="agenda" class="card module-card"><h3>Agenda</h3><p>Organiza citas, tareas, reuniones y recordatorios.</p></article>
+            <article id="reportes" class="card module-card"><h3>Reportes</h3><p>Consulta indicadores clave y reportes ejecutivos.</p></article>
+            <article id="facturacion" class="card module-card"><h3>Facturación</h3><p>Emite facturas y gestiona cobros pendientes.</p></article>
+            <article id="inventario" class="card module-card"><h3>Inventario</h3><p>Supervisa existencias y movimientos de productos.</p></article>
+            <article id="marketing" class="card module-card"><h3>Marketing automático</h3><p>Automatiza campañas y segmenta audiencias.</p></article>
+            <article id="fidelizacion" class="card module-card"><h3>Fidelización de clientes</h3><p>Gestiona recompensas, beneficios y retención.</p></article>
+          </section>
+
+          <section class="card activity" id="actividad">
+            <h2>Actividad reciente</h2>
+            <ul>
+              <li>Se creó una nueva factura en <strong>Facturación</strong>.</li>
+              <li>Se agendó una llamada con cliente VIP en <strong>Agenda</strong>.</li>
+              <li>Se lanzó campaña de retención desde <strong>Marketing automático</strong>.</li>
+            </ul>
+          </section>
+        </main>
+      </section>
+    </div>
+  </body>
+</html>
