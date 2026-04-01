@@ -48,7 +48,8 @@ h1 { font-size: clamp(2rem, 5vw, 3.3rem); margin: 0.8rem 0; }
 .subtitle { color: var(--muted); max-width: 58ch; }
 
 .btn-primary,
-.btn-secondary {
+.btn-secondary,
+.btn-google {
   border: 0;
   border-radius: 12px;
   padding: 0.8rem 1rem;
@@ -57,6 +58,8 @@ h1 { font-size: clamp(2rem, 5vw, 3.3rem); margin: 0.8rem 0; }
 }
 .btn-primary { background: linear-gradient(120deg, var(--accent), #7b8cff); color: white; }
 .btn-secondary { background: transparent; color: var(--txt); border: 1px solid rgba(255,255,255,.2); }
+.btn-google { background: #fff; color: #151515; width: 100%; }
+.full { width: 100%; margin-top: 1rem; }
 .hero-actions { display: flex; gap: .8rem; margin-top: 1.1rem; }
 
 .card {
@@ -79,6 +82,31 @@ h1 { font-size: clamp(2rem, 5vw, 3.3rem); margin: 0.8rem 0; }
 .pricing { margin-top: 2.6rem; }
 .price-card .price { font-size: 1.8rem; font-weight: 800; }
 .featured { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(92,160,255,.2); }
+
+.auth-section { margin-top: 2.6rem; display: flex; justify-content: center; }
+.auth-wrapper { width: min(680px, 100%); }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-bottom: 1rem; }
+.auth-tabs button {
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 10px;
+  color: var(--txt);
+  padding: .7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.auth-tabs .active { border-color: var(--accent); background: rgba(92,160,255,.2); }
+.auth-form label { display: block; margin: .9rem 0 .35rem; font-size: .92rem; color: var(--muted); }
+.auth-form input {
+  width: 100%;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  color: var(--txt);
+  padding: .75rem;
+}
+.divider { text-align: center; color: var(--muted); margin: 1rem 0; font-size: .9rem; }
+.hidden { display: none; }
 
 footer {
   margin-top: 3rem;
