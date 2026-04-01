@@ -181,3 +181,12 @@ Con esta base podrás:
 - vender por plan,
 - vender por módulo,
 - y combinar ambos modelos según el tipo de cliente.
+
+## Autenticación (nuevo)
+El frontend ahora incluye:
+- Opción de **Iniciar sesión** en el menú.
+- Formulario de **login**.
+- Formulario de **registro**.
+- Botones de acceso con **Google (Gmail)** y registro normal por correo.
+
+> Nota: la integración real de OAuth con Google en backend se implementa en el siguiente paso (por ejemplo con `django-allauth` + credenciales OAuth de Google Cloud).
