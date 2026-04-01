@@ -60,8 +60,14 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD", "usr_cnt"),
         "HOST": os.getenv("DB_HOST", "localhost"),
         "PORT": os.getenv("DB_PORT", "5432"),
+        "OPTIONS": {
+            "options": "-c search_path=cnt"
+        },
+        "CONN_MAX_AGE": 60,    # recomendado producción
+    
     }
 }
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
