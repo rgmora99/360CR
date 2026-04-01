@@ -73,7 +73,7 @@ h1 { font-size: clamp(2rem, 5vw, 3.3rem); margin: 0.8rem 0; }
   margin-top: 1rem;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(260px, calc((100% - 2rem) / 3));
+  grid-auto-columns: calc((100% - 3rem) / 4);
   gap: 1rem;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
@@ -84,6 +84,41 @@ h1 { font-size: clamp(2rem, 5vw, 3.3rem); margin: 0.8rem 0; }
 .services-carousel .card {
   min-height: 170px;
   scroll-snap-align: start;
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(16px) scale(0.98);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.services-carousel .card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 0%, rgba(92, 160, 255, 0.2) 50%, transparent 100%);
+  transform: translateX(-130%);
+  transition: transform 0.7s ease;
+  pointer-events: none;
+}
+
+.services-carousel .card.is-visible {
+  animation: cardFadeIn 0.55s ease forwards;
+}
+
+.services-carousel .card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 14px 30px rgba(9, 17, 31, 0.45);
+}
+
+.services-carousel .card:hover::before {
+  transform: translateX(130%);
+}
+
+@keyframes cardFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .services-carousel::-webkit-scrollbar {
@@ -119,6 +154,16 @@ h1 { font-size: clamp(2rem, 5vw, 3.3rem); margin: 0.8rem 0; }
 
 @media (max-width: 1200px) {
   .pricing-grid { grid-template-columns: repeat(2, 1fr); }
+
+  .services-carousel {
+    grid-auto-columns: calc((100% - 2rem) / 3);
+  }
+}
+
+@media (max-width: 1024px) {
+  .services-carousel {
+    grid-auto-columns: calc((100% - 1rem) / 2);
+  }
 }
 
 @media (max-width: 900px) {
@@ -131,6 +176,6 @@ h1 { font-size: clamp(2rem, 5vw, 3.3rem); margin: 0.8rem 0; }
   }
 
   .services-carousel {
-    grid-auto-columns: minmax(260px, 88%);
+    grid-auto-columns: minmax(250px, 88%);
   }
 }

@@ -20,4 +20,23 @@
 
   prevBtn.addEventListener('click', () => scrollCards(-1));
   nextBtn.addEventListener('click', () => scrollCards(1));
+
+  const cards = carousel.querySelectorAll('.card');
+  if (!('IntersectionObserver' in window)) {
+    cards.forEach((card) => card.classList.add('is-visible'));
+    return;
+  }
+
+  const cardObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-visible');
+        cardObserver.unobserve(entry.target);
+      });
+    },
+    { root: carousel, threshold: 0.2 }
+  );
+
+  cards.forEach((card) => cardObserver.observe(card));
 })();
