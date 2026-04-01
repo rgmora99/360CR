@@ -172,6 +172,26 @@
     };
   }
 
+
+
+  async function ensureDefaultCustomerTypes() {
+    const defaults = [
+      { code: 'fisico', name: 'Persona física' },
+      { code: 'juridico', name: 'Persona jurídica' },
+    ];
+
+    for (const item of defaults) {
+      try {
+        await request(apiUrl('/customer-types/'), {
+          method: 'POST',
+          body: JSON.stringify(item),
+        });
+      } catch (error) {
+        logInfo('Tipo de cliente ya existente o no se pudo crear automáticamente', { item, detail: error.message });
+      }
+    }
+  }
+
   function renderTable() {
     const term = searchInput.value.trim().toLowerCase();
 
@@ -207,10 +227,16 @@
   async function loadCustomerTypes() {
     customerTypes = await request(apiUrl('/customer-types/'));
 
+    if (!customerTypes.length) {
+      logInfo('No hay tipos de cliente, intentando crear valores por defecto.');
+      await ensureDefaultCustomerTypes();
+      customerTypes = await request(apiUrl('/customer-types/'));
+    }
+
     fields.type.innerHTML = customerTypes.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
 
     if (!customerTypes.length) {
-      throw new Error('No hay tipos de cliente configurados. Crea Persona jurídica/física en /api/customer-types/.');
+      throw new Error('No hay tipos de cliente configurados y no se pudieron crear automáticamente.');
     }
 
     syncPersonKindFromType(fields.type.value);
