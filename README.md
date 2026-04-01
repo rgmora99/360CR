@@ -123,3 +123,61 @@ Este frontend es un punto de partida rápido para evolucionar a React/Next.js cu
 3. **Adquisición:** trial de 14 días + plantillas por rubro + partners contables.
 4. **Retención:** reportes semanales automáticos y alertas de anomalías.
 5. **North Star metric:** % de empresas activas con movimientos semanales.
+
+## Módulos solicitados y propuesta de empaquetado
+
+### Módulos funcionales
+1. **Clientes**
+2. **Proveedores**
+3. **Agenda**
+4. **Reportes**
+5. **Facturación**
+6. **Inventario**
+7. **Marketing automático**
+8. **Fidelización de clientes**
+
+### Cómo venderlo por módulos (recomendación SaaS)
+
+#### Plan Free (0 USD)
+- Clientes (límite de registros)
+- Proveedores (límite de registros)
+- Agenda básica
+- 1 usuario
+
+#### Plan Base (suscripción mensual)
+- Todo Free + Reportes básicos
+- Facturación básica
+- Hasta 3 usuarios
+
+#### Plan Growth (suscripción mensual)
+- Todo Base + Inventario
+- Reportes avanzados
+- Automatizaciones simples de marketing
+- Hasta 10 usuarios
+
+#### Plan Pro (suscripción mensual)
+- Todo Growth + Fidelización completa
+- Marketing automático avanzado
+- Roles avanzados y multi-sucursal
+- API e integraciones
+
+#### Add-ons por módulo
+Si un cliente necesita funcionalidades puntuales, activa módulos adicionales como complementos:
+- Inventario
+- Marketing automático
+- Fidelización
+- Facturación avanzada
+
+## Base técnica para monetizar por módulos
+
+Se agregó el app `platform` para soportar comercialización SaaS por módulos:
+- `SaaSModule`: catálogo de módulos.
+- `Plan`: planes (free, base, growth, pro).
+- `PlanModule`: qué módulo incluye cada plan.
+- `OrganizationPlan`: plan activo por empresa.
+- `OrganizationModuleAddon`: módulos extra comprados por empresa.
+
+Con esta base podrás:
+- vender por plan,
+- vender por módulo,
+- y combinar ambos modelos según el tipo de cliente.

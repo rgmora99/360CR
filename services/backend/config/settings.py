@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.tenants",
     "apps.finance",
+    "apps.platform",
 ]
 
 MIDDLEWARE = [
