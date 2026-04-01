@@ -14,7 +14,7 @@
       { key: 'proveedores', label: 'Proveedores', href: '#' },
       { key: 'agenda', label: 'Agenda', href: '#' },
       { key: 'reportes', label: 'Reportes', href: '#' },
-      { key: 'facturacion', label: 'Facturación', href: '#' },
+      { key: 'facturacion', label: 'Facturación', href: '/facturacion.html' },
       { key: 'inventario', label: 'Inventario', href: '#' },
       { key: 'marketing', label: 'Marketing automático', href: '#' },
       { key: 'fidelizacion', label: 'Fidelización de clientes', href: '#' },
