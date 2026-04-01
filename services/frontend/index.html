@@ -6,11 +6,10 @@
     <title>360CR | Control inteligente para PYMES</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="styles.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/home.css" />
   </head>
   <body>
     <header class="navbar">
@@ -18,24 +17,21 @@
       <nav>
         <a href="#features">Funciones</a>
         <a href="#pricing">Planes</a>
-        <a href="#auth">Iniciar sesión</a>
+        <a href="/auth/login.html">Iniciar sesión</a>
         <a href="#contact">Contacto</a>
       </nav>
-      <button class="btn-primary" onclick="goAuth('login')">Iniciar sesión</button>
+      <a class="btn btn-primary" href="/auth/login.html">Iniciar sesión</a>
     </header>
 
-    <main>
+    <main class="container">
       <section class="hero">
         <div>
           <p class="badge">SaaS para emprendedores y pymes</p>
           <h1>Controla ingresos y gastos con una experiencia moderna.</h1>
-          <p class="subtitle">
-            360CR te ayuda a visualizar flujo de caja, alertas de gastos y desempeño por
-            categorías en tiempo real.
-          </p>
+          <p class="subtitle">360CR te ayuda a visualizar flujo de caja, alertas de gastos y desempeño por categorías en tiempo real.</p>
           <div class="hero-actions">
-            <button class="btn-primary" onclick="goAuth('register')">Crear cuenta</button>
-            <button class="btn-secondary" onclick="goAuth('login')">Ya tengo cuenta</button>
+            <a class="btn btn-primary" href="/auth/register.html">Crear cuenta</a>
+            <a class="btn btn-secondary" href="/auth/login.html">Ya tengo cuenta</a>
           </div>
         </div>
         <div class="card stats">
@@ -82,75 +78,12 @@
           </article>
         </div>
       </section>
-
-      <section id="auth" class="auth-section">
-        <div class="auth-wrapper card">
-          <div class="auth-tabs">
-            <button id="tab-login" class="active" onclick="switchAuth('login')">Iniciar sesión</button>
-            <button id="tab-register" onclick="switchAuth('register')">Registrarse</button>
-          </div>
-
-          <div id="login-form" class="auth-form">
-            <h3>Bienvenido de vuelta</h3>
-            <p class="subtitle">Ingresa con tu correo y contraseña o usa Google.</p>
-            <button class="btn-google" type="button">Continuar con Google (Gmail)</button>
-            <div class="divider">o con correo</div>
-            <form>
-              <label>Correo electrónico</label>
-              <input type="email" placeholder="tu-correo@gmail.com" required />
-              <label>Contraseña</label>
-              <input type="password" placeholder="********" required />
-              <button class="btn-primary full" type="submit">Entrar</button>
-            </form>
-          </div>
-
-          <div id="register-form" class="auth-form hidden">
-            <h3>Crea tu cuenta</h3>
-            <p class="subtitle">Regístrate con Gmail o con correo tradicional.</p>
-            <button class="btn-google" type="button">Registrarme con Google (Gmail)</button>
-            <div class="divider">o registro normal</div>
-            <form>
-              <label>Nombre de negocio</label>
-              <input type="text" placeholder="Mi Pyme" required />
-              <label>Correo electrónico</label>
-              <input type="email" placeholder="correo@empresa.com" required />
-              <label>Contraseña</label>
-              <input type="password" placeholder="mínimo 8 caracteres" required />
-              <button class="btn-primary full" type="submit">Crear cuenta</button>
-            </form>
-          </div>
-        </div>
-      </section>
     </main>
 
-    <footer id="contact">
+    <footer id="contact" class="footer">
       <p>© 2026 360CR · Finanzas claras para crecer mejor.</p>
     </footer>
 
-    <script>
-      function switchAuth(mode) {
-        const login = document.getElementById('login-form');
-        const register = document.getElementById('register-form');
-        const tabLogin = document.getElementById('tab-login');
-        const tabRegister = document.getElementById('tab-register');
-
-        if (mode === 'register') {
-          login.classList.add('hidden');
-          register.classList.remove('hidden');
-          tabLogin.classList.remove('active');
-          tabRegister.classList.add('active');
-        } else {
-          register.classList.add('hidden');
-          login.classList.remove('hidden');
-          tabRegister.classList.remove('active');
-          tabLogin.classList.add('active');
-        }
-      }
-
-      function goAuth(mode) {
-        switchAuth(mode);
-        document.getElementById('auth').scrollIntoView({ behavior: 'smooth' });
-      }
-    </script>
+    <script src="/assets/js/main.js"></script>
   </body>
 </html>

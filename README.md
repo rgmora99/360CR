@@ -190,3 +190,32 @@ El frontend ahora incluye:
 - Botones de acceso con **Google (Gmail)** y registro normal por correo.
 
 > Nota: la integración real de OAuth con Google en backend se implementa en el siguiente paso (por ejemplo con `django-allauth` + credenciales OAuth de Google Cloud).
+
+
+## Estructura frontend (mantenible y reutilizable)
+
+```text
+services/frontend
+├── index.html
+├── auth/
+│   ├── login.html
+│   └── register.html
+├── assets/
+│   ├── css/
+│   │   ├── base.css
+│   │   ├── components.css
+│   │   └── pages/
+│   │       ├── home.css
+│   │       └── auth.css
+│   └── js/
+│       ├── main.js
+│       └── auth.js
+├── nginx.conf
+└── Dockerfile
+```
+
+Con esta estructura:
+- Los estilos globales están en `base.css`.
+- Componentes reutilizables (`botones`, `cards`, `navbar`) en `components.css`.
+- Estilos por pantalla en `pages/`.
+- Lógica JS separada por contexto (`main.js`, `auth.js`).
