@@ -1,14 +1,12 @@
-# 360CR - Base Django + PostgreSQL
+# 360CR - Base fullstack (Django + PostgreSQL + Frontend)
 
 Estructura base para iniciar **360CR** como plataforma SaaS enfocada en emprendedores y pymes para controlar ingresos y gastos.
 
-## Objetivo
-Construir una base modular por dominios para evolucionar a arquitectura por servicios sin romper todo el sistema.
-
 ## Stack inicial
-- Django 5 + Django REST Framework
-- PostgreSQL 16
-- Docker Compose
+- **Backend:** Django 5 + DRF
+- **Base de datos:** PostgreSQL 16
+- **Frontend:** landing/dashboard inicial en HTML/CSS moderno
+- **Contenedores:** Docker Compose
 
 ## Estructura del proyecto
 
@@ -17,78 +15,111 @@ Construir una base modular por dominios para evolucionar a arquitectura por serv
 ├── docker-compose.yml
 ├── .env.example
 └── services
-    └── backend
-        ├── config/                # settings globales
-        ├── apps/
-        │   ├── core/             # utilidades transversales
-        │   ├── tenants/          # multi-tenant (organización/suscripción)
-        │   └── finance/          # ingresos, gastos, categorías
-        ├── manage.py
-        ├── requirements.txt
+    ├── backend
+    │   ├── config/
+    │   ├── apps/
+    │   │   ├── core/
+    │   │   ├── tenants/
+    │   │   └── finance/
+    │   ├── manage.py
+    │   ├── requirements.txt
+    │   └── Dockerfile
+    └── frontend
+        ├── index.html
+        ├── styles.css
+        ├── nginx.conf
         └── Dockerfile
 ```
 
-## Levantar el proyecto
+## Docker: pasos para que funcione correctamente
 
-1. Copia variables de entorno:
+### 1) Instalar Docker y Docker Compose
+- Docker Desktop (Windows/Mac) o Docker Engine + Compose Plugin (Linux).
+- Verifica instalación:
+
+```bash
+docker --version
+docker compose version
+```
+
+### 2) Configurar variables de entorno
+Copia el archivo de ejemplo:
 
 ```bash
 cp .env.example .env
 ```
 
-2. Levanta los servicios:
+Si necesitas cambiar credenciales de BD, edita `.env`.
+
+### 3) Levantar todo el stack
 
 ```bash
 docker compose up --build
 ```
 
-3. Prueba healthcheck:
+Servicios disponibles:
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000/health/
+- PostgreSQL: localhost:5432
+
+### 4) Comandos útiles
+- Ejecutar migraciones manuales:
 
 ```bash
-curl http://localhost:8000/health/
+docker compose exec backend python manage.py migrate
 ```
 
-## Recomendación de modularidad (ruta de crecimiento)
+- Crear superusuario:
 
-### Fase 1 (actual): Modular Monolith
-Mantén un solo backend, pero separando dominios por apps:
-- `tenants`: clientes/organizaciones/planes.
-- `finance`: libro diario, categorías, reportes.
-- `core`: auditoría, permisos, utilidades.
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
 
-### Fase 2: Servicios independientes
-Cuando haya escala, separa sin reescribir todo:
-- `identity-service` (usuarios, auth, roles)
-- `billing-service` (suscripción, facturación, pagos)
-- `ledger-service` (ingresos/gastos/reportes)
-- `notifications-service` (email, WhatsApp, recordatorios)
+- Ver logs:
 
-### Fase 3: Integraciones
-- Pasarela de pago (Stripe/Mercado Pago)
-- Facturación electrónica por país
-- Integración bancaria/Open Banking
+```bash
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f db
+```
 
-## Sugerencias para modelo SaaS comercializable
+- Detener servicios:
 
-1. **Pricing por niveles**
-   - Starter: control básico de caja.
-   - Growth: reportes, presupuestos, alertas.
-   - Pro: multi-sucursal, analítica avanzada, API.
+```bash
+docker compose down
+```
 
-2. **Upsells claros**
-   - Asistente de flujo de caja con IA.
-   - Proyecciones de impuestos.
-   - Conciliación bancaria automática.
+- Borrar volúmenes (reinicio limpio de BD):
 
-3. **Modelo de adquisición**
-   - Prueba gratis 14 días.
-   - Plantillas por rubro (restaurante, retail, servicios).
-   - Programa de partners con contadores/asesores.
+```bash
+docker compose down -v
+```
 
-4. **Retención**
-   - Reporte semanal automático al dueño.
-   - Alertas de gastos atípicos.
-   - Objetivos de margen y ahorro con seguimiento.
+## Frontend moderno incluido
+- Navbar limpia con CTA.
+- Hero section con estética moderna (gradientes, glass effect).
+- Tarjeta de KPIs financieros.
+- Bloques de funcionalidades.
+- Sección de pricing (Starter/Growth/Pro).
 
-5. **Métrica clave**
-   - North Star: `% de empresas activas que registran movimientos cada semana`.
+Este frontend es un punto de partida rápido para evolucionar a React/Next.js cuando quieras más interacción.
+
+## Recomendación de modularidad SaaS
+
+### Fase 1: Modular Monolith (actual)
+- `tenants`: organizaciones, membresía, suscripciones.
+- `finance`: categorías, transacciones, reportes.
+- `core`: utilidades transversales, permisos, auditoría.
+
+### Fase 2: Separación por servicios
+- `identity-service`
+- `billing-service`
+- `ledger-service`
+- `notifications-service`
+
+### Fase 3: Comercialización y crecimiento
+1. **Pricing por niveles:** Starter / Growth / Pro.
+2. **Upsells:** conciliación bancaria, IA para flujo de caja, proyección fiscal.
+3. **Adquisición:** trial de 14 días + plantillas por rubro + partners contables.
+4. **Retención:** reportes semanales automáticos y alertas de anomalías.
+5. **North Star metric:** % de empresas activas con movimientos semanales.
