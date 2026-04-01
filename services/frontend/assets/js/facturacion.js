@@ -4,10 +4,17 @@
 
   const apiBase = () => ($('api-base').value.trim() || '/api').replace(/\/$/, '');
   const orgId = () => Number($('organization-id').value);
+  const logPrefix = '[Facturacion API]';
 
   async function request(path, options) {
-    const response = await fetch(`${apiBase()}${path}`, { headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, ...options });
+    const url = `${apiBase()}${path}`;
+    const method = options?.method || 'GET';
+    const payload = options?.body;
+    console.info(`${logPrefix} ${method} ${url}`, payload ? { body: payload } : '');
+    const response = await fetch(url, { headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, ...options });
     const text = await response.text();
+    const contentType = response.headers.get('content-type') || '';
+    console.info(`${logPrefix} ${method} ${url} -> ${response.status}`, { contentType, bodyPreview: text.slice(0, 180) });
     if (!response.ok) throw new Error(text || 'Error de API');
     if (!text) return null;
     try {
