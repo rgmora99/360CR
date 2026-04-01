@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Módulo Clientes | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/customers.css" />
+  </head>
+  <body>
+    <div class="page-wrap container">
+      <header class="module-header card">
+        <div>
+          <p class="badge">Módulo</p>
+          <h1>Gestión de Clientes</h1>
+          <p class="subtitle">CRUD completo de clientes por organización.</p>
+        </div>
+        <div class="header-actions">
+          <a class="btn btn-secondary" href="/dashboard.html">Volver al panel</a>
+        </div>
+      </header>
+
+      <section class="card filters">
+        <label>
+          Organización (ID)
+          <input id="organization-id" type="number" min="1" value="1" />
+        </label>
+        <label>
+          Buscar
+          <input id="search" type="text" placeholder="Razón social, código o correo" />
+        </label>
+        <button id="load-customers" class="btn btn-primary" type="button">Cargar clientes</button>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h2 id="form-title">Nuevo cliente</h2>
+          <form id="customer-form" class="customer-form">
+            <input type="hidden" id="customer-id" />
+            <div class="form-grid">
+              <label>Código<input id="code" required /></label>
+              <label>Tipo de cliente<select id="customer-type" required></select></label>
+              <label>Razón social<input id="legal-name" required /></label>
+              <label>Nombre comercial<input id="trade-name" /></label>
+              <label>Identificación fiscal<input id="tax-id" /></label>
+              <label>Estado
+                <select id="status">
+                  <option value="active">Activo</option>
+                  <option value="inactive">Inactivo</option>
+                  <option value="blocked">Bloqueado</option>
+                </select>
+              </label>
+              <label>Correo<input id="email" type="email" /></label>
+              <label>Teléfono<input id="phone" /></label>
+              <label>Límite de crédito<input id="credit-limit" type="number" step="0.01" value="0" /></label>
+              <label>Días de pago<input id="payment-terms-days" type="number" min="0" value="0" /></label>
+            </div>
+            <label>Notas<textarea id="notes" rows="3"></textarea></label>
+            <div class="actions">
+              <button class="btn btn-primary" type="submit">Guardar</button>
+              <button id="cancel-edit" class="btn btn-secondary" type="button">Cancelar edición</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <h2>Clientes registrados</h2>
+          <p class="subtitle" id="feedback">Sin datos cargados.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Razón social</th>
+                  <th>Estado</th>
+                  <th>Correo</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="customers-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </div>
+
+    <script src="/assets/js/customers.js"></script>
+  </body>
+</html>
