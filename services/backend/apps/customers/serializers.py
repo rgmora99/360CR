@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.customers.models import Customer, CustomerAddress, CustomerContact, CustomerType
+from apps.tenants.models import Organization
 
 
 class CustomerTypeSerializer(serializers.ModelSerializer):
@@ -29,6 +30,12 @@ class CustomerSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+class OrganizationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Organization
+        fields = ["id", "name", "slug"]
 
 
 class CustomerContactSerializer(serializers.ModelSerializer):
