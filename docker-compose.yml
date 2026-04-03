@@ -7,8 +7,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-cr360}
-      POSTGRES_USER: ${DB_USER:-cr360}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-cr360pass}
+      POSTGRES_USER: ${DB_USER:-usr_cnt}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-usr_cnt}
     ports:
       - "5432:5432"
     volumes:
