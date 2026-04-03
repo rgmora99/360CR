@@ -10,7 +10,6 @@
   const formTitle = document.getElementById('form-title');
   const cancelEditButton = document.getElementById('cancel-edit');
 
-  const personKindInput = document.getElementById('person-kind');
   const legalNameLabel = document.getElementById('legal-name-label');
   const taxIdLabel = document.getElementById('tax-id-label');
   const tradeNameWrapper = document.getElementById('trade-name-wrapper');
@@ -32,6 +31,7 @@
 
   let customers = [];
   let customerTypes = [];
+  let organizations = [];
 
   function logInfo(message, payload) {
     console.info(`[Clientes] ${message}`, payload || '');
@@ -78,6 +78,11 @@
     if (!organizationId || organizationId < 1) {
       throw new Error('Debe indicar un organization_id válido.');
     }
+    const exists = organizations.some((item) => item.id === organizationId);
+    if (!exists) {
+      const available = organizations.map((item) => item.id).join(', ') || 'ninguna';
+      throw new Error(`La organización ${organizationId} no existe. IDs disponibles: ${available}.`);
+    }
     return organizationId;
   }
 
@@ -91,14 +96,9 @@
     return type?.code || '';
   }
 
-  function syncPersonKindFromType(typeId) {
+  function syncFormLabelsFromType(typeId) {
     const code = getTypeCode(typeId);
-    personKindInput.value = code === 'fisico' ? 'individual' : 'legal';
-    refreshPersonKindLabels();
-  }
-
-  function refreshPersonKindLabels() {
-    const isLegal = personKindInput.value === 'legal';
+    const isLegal = code !== 'fisico';
     legalNameLabel.firstChild.textContent = isLegal ? 'Razón social' : 'Nombre completo';
     taxIdLabel.firstChild.textContent = isLegal ? 'Cédula jurídica' : 'Cédula física';
     tradeNameWrapper.style.display = isLegal ? 'grid' : 'none';
@@ -150,18 +150,19 @@
     fields.creditLimit.value = '0';
     fields.paymentTermsDays.value = '0';
     formTitle.textContent = 'Nuevo cliente';
-    syncPersonKindFromType(fields.type.value);
+    syncFormLabelsFromType(fields.type.value);
   }
 
   function buildPayload() {
-    const personKind = personKindInput.value;
+    const typeCode = getTypeCode(fields.type.value);
+    const isLegal = typeCode !== 'fisico';
 
     return {
       organization: getOrganizationId(),
       customer_type: Number(fields.type.value),
       code: fields.code.value.trim(),
       legal_name: fields.legalName.value.trim(),
-      trade_name: personKind === 'legal' ? fields.tradeName.value.trim() : '',
+      trade_name: isLegal ? fields.tradeName.value.trim() : '',
       tax_id: fields.taxId.value.trim(),
       status: fields.status.value,
       email: fields.email.value.trim(),
@@ -189,6 +190,19 @@
       } catch (error) {
         logInfo('Tipo de cliente ya existente o no se pudo crear automáticamente', { item, detail: error.message });
       }
+    }
+  }
+
+  async function loadOrganizations() {
+    organizations = await request(apiUrl('/organizations/'));
+    if (!organizations.length) {
+      throw new Error('No hay organizaciones creadas en la base de datos.');
+    }
+
+    const current = Number(organizationIdInput.value);
+    if (!organizations.some((item) => item.id === current)) {
+      organizationIdInput.value = organizations[0].id;
+      setFeedback(`Se ajustó organization_id a ${organizations[0].id} (${organizations[0].name}).`);
     }
   }
 
@@ -239,7 +253,7 @@
       throw new Error('No hay tipos de cliente configurados y no se pudieron crear automáticamente.');
     }
 
-    syncPersonKindFromType(fields.type.value);
+    syncFormLabelsFromType(fields.type.value);
   }
 
   async function loadCustomers() {
@@ -258,7 +272,7 @@
   function fillForm(customer) {
     fields.id.value = customer.id;
     fields.type.value = customer.customer_type;
-    syncPersonKindFromType(customer.customer_type);
+    syncFormLabelsFromType(customer.customer_type);
     fields.code.value = customer.code;
     fields.legalName.value = customer.legal_name;
     fields.tradeName.value = customer.trade_name || '';
@@ -340,27 +354,19 @@
     }
   });
 
-  personKindInput.addEventListener('change', () => {
-    const targetCode = personKindInput.value === 'individual' ? 'fisico' : 'juridico';
-    const targetType = customerTypes.find((item) => item.code === targetCode);
-    if (targetType) {
-      fields.type.value = targetType.id;
-    }
-    refreshPersonKindLabels();
-  });
-
   apiBaseInput.addEventListener('blur', () => {
     const normalized = getApiBase();
     setFeedback(`API base configurada: ${normalized}`);
   });
 
-  fields.type.addEventListener('change', () => syncPersonKindFromType(fields.type.value));
+  fields.type.addEventListener('change', () => syncFormLabelsFromType(fields.type.value));
   searchInput.addEventListener('input', renderTable);
   loadButton.addEventListener('click', loadCustomers);
 
   logInfo('Inicializando módulo clientes', { apiBase: getApiBase(), organizationId: organizationIdInput.value });
 
-  loadCustomerTypes()
+  loadOrganizations()
+    .then(loadCustomerTypes)
     .then(loadCustomers)
     .catch((error) => {
       logError('Error inicial módulo clientes', error.message);

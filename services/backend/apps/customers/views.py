@@ -6,7 +6,9 @@ from apps.customers.serializers import (
     CustomerContactSerializer,
     CustomerSerializer,
     CustomerTypeSerializer,
+    OrganizationSerializer,
 )
+from apps.tenants.models import Organization
 
 
 class CustomerTypeViewSet(viewsets.ModelViewSet):
@@ -23,6 +25,11 @@ class CustomerViewSet(viewsets.ModelViewSet):
         if organization_id:
             queryset = queryset.filter(organization_id=organization_id)
         return queryset
+
+
+class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Organization.objects.all().order_by("id")
+    serializer_class = OrganizationSerializer
 
 
 class CustomerContactViewSet(viewsets.ModelViewSet):
