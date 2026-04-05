@@ -58,7 +58,7 @@ DATABASES = {
         "NAME": os.getenv("DB_NAME", "cr360"),
         "USER": os.getenv("DB_USER", "usr_cnt"),
         "PASSWORD": os.getenv("DB_PASSWORD", "usr_cnt"),
-        "HOST": os.getenv("DB_HOST", "localhost"),
+        "HOST": os.getenv("DB_HOST", "db"),
         "PORT": os.getenv("DB_PORT", "5432"),
         "CONN_MAX_AGE": 60,    # recomendado producción
     

@@ -51,6 +51,22 @@ cp .env.example .env
 
 Si necesitas cambiar credenciales de BD, edita `.env`.
 
+
+### Solución rápida para error `502 Bad Gateway` en `/api/*`
+Si en el frontend (http://localhost:3000) ves `502 Bad Gateway` al llamar `/api/...`, normalmente el backend no pudo iniciar por conexión a PostgreSQL.
+
+Verifica que en tu `.env` tengas:
+
+```bash
+DB_HOST=db
+DB_PORT=5432
+DB_NAME=cr360
+DB_USER=cr360
+DB_PASSWORD=cr360pass
+```
+
+> En Docker Compose, el host de PostgreSQL es `db` (nombre del servicio), **no** `localhost`.
+
 ### 3) Levantar todo el stack
 
 ```bash
@@ -61,6 +77,109 @@ Servicios disponibles:
 - Frontend: http://localhost:3000
 - Backend: http://localhost:8000/health/
 - PostgreSQL: localhost:5432
+
+### ¿Dónde ver las tablas en PostgreSQL?
+Si ya levantaste el stack con Docker Compose, puedes validar las tablas así:
+
+1. Verifica que backend y db estén arriba:
+
+```bash
+docker compose ps
+```
+
+
+> El warning `the attribute version is obsolete` en `docker-compose.yml` no bloquea el arranque; es informativo.
+
+2. Ejecuta migraciones (crea tablas):
+
+```bash
+docker compose exec backend python manage.py migrate
+```
+
+3. Entra a PostgreSQL y lista tablas:
+
+```bash
+docker compose exec db psql -U usr_cnt -d cr360
+\dt
+```
+
+4. Verifica tablas de una app (ejemplo `customers`):
+
+```sql
+\dt *customers*
+```
+
+> Si `\dt` no muestra nada, normalmente faltan migraciones o el backend no pudo conectarse a DB.
+
+
+> Nota (PowerShell/Windows): usa `-U usr_cnt -d cr360` o reemplaza manualmente por tus valores de `.env`.
+> Evita escribir variables con espacios (por ejemplo `${DB USER...}`), porque rompe el comando y aparece el error `role "-d" does not exist`.
+
+### Paso a paso: ¿Docker CLI o pgAdmin?
+Puedes hacerlo de **las dos formas**. Recomendado primero validar en Docker CLI y luego revisar en pgAdmin.
+
+#### Opción A (recomendada): Docker CLI
+Ejecuta estos comandos en una terminal ubicada en la raíz del proyecto (donde está `docker-compose.yml`):
+
+```bash
+# 1) Levantar servicios
+docker compose up -d --build
+
+# 2) Confirmar que estén arriba
+docker compose ps
+
+# 3) Crear tablas (migraciones)
+docker compose exec backend python manage.py migrate
+
+# 4) Entrar a PostgreSQL
+docker compose exec db psql -U usr_cnt -d cr360
+
+# 5) Ya dentro de psql, listar tablas
+\dt
+
+# 6) Filtrar por tablas de clientes
+\dt *customers*
+```
+
+#### Opción B: pgAdmin (interfaz gráfica)
+1. Abre pgAdmin y crea un **Server** nuevo.
+2. En **Connection** usa:
+   - Host: `localhost`
+   - Port: `5432`
+   - Maintenance DB: `cr360` (o el valor de `DB_NAME`)
+   - Username: `usr_cnt` (o el valor de `DB_USER`)
+   - Password: `usr_cnt` (o el valor de `DB_PASSWORD`)
+3. Guarda y conecta.
+4. Navega a: **Servers → tu servidor → Databases → cr360 → Schemas → dev → Tables**.
+5. Si no ves tablas, vuelve a correr migraciones con Docker (paso A.3).
+
+6. En este proyecto las tablas se crean en el esquema `dev` (no en `public`).
+7. Si quieres validarlo por SQL en `psql`:
+
+```sql
+SELECT current_schema();
+SELECT schemaname, tablename FROM pg_tables WHERE schemaname = 'dev' ORDER BY tablename;
+```
+
+8. Opcional: dejar `dev` como esquema por defecto en tu sesión:
+
+```sql
+SET search_path TO dev, public;
+```
+
+> Resumen rápido: para **ejecutar migraciones** usa Docker (`backend`); para **visualizar tablas** puedes usar Docker (`psql`) o pgAdmin.
+
+### Validar módulo de Clientes (paso a paso)
+1. Abre `http://localhost:3000/customers.html`.
+2. Verifica en consola del navegador que `GET /api/organizations/` responda 200.
+3. Si no existe ninguna organización, el frontend ahora crea automáticamente una llamada **"Organización Principal"** para permitir continuar con el flujo de clientes.
+4. Completa el formulario **Nuevo cliente** y guarda.
+5. Verifica en PostgreSQL:
+
+```sql
+SELECT id, name, slug FROM dev.organization ORDER BY id;
+SELECT id, code, legal_name, organization_id FROM dev.customers_customer ORDER BY id DESC LIMIT 20;
+```
 
 ### 4) Comandos útiles
 - Ejecutar migraciones manuales:

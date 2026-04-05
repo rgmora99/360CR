@@ -27,7 +27,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
         return queryset
 
 
-class OrganizationViewSet(viewsets.ReadOnlyModelViewSet):
+class OrganizationViewSet(viewsets.ModelViewSet):
     queryset = Organization.objects.all().order_by("id")
     serializer_class = OrganizationSerializer
 
