@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils.text import slugify
 
 from apps.customers.models import Customer, CustomerAddress, CustomerContact, CustomerType
 from apps.tenants.models import Organization
@@ -36,6 +37,21 @@ class OrganizationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
         fields = ["id", "name", "slug"]
+
+    def create(self, validated_data):
+        name = validated_data.get("name", "").strip()
+        slug = (validated_data.get("slug") or "").strip()
+
+        if not slug and name:
+            base_slug = slugify(name) or "organizacion"
+            slug = base_slug
+            suffix = 1
+            while Organization.objects.filter(slug=slug).exists():
+                suffix += 1
+                slug = f"{base_slug}-{suffix}"
+
+        validated_data["slug"] = slug
+        return super().create(validated_data)
 
 
 class CustomerContactSerializer(serializers.ModelSerializer):

@@ -196,7 +196,15 @@
   async function loadOrganizations() {
     organizations = await request(apiUrl('/organizations/'));
     if (!organizations.length) {
-      throw new Error('No hay organizaciones creadas en la base de datos.');
+      logInfo('No hay organizaciones, creando organización por defecto.');
+      const created = await request(apiUrl('/organizations/'), {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Organización Principal',
+        }),
+      });
+      logInfo('Organización por defecto creada', created);
+      organizations = await request(apiUrl('/organizations/'));
     }
 
     const current = Number(organizationIdInput.value);
