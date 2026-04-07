@@ -76,7 +76,7 @@
   }
 
   function getOrganizationId() {
-    const organizationId = Number(organizationIdInput.value);
+    const organizationId = Number(organizationIdInput.value || window.AppSession?.getActiveOrganizationId?.());
     if (!organizationId || organizationId < 1) {
       throw new Error('Debe indicar un organization_id válido.');
     }
@@ -92,6 +92,10 @@
     organizationIdInput.innerHTML = organizations
       .map((item) => `<option value="${item.id}">${item.name} (#${item.id})</option>`)
       .join('');
+    const preferred = Number(window.AppSession?.getActiveOrganizationId?.());
+    if (preferred && organizations.some((item) => item.id === preferred)) {
+      organizationIdInput.value = preferred;
+    }
   }
 
   function setFeedback(message, isError) {
@@ -118,6 +122,7 @@
 
     const response = await fetch(url, {
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       ...options,
     });
 
@@ -405,6 +410,7 @@
   loadButton.addEventListener('click', loadCustomers);
   createOrganizationButton.addEventListener('click', createOrganization);
   organizationIdInput.addEventListener('change', loadCustomers);
+  organizationIdInput.addEventListener('change', () => localStorage.setItem('activeOrganizationId', organizationIdInput.value));
 
   logInfo('Inicializando módulo clientes', { apiBase: getApiBase(), organizationId: organizationIdInput.value });
 

@@ -5,6 +5,7 @@ from django.db import models
 class Organization(models.Model):
     name = models.CharField(max_length=200)
     slug = models.SlugField(unique=True)
+    parent_organization = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="child_organizations")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:

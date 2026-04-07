@@ -4,11 +4,13 @@ from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, Product
 from apps.finance.serializers import InvoiceCreateSerializer, InvoiceSerializer, ProductSerializer
+from apps.tenants.access import OrganizationScopedViewMixin
 
 
 def _escape_pdf_text(value):
@@ -47,29 +49,33 @@ def generate_simple_pdf(lines):
     return pdf
 
 
-class ProductViewSet(viewsets.ModelViewSet):
+class ProductViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = ProductSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = Product.objects.all()
-        organization_id = self.request.query_params.get("organization_id")
-        if organization_id:
-            queryset = queryset.filter(organization_id=organization_id)
-        return queryset
+        return self.scope_queryset(queryset)
+
+    def perform_create(self, serializer):
+        self.validate_organization_payload(serializer.validated_data["organization"].id)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self.validate_organization_payload(serializer.validated_data["organization"].id)
+        serializer.save()
 
 
-class InvoiceViewSet(viewsets.ModelViewSet):
+class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = Invoice.objects.select_related("customer", "organization").prefetch_related("items", "items__product")
-        organization_id = self.request.query_params.get("organization_id")
-        if organization_id:
-            queryset = queryset.filter(organization_id=organization_id)
-        return queryset
+        return self.scope_queryset(queryset)
 
     def create(self, request, *args, **kwargs):
-        serializer = InvoiceCreateSerializer(data=request.data)
+        serializer = InvoiceCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         invoice = serializer.save()
         return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
@@ -80,8 +86,13 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         organization_id = request.query_params.get("organization_id")
         if not organization_id:
             return Response({"detail": "organization_id es requerido"}, status=400)
+        try:
+            organization_id_int = int(organization_id)
+        except (TypeError, ValueError):
+            return Response({"detail": "organization_id inválido"}, status=400)
+        self.validate_organization_payload(organization_id_int)
 
-        queryset = Customer.objects.filter(organization_id=organization_id, status=Customer.STATUS_ACTIVE)
+        queryset = Customer.objects.filter(organization_id=organization_id_int, status=Customer.STATUS_ACTIVE)
         if term:
             queryset = queryset.filter(legal_name__icontains=term) | queryset.filter(tax_id__icontains=term)
 

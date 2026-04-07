@@ -3,7 +3,7 @@
   const state = { customers: [], products: [], lines: [] };
 
   const apiBase = () => ($('api-base').value.trim() || '/api').replace(/\/$/, '');
-  const orgId = () => Number($('organization-id').value);
+  const orgId = () => Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
   const logPrefix = '[Facturacion API]';
 
   async function request(path, options) {
@@ -11,7 +11,7 @@
     const method = options?.method || 'GET';
     const payload = options?.body;
     console.info(`${logPrefix} ${method} ${url}`, payload ? { body: payload } : '');
-    const response = await fetch(url, { headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, ...options });
+    const response = await fetch(url, { headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, credentials: 'include', ...options });
     const text = await response.text();
     const contentType = response.headers.get('content-type') || '';
     console.info(`${logPrefix} ${method} ${url} -> ${response.status}`, { contentType, bodyPreview: text.slice(0, 180) });
@@ -130,5 +130,7 @@
   });
 
   syncInstallmentsUI();
+  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || $('organization-id').value;
+  $('organization-id').addEventListener('change', () => localStorage.setItem('activeOrganizationId', $('organization-id').value));
   Promise.all([loadCustomers(), loadProducts()]).catch((e) => setFeedback(e.message, true));
 })();

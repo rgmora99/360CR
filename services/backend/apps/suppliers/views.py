@@ -1,4 +1,5 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 
 from apps.suppliers.models import Supplier, SupplierAddress, SupplierContact, SupplierType
 from apps.suppliers.serializers import (
@@ -7,26 +8,36 @@ from apps.suppliers.serializers import (
     SupplierSerializer,
     SupplierTypeSerializer,
 )
+from apps.tenants.access import OrganizationScopedViewMixin
 
 
 class SupplierTypeViewSet(viewsets.ModelViewSet):
     queryset = SupplierType.objects.all()
     serializer_class = SupplierTypeSerializer
+    permission_classes = [IsAuthenticated]
 
 
-class SupplierViewSet(viewsets.ModelViewSet):
+class SupplierViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = SupplierSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = Supplier.objects.select_related("organization", "supplier_type").all()
-        organization_id = self.request.query_params.get("organization_id")
-        if organization_id:
-            queryset = queryset.filter(organization_id=organization_id)
-        return queryset
+        return self.scope_queryset(queryset)
+
+    def perform_create(self, serializer):
+        self.validate_organization_payload(serializer.validated_data["organization"].id)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self.validate_organization_payload(serializer.validated_data["organization"].id)
+        serializer.save()
 
 
-class SupplierContactViewSet(viewsets.ModelViewSet):
+class SupplierContactViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
+    organization_lookup_field = "supplier__organization_id"
     serializer_class = SupplierContactSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = SupplierContact.objects.select_related("supplier").all()
@@ -34,15 +45,13 @@ class SupplierContactViewSet(viewsets.ModelViewSet):
         if supplier_id:
             queryset = queryset.filter(supplier_id=supplier_id)
 
-        organization_id = self.request.query_params.get("organization_id")
-        if organization_id:
-            queryset = queryset.filter(supplier__organization_id=organization_id)
-
-        return queryset
+        return self.scope_queryset(queryset)
 
 
-class SupplierAddressViewSet(viewsets.ModelViewSet):
+class SupplierAddressViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
+    organization_lookup_field = "supplier__organization_id"
     serializer_class = SupplierAddressSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = SupplierAddress.objects.select_related("supplier").all()
@@ -50,8 +59,4 @@ class SupplierAddressViewSet(viewsets.ModelViewSet):
         if supplier_id:
             queryset = queryset.filter(supplier_id=supplier_id)
 
-        organization_id = self.request.query_params.get("organization_id")
-        if organization_id:
-            queryset = queryset.filter(supplier__organization_id=organization_id)
-
-        return queryset
+        return self.scope_queryset(queryset)
