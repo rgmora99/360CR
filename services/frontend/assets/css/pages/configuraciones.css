@@ -1,0 +1,44 @@
+.settings-content {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.section-help {
+  color: var(--color-muted);
+  margin: 0 0 0.9rem;
+}
+
+.settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.settings-list li {
+  border: 1px solid var(--color-border);
+  border-radius: 0.85rem;
+  padding: 0.75rem;
+  background: #fff;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.settings-list span {
+  color: var(--color-muted);
+}
+
+.settings-list small {
+  color: #5f6472;
+}
+
+.role-group + .role-group {
+  margin-top: 1rem;
+}

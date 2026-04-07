@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     "apps.platform",
     "apps.customers",
     "apps.suppliers",
+    "apps.configuration",
 ]
 
 MIDDLEWARE = [

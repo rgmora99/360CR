@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Configuraciones | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
+    <link rel="stylesheet" href="/assets/css/pages/configuraciones.css" />
+  </head>
+  <body>
+    <div class="dashboard-layout">
+      <aside id="shared-sidebar"></aside>
+
+      <section class="main-panel">
+        <header id="shared-topbar"></header>
+
+        <main class="content settings-content">
+          <section class="hero compact">
+            <div>
+              <p class="badge">Módulo de configuraciones</p>
+              <h1>Usuarios, roles y configuración del sistema</h1>
+              <p class="subtitle">Diseñado para escenarios reales de un administrador de TI y un jefe de área.</p>
+            </div>
+          </section>
+
+          <section class="settings-grid">
+            <article class="card">
+              <h2>Usuarios del sistema</h2>
+              <p class="section-help">Cuentas activas para operación, soporte y liderazgo.</p>
+              <ul id="users-list" class="settings-list"></ul>
+            </article>
+
+            <article class="card">
+              <h2>Roles recomendados</h2>
+              <p class="section-help">Catálogo base para delegar permisos según responsabilidad.</p>
+              <div id="roles-groups"></div>
+            </article>
+          </section>
+
+          <section class="card">
+            <h2>Configuración del sistema</h2>
+            <p class="section-help">Parámetros globales para seguridad, operaciones, finanzas y notificaciones.</p>
+            <ul id="system-settings-list" class="settings-list"></ul>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="/assets/js/alerts.js"></script>
+    <script src="/assets/js/navigation.js"></script>
+    <script src="/assets/js/configuraciones.js"></script>
+    <script>
+      window.renderSharedNavigation({ activeModule: 'configuraciones' });
+    </script>
+  </body>
+</html>
