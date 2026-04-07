@@ -39,7 +39,7 @@
   }
 
   function getOrganizationId() {
-    const organizationId = Number(organizationIdInput.value);
+    const organizationId = Number(organizationIdInput.value || window.AppSession?.getActiveOrganizationId?.());
     if (!organizationId || organizationId < 1) {
       throw new Error('Debe indicar un organization_id válido.');
     }
@@ -72,6 +72,7 @@
   async function request(url, options) {
     const response = await fetch(url, {
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       ...options,
     });
 
@@ -298,6 +299,8 @@
   fields.type.addEventListener('change', () => syncPersonKindFromType(fields.type.value));
   searchInput.addEventListener('input', renderTable);
   loadButton.addEventListener('click', loadSuppliers);
+  organizationIdInput.value = window.AppSession?.getActiveOrganizationId?.() || organizationIdInput.value;
+  organizationIdInput.addEventListener('change', () => localStorage.setItem('activeOrganizationId', organizationIdInput.value));
 
   loadSupplierTypes()
     .then(loadSuppliers)

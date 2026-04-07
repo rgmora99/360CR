@@ -5,6 +5,7 @@ from rest_framework import serializers
 
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, InvoiceItem, Product
+from apps.tenants.models import Membership
 
 
 def money(value):
@@ -94,6 +95,12 @@ class InvoiceCreateSerializer(serializers.Serializer):
     items = InvoiceItemWriteSerializer(many=True)
 
     def validate(self, attrs):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            has_access = Membership.objects.filter(user=request.user, organization_id=attrs["organization"]).exists()
+            if not has_access:
+                raise serializers.ValidationError("No tiene acceso a la organización seleccionada.")
+
         if not attrs["items"]:
             raise serializers.ValidationError("Debe incluir al menos una línea.")
 

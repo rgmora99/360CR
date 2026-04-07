@@ -3,7 +3,7 @@
   const state = { products: [] };
   const apiBase = () => ($('api-base').value.trim() || '/api').replace(/\/$/, '');
   function orgId() {
-    const raw = $('organization-id').value?.trim() || '';
+    const raw = ($('organization-id').value || window.AppSession?.getActiveOrganizationId?.() || '').toString().trim();
     const numeric = Number(raw.replace(/[^\d]/g, ''));
     if (!numeric || numeric < 1) {
       throw new Error('Debe indicar un organization_id válido (entero mayor a 0).');
@@ -17,7 +17,7 @@
     const method = options?.method || 'GET';
     const payload = options?.body;
     console.info(`${logPrefix} ${method} ${url}`, payload ? { body: payload } : '');
-    const response = await fetch(url, { headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, ...options });
+    const response = await fetch(url, { headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, credentials: 'include', ...options });
     const text = await response.text();
     const contentType = response.headers.get('content-type') || '';
     console.info(`${logPrefix} ${method} ${url} -> ${response.status}`, { contentType, bodyPreview: text.slice(0, 180) });
@@ -82,5 +82,7 @@
     }
   });
 
+  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || $('organization-id').value;
+  $('organization-id').addEventListener('change', () => localStorage.setItem('activeOrganizationId', $('organization-id').value));
   loadProducts().catch((e) => feedback(e.message, true));
 })();
