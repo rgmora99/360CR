@@ -56,7 +56,9 @@
     const data = await request(`/products/?organization_id=${orgId()}`);
     state.products = data.filter((p) => p.is_active);
     $('line-product').innerHTML =
-      state.products.map((p) => `<option value='${p.id}'>${p.name} (${p.stock}) - ₡${p.unit_price}</option>`).join('') ||
+      state.products
+        .map((p) => `<option value='${p.id}'>${p.name} (${p.product_type === 'service' ? 'Servicio' : `Stock: ${p.stock}`}) - ₡${p.unit_price}</option>`)
+        .join('') ||
       '<option value="">No hay productos. Cree inventario primero.</option>';
   }
 
