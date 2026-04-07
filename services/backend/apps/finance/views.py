@@ -97,7 +97,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             f"Cliente: {invoice.customer.legal_name} ({invoice.customer.tax_id})",
             f"Fecha: {invoice.issue_date.strftime('%Y-%m-%d %H:%M')}",
             f"Condicion venta: {invoice.sale_condition} | Medio pago: {invoice.payment_method}",
+            f"Regimen fiscal: {invoice.tax_regime}",
         ]
+        if invoice.payment_method == Invoice.PAYMENT_INSTALLMENTS:
+            lines.append(f"Pago a plazos: {invoice.installment_count} cuotas cada {invoice.installment_interval_days} días")
         lines.extend([f"{i.line_number}. {i.description} x {i.quantity} = {i.total}" for i in invoice.items.all()])
         lines.extend([f"Subtotal: {invoice.subtotal}", f"Impuesto: {invoice.tax_total}", f"Total: {invoice.total}"])
         pdf = generate_simple_pdf(lines)

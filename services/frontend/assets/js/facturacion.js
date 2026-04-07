@@ -29,6 +29,12 @@
     $('feedback').style.color = error ? '#ff6b6b' : 'var(--muted)';
   }
 
+  function syncInstallmentsUI() {
+    const isInstallments = $('payment-method').value === '04';
+    $('installments-count-wrap').classList.toggle('hidden', !isInstallments);
+    $('installments-interval-wrap').classList.toggle('hidden', !isInstallments);
+  }
+
   async function loadCustomers(term = '') {
     const data = await request(`/invoices/customer-autocomplete/?organization_id=${orgId()}&q=${encodeURIComponent(term)}`);
     state.customers = data;
@@ -68,6 +74,7 @@
 
   $('search-customer').addEventListener('click', () => loadCustomers($('customer-search').value).catch((e) => setFeedback(e.message, true)));
   $('customer-select').addEventListener('change', updateCustomerMeta);
+  $('payment-method').addEventListener('change', syncInstallmentsUI);
 
   $('add-line').addEventListener('click', () => {
     const product = Number($('line-product').value);
@@ -87,28 +94,41 @@
 
   $('invoice-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!state.lines.length) return setFeedback('Debe agregar líneas a la factura.', true);
-    const customerId = Number($('customer-select').value);
-    if (!customerId) return setFeedback('Seleccione un cliente válido.', true);
+    try {
+      if (!state.lines.length) return setFeedback('Debe agregar líneas a la factura.', true);
+      const customerId = Number($('customer-select').value);
+      if (!customerId) return setFeedback('Seleccione un cliente válido.', true);
 
-    const payload = {
-      organization: orgId(),
-      customer: customerId,
-      document_type: $('document-type').value,
-      sale_condition: $('sale-condition').value,
-      payment_method: $('payment-method').value,
-      currency: $('currency').value.toUpperCase(),
-      exchange_rate: 1,
-      notes: $('notes').value,
-      items: state.lines,
-    };
+      const paymentMethod = $('payment-method').value;
+      const installmentCount = Number($('installment-count').value || 1);
+      const installmentIntervalDays = Number($('installment-interval-days').value || 30);
+      if (paymentMethod === '04' && installmentCount < 2) return setFeedback('Para pago a plazos use al menos 2 cuotas.', true);
 
-    const invoice = await request('/invoices/', { method: 'POST', body: JSON.stringify(payload) });
-    setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".`);
-    state.lines = [];
-    renderLines();
-    await loadProducts();
+      const payload = {
+        organization: orgId(),
+        customer: customerId,
+        document_type: $('document-type').value,
+        sale_condition: $('sale-condition').value,
+        payment_method: paymentMethod,
+        tax_regime: $('tax-regime').value,
+        installment_count: paymentMethod === '04' ? installmentCount : 1,
+        installment_interval_days: paymentMethod === '04' ? installmentIntervalDays : 30,
+        currency: $('currency').value.toUpperCase(),
+        exchange_rate: 1,
+        notes: $('notes').value,
+        items: state.lines,
+      };
+
+      const invoice = await request('/invoices/', { method: 'POST', body: JSON.stringify(payload) });
+      setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".`);
+      state.lines = [];
+      renderLines();
+      await loadProducts();
+    } catch (err) {
+      setFeedback(err.message || 'No se pudo insertar la factura.', true);
+    }
   });
 
+  syncInstallmentsUI();
   Promise.all([loadCustomers(), loadProducts()]).catch((e) => setFeedback(e.message, true));
 })();
