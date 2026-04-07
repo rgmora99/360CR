@@ -3,10 +3,10 @@
   const rolesGroups = document.getElementById('roles-groups');
   const systemSettingsList = document.getElementById('system-settings-list');
   const organizationsList = document.getElementById('organizations-list');
-  const orgApiBaseInput = document.getElementById('org-api-base');
   const orgNameInput = document.getElementById('org-name');
   const createOrganizationButton = document.getElementById('create-organization');
   const orgFeedback = document.getElementById('org-feedback');
+  const API_BASE = '/api';
 
   if (!usersList || !rolesGroups || !systemSettingsList || !organizationsList) {
     return;
@@ -28,7 +28,7 @@
   };
 
   const normalizeApiBase = (rawBase) => {
-    let base = (rawBase || '/api').trim();
+    let base = (rawBase || API_BASE).trim();
     if (!base.startsWith('http') && !base.startsWith('/')) {
       base = `/${base}`;
     }
@@ -41,11 +41,7 @@
   };
 
   const getApiBase = () => {
-    const normalized = normalizeApiBase(orgApiBaseInput.value);
-    if (normalized !== orgApiBaseInput.value) {
-      orgApiBaseInput.value = normalized;
-    }
-    return normalized;
+    return normalizeApiBase(API_BASE);
   };
 
   const setOrgFeedback = (message, isError = false) => {
@@ -209,7 +205,6 @@
   };
 
   createOrganizationButton.addEventListener('click', createOrganization);
-  orgApiBaseInput.addEventListener('blur', loadOrganizations);
   loadData();
   loadOrganizations();
 })();

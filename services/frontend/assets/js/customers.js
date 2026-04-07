@@ -1,5 +1,5 @@
 (function initCustomersModule() {
-  const apiBaseInput = document.getElementById('api-base');
+  const API_BASE = '/api';
   const organizationIdInput = document.getElementById('organization-id');
   const searchInput = document.getElementById('search');
   const loadButton = document.getElementById('load-customers');
@@ -52,7 +52,7 @@
   }
 
   function normalizeApiBase(rawBase) {
-    let base = (rawBase || '/api').trim();
+    let base = (rawBase || API_BASE).trim();
 
     if (!base.startsWith('http') && !base.startsWith('/')) {
       base = `/${base}`;
@@ -71,12 +71,7 @@
   }
 
   function getApiBase() {
-    const normalized = normalizeApiBase(apiBaseInput.value);
-    if (apiBaseInput.value !== normalized) {
-      logInfo('API base normalizada automáticamente', { from: apiBaseInput.value, to: normalized });
-      apiBaseInput.value = normalized;
-    }
-    return normalized;
+    return normalizeApiBase(API_BASE);
   }
 
   function apiUrl(path) {
@@ -167,7 +162,7 @@
       }
 
       if (bodyText.startsWith('<!doctype html') || bodyText.startsWith('<html')) {
-        throw new Error('La respuesta no es JSON. Verifica API base (ej: http://localhost:8000/api).');
+        throw new Error('La respuesta no es JSON. Verifica la configuración del proxy o backend.');
       }
 
       throw new Error(bodyText || 'Error inesperado del servidor.');
@@ -178,7 +173,7 @@
     }
 
     if (!contentType.includes('application/json')) {
-      throw new Error('El endpoint respondió contenido no JSON. Revisa API base.');
+      throw new Error('El endpoint respondió contenido no JSON.');
     }
 
     return JSON.parse(bodyText);
@@ -411,11 +406,6 @@
         setFeedback(`No se pudo eliminar: ${error.message}`, true);
       }
     }
-  });
-
-  apiBaseInput.addEventListener('blur', () => {
-    const normalized = getApiBase();
-    setFeedback(`API base configurada: ${normalized}`);
   });
 
   fields.type.addEventListener('change', () => syncFormLabelsFromType(fields.type.value));
