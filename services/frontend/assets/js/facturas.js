@@ -1,6 +1,6 @@
 (function initFacturas() {
   const $ = (id) => document.getElementById(id);
-  const apiBase = () => ($('api-base').value.trim() || '/api').replace(/\/$/, '');
+  const apiBase = () => '/api';
   const orgId = () => Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
   const logPrefix = '[Facturas API]';
 
@@ -16,7 +16,7 @@
     if (!response.ok) throw new Error(text || 'Error de API');
     if (!text) return null;
     if (!contentType.includes('application/json')) {
-      throw new Error('Respuesta no JSON. Revise API base (ej. http://localhost:8000/api) o proxy /api.');
+      throw new Error('Respuesta no JSON. Revise la configuración del backend/proxy.');
     }
     return JSON.parse(text);
   }

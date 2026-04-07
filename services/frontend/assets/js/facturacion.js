@@ -2,7 +2,7 @@
   const $ = (id) => document.getElementById(id);
   const state = { customers: [], products: [], lines: [] };
 
-  const apiBase = () => ($('api-base').value.trim() || '/api').replace(/\/$/, '');
+  const apiBase = () => '/api';
   const orgId = () => Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
   const logPrefix = '[Facturacion API]';
 
@@ -20,7 +20,7 @@
     try {
       return JSON.parse(text);
     } catch {
-      throw new Error('Respuesta no JSON. Configure API base como http://localhost:8000/api');
+      throw new Error('Respuesta no JSON. Revise la configuración del backend/proxy.');
     }
   }
 

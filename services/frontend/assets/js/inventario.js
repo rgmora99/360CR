@@ -1,7 +1,7 @@
 (function initInventario() {
   const $ = (id) => document.getElementById(id);
   const state = { products: [] };
-  const apiBase = () => ($('api-base').value.trim() || '/api').replace(/\/$/, '');
+  const apiBase = () => '/api';
   function orgId() {
     const raw = ($('organization-id').value || window.AppSession?.getActiveOrganizationId?.() || '').toString().trim();
     const numeric = Number(raw.replace(/[^\d]/g, ''));
@@ -24,7 +24,7 @@
     if (!response.ok) throw new Error(text || 'Error de API');
     if (!text) return null;
     if (!contentType.includes('application/json')) {
-      throw new Error('Respuesta no JSON. Revise API base (ej. http://localhost:8000/api) o proxy /api.');
+      throw new Error('Respuesta no JSON. Revise la configuración del backend/proxy.');
     }
     return JSON.parse(text);
   }
