@@ -24,19 +24,11 @@
             <div>
               <p class="badge">Módulo</p>
               <h1>Gestión de Proveedores</h1>
-              <p class="subtitle">CRUD completo de proveedores por organización, persona física o jurídica.</p>
+              <p class="subtitle">CRUD completo de proveedores.</p>
             </div>
           </section>
 
           <section class="card filters">
-            <label>
-              API base
-              <input id="api-base" type="text" value="/api" />
-            </label>
-            <label>
-              Organización (ID)
-              <input id="organization-id" type="number" min="1" value="1" />
-            </label>
             <label>
               Buscar
               <input id="search" type="text" placeholder="Razón social, código o correo" />
@@ -51,12 +43,6 @@
                 <input type="hidden" id="supplier-id" />
                 <div class="form-grid">
                   <label>Código<input id="code" required readonly /></label>
-                  <label>Tipo de persona
-                    <select id="person-kind" required>
-                      <option value="legal">Jurídica</option>
-                      <option value="individual">Física</option>
-                    </select>
-                  </label>
                   <label>Tipo de proveedor<select id="supplier-type" required></select></label>
                   <label id="legal-name-label">Razón social<input id="legal-name" required /></label>
                   <label id="trade-name-wrapper">Nombre comercial<input id="trade-name" /></label>

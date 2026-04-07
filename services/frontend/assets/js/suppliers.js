@@ -1,6 +1,4 @@
 (function initSuppliersModule() {
-  const apiBaseInput = document.getElementById('api-base');
-  const organizationIdInput = document.getElementById('organization-id');
   const searchInput = document.getElementById('search');
   const loadButton = document.getElementById('load-suppliers');
   const suppliersBody = document.getElementById('suppliers-body');
@@ -10,7 +8,6 @@
   const formTitle = document.getElementById('form-title');
   const cancelEditButton = document.getElementById('cancel-edit');
 
-  const personKindInput = document.getElementById('person-kind');
   const legalNameLabel = document.getElementById('legal-name-label');
   const taxIdLabel = document.getElementById('tax-id-label');
   const tradeNameWrapper = document.getElementById('trade-name-wrapper');
@@ -34,12 +31,12 @@
   let supplierTypes = [];
 
   function getApiBase() {
-    const value = apiBaseInput.value.trim() || '/api';
+    const value = '/api';
     return value.endsWith('/') ? value.slice(0, -1) : value;
   }
 
   function getOrganizationId() {
-    const organizationId = Number(organizationIdInput.value || window.AppSession?.getActiveOrganizationId?.());
+    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.() || localStorage.getItem('activeOrganizationId') || 1);
     if (!organizationId || organizationId < 1) {
       throw new Error('Debe indicar un organization_id válido.');
     }
@@ -67,14 +64,8 @@
     return type?.code || '';
   }
 
-  function syncPersonKindFromType(typeId) {
-    const code = getTypeCode(typeId);
-    personKindInput.value = code === 'fisico' ? 'individual' : 'legal';
-    refreshPersonKindLabels();
-  }
-
   function refreshPersonKindLabels() {
-    const isLegal = personKindInput.value === 'legal';
+    const isLegal = getTypeCode(fields.type.value) !== 'fisico';
     legalNameLabel.firstChild.textContent = isLegal ? 'Razón social' : 'Nombre completo';
     taxIdLabel.firstChild.textContent = isLegal ? 'Cédula jurídica' : 'Cédula física';
     tradeNameWrapper.style.display = isLegal ? 'grid' : 'none';
@@ -120,11 +111,11 @@
     fields.creditLimit.value = '0';
     fields.paymentTermsDays.value = '0';
     formTitle.textContent = 'Nuevo proveedor';
-    syncPersonKindFromType(fields.type.value);
+    refreshPersonKindLabels();
   }
 
   function buildPayload() {
-    const personKind = personKindInput.value;
+    const personKind = getTypeCode(fields.type.value) === 'fisico' ? 'individual' : 'legal';
 
     return {
       organization: getOrganizationId(),
@@ -202,7 +193,7 @@
       throw new Error('No hay tipos de proveedor configurados.');
     }
 
-    syncPersonKindFromType(fields.type.value);
+    refreshPersonKindLabels();
   }
 
   async function loadSuppliers() {
@@ -223,7 +214,7 @@
   function fillForm(supplier) {
     fields.id.value = supplier.id;
     fields.type.value = supplier.supplier_type;
-    syncPersonKindFromType(supplier.supplier_type);
+    refreshPersonKindLabels();
     fields.code.value = supplier.code;
     fields.legalName.value = supplier.legal_name;
     fields.tradeName.value = supplier.trade_name || '';
@@ -305,20 +296,9 @@
     }
   });
 
-  personKindInput.addEventListener('change', () => {
-    const targetCode = personKindInput.value === 'individual' ? 'fisico' : 'juridico';
-    const targetType = supplierTypes.find((item) => item.code === targetCode);
-    if (targetType) {
-      fields.type.value = targetType.id;
-    }
-    refreshPersonKindLabels();
-  });
-
-  fields.type.addEventListener('change', () => syncPersonKindFromType(fields.type.value));
+  fields.type.addEventListener('change', refreshPersonKindLabels);
   searchInput.addEventListener('input', renderTable);
   loadButton.addEventListener('click', loadSuppliers);
-  organizationIdInput.value = window.AppSession?.getActiveOrganizationId?.() || organizationIdInput.value;
-  organizationIdInput.addEventListener('change', () => localStorage.setItem('activeOrganizationId', organizationIdInput.value));
 
   loadSupplierTypes()
     .then(loadSuppliers)
