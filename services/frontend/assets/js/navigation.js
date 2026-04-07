@@ -1,47 +1,57 @@
 (function initSharedNavigation() {
-  const sessionState = { user: null, organizations: [], activeOrganizationId: null };
-
-  async function loadSession() {
-    const response = await fetch('/api/auth/session/', { credentials: 'include' });
-    if (!response.ok) {
-      window.location.href = '/auth/login.html';
-      return null;
-    }
-    const session = await response.json();
-    sessionState.user = session.user;
-    sessionState.organizations = session.organizations || [];
-    const preferred = Number(localStorage.getItem('activeOrganizationId'));
-    const exists = sessionState.organizations.some((org) => org.id === preferred);
-    sessionState.activeOrganizationId = exists ? preferred : session.active_organization_id;
-    localStorage.setItem('activeOrganizationId', String(sessionState.activeOrganizationId));
-    window.AppSession = {
-      ...sessionState,
-      getActiveOrganizationId: () => Number(localStorage.getItem('activeOrganizationId') || sessionState.activeOrganizationId),
-    };
-    return sessionState;
-  }
-
   window.renderSharedNavigation = function renderSharedNavigation(options) {
-    loadSession().then(() => {
-    const activeModule = options?.activeModule || 'clientes';
+    const activeModule = options?.activeModule || 'inicio';
 
     const sidebar = document.getElementById('shared-sidebar');
     const topbar = document.getElementById('shared-topbar');
+    const layout = document.querySelector('.dashboard-layout');
 
-    if (!sidebar || !topbar) {
+    if (!sidebar || !topbar || !layout) {
       return;
     }
 
     const menuItems = [
+      { key: 'inicio', label: 'Inicio', href: '/dashboard.html' },
       { key: 'clientes', label: 'Clientes', href: '/customers.html' },
       { key: 'proveedores', label: 'Proveedores', href: '/suppliers.html' },
       { key: 'agenda', label: 'Agenda', href: '#' },
-      { key: 'reportes', label: 'Facturas emitidas', href: '/facturas.html' },
-      { key: 'facturacion', label: 'Facturación', href: '/facturacion.html' },
+      {
+        key: 'facturacion-menu',
+        label: 'Facturación',
+        children: [
+          { key: 'facturacion-listado', label: 'Listado de facturas', href: '/facturas.html' },
+          { key: 'facturacion-registrar', label: 'Registrar factura', href: '/facturacion.html' },
+        ],
+      },
       { key: 'inventario', label: 'Inventario', href: '/inventario.html' },
       { key: 'marketing', label: 'Marketing automático', href: '#' },
       { key: 'fidelizacion', label: 'Fidelización de clientes', href: '#' },
     ];
+
+    const menuMarkup = menuItems
+      .map((item) => {
+        if (item.children?.length) {
+          const hasActiveChild = item.children.some((child) => child.key === activeModule);
+          return `
+            <div class="sidebar-submenu ${hasActiveChild ? 'is-open' : ''}">
+              <button class="submenu-toggle ${hasActiveChild ? 'active' : ''}" type="button" data-submenu-toggle>
+                ${item.label}
+              </button>
+              <div class="submenu-links">
+                ${item.children
+                  .map(
+                    (child) =>
+                      `<a class="${child.key === activeModule ? 'active' : ''}" href="${child.href}">${child.label}</a>`,
+                  )
+                  .join('')}
+              </div>
+            </div>
+          `;
+        }
+
+        return `<a class="${item.key === activeModule ? 'active' : ''}" href="${item.href}">${item.label}</a>`;
+      })
+      .join('');
 
     sidebar.className = 'sidebar card';
     sidebar.innerHTML = `
@@ -51,33 +61,27 @@
           <p>Panel de operación</p>
         </div>
         <nav class="sidebar-nav">
-          ${menuItems
-            .map(
-              (item) =>
-                `<a class="${item.key === activeModule ? 'active' : ''}" href="${item.href}">${item.label}</a>`,
-            )
-            .join('')}
+          ${menuMarkup}
         </nav>
       </div>
       <a class="btn btn-secondary" href="/">Salir</a>
     `;
 
     topbar.className = 'topbar card';
-    const activeOrganization =
-      sessionState.organizations.find((org) => org.id === sessionState.activeOrganizationId) || sessionState.organizations[0];
     topbar.innerHTML = `
+      <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
       <div class="workspace">
         <p class="label">Emprendimiento activo</p>
-        <strong>${activeOrganization?.name || 'Sin organización'}</strong>
+        <strong>Comercial Central S.A.</strong>
         <p class="subtitle">Equipo: Ventas y Operaciones · Sede: San José</p>
       </div>
       <div class="topbar-controls">
         <label>
           Negocio
-          <select id="global-organization-selector">
-            ${sessionState.organizations
-              .map((org) => `<option value="${org.id}" ${org.id === sessionState.activeOrganizationId ? 'selected' : ''}>${org.name}</option>`)
-              .join('')}
+          <select>
+            <option>Comercial Central S.A.</option>
+            <option>Distribuidora Norte</option>
+            <option>Tienda Express CR</option>
           </select>
         </label>
         <label>
@@ -91,17 +95,26 @@
       </div>
     `;
 
-    topbar.querySelector('#global-organization-selector')?.addEventListener('change', (event) => {
-      localStorage.setItem('activeOrganizationId', event.target.value);
-      window.location.reload();
-    });
+    const menuToggleButton = document.getElementById('menu-toggle');
+    const overlay = document.createElement('button');
+    overlay.type = 'button';
+    overlay.className = 'sidebar-overlay';
+    overlay.setAttribute('aria-label', 'Cerrar menú');
+    layout.appendChild(overlay);
 
-    sidebar.querySelector('a.btn.btn-secondary')?.addEventListener('click', async (event) => {
-      event.preventDefault();
-      await fetch('/api/auth/logout/', { method: 'POST', credentials: 'include' });
-      localStorage.removeItem('activeOrganizationId');
-      window.location.href = '/auth/login.html';
-    });
+    const toggleMenu = () => {
+      layout.classList.toggle('sidebar-open');
+    };
+
+    menuToggleButton?.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', () => layout.classList.remove('sidebar-open'));
+
+    const submenuButtons = sidebar.querySelectorAll('[data-submenu-toggle]');
+    submenuButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const container = button.closest('.sidebar-submenu');
+        container?.classList.toggle('is-open');
+      });
     });
   };
 })();
