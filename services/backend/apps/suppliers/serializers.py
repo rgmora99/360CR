@@ -29,6 +29,27 @@ class SupplierSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        extra_kwargs = {
+            "code": {"required": False, "allow_blank": True},
+        }
+
+    def create(self, validated_data):
+        if not validated_data.get("code"):
+            organization = validated_data["organization"]
+            next_number = 1
+            existing_codes = Supplier.objects.filter(organization=organization).values_list("code", flat=True)
+            for item in existing_codes:
+                digits = "".join(ch for ch in (item or "") if ch.isdigit())
+                if digits:
+                    next_number = max(next_number, int(digits) + 1)
+
+            candidate = f"P{next_number:06d}"
+            while Supplier.objects.filter(organization=organization, code=candidate).exists():
+                next_number += 1
+                candidate = f"P{next_number:06d}"
+
+            validated_data["code"] = candidate
+        return super().create(validated_data)
 
 
 class SupplierContactSerializer(serializers.ModelSerializer):

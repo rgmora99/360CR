@@ -76,7 +76,7 @@
   }
 
   function getOrganizationId() {
-    const organizationId = Number(organizationIdInput.value || window.AppSession?.getActiveOrganizationId?.());
+    const organizationId = Number(organizationIdInput.value);
     if (!organizationId || organizationId < 1) {
       throw new Error('Debe indicar un organization_id válido.');
     }
@@ -92,15 +92,22 @@
     organizationIdInput.innerHTML = organizations
       .map((item) => `<option value="${item.id}">${item.name} (#${item.id})</option>`)
       .join('');
-    const preferred = Number(window.AppSession?.getActiveOrganizationId?.());
-    if (preferred && organizations.some((item) => item.id === preferred)) {
-      organizationIdInput.value = preferred;
-    }
   }
 
   function setFeedback(message, isError) {
     feedback.textContent = message;
     feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    if (window.appAlerts?.toast) {
+      window.appAlerts.toast(message, isError ? 'error' : 'success');
+    }
+  }
+
+  function nextCustomerCode() {
+    const numbers = customers
+      .map((item) => Number(String(item.code || '').replace(/\D/g, '')))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const next = (numbers.length ? Math.max(...numbers) : 0) + 1;
+    return `C${String(next).padStart(6, '0')}`;
   }
 
   function getTypeCode(typeId) {
@@ -122,7 +129,6 @@
 
     const response = await fetch(url, {
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       ...options,
     });
 
@@ -160,6 +166,7 @@
   function resetForm() {
     customerForm.reset();
     fields.id.value = '';
+    fields.code.value = nextCustomerCode();
     fields.creditLimit.value = '0';
     fields.paymentTermsDays.value = '0';
     formTitle.textContent = 'Nuevo cliente';
@@ -308,6 +315,9 @@
       const data = await request(apiUrl(`/customers/?organization_id=${organizationId}`));
       customers = data;
       renderTable();
+      if (!fields.id.value) {
+        fields.code.value = nextCustomerCode();
+      }
       setFeedback(`Se cargaron ${data.length} clientes.`);
     } catch (error) {
       logError('Error al cargar clientes', error.message);
@@ -385,7 +395,10 @@
     }
 
     if (action === 'delete') {
-      if (!window.confirm(`¿Desea eliminar al cliente ${target.legal_name}?`)) {
+      const shouldDelete = window.appAlerts?.confirm
+        ? await window.appAlerts.confirm(`¿Desea eliminar al cliente ${target.legal_name}?`, 'Eliminar cliente')
+        : window.confirm(`¿Desea eliminar al cliente ${target.legal_name}?`);
+      if (!shouldDelete) {
         return;
       }
 
@@ -410,7 +423,6 @@
   loadButton.addEventListener('click', loadCustomers);
   createOrganizationButton.addEventListener('click', createOrganization);
   organizationIdInput.addEventListener('change', loadCustomers);
-  organizationIdInput.addEventListener('change', () => localStorage.setItem('activeOrganizationId', organizationIdInput.value));
 
   logInfo('Inicializando módulo clientes', { apiBase: getApiBase(), organizationId: organizationIdInput.value });
 

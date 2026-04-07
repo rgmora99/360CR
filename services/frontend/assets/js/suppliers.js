@@ -49,6 +49,17 @@
   function setFeedback(message, isError) {
     feedback.textContent = message;
     feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    if (window.appAlerts?.toast) {
+      window.appAlerts.toast(message, isError ? 'error' : 'success');
+    }
+  }
+
+  function nextSupplierCode() {
+    const numbers = suppliers
+      .map((item) => Number(String(item.code || '').replace(/\D/g, '')))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const next = (numbers.length ? Math.max(...numbers) : 0) + 1;
+    return `P${String(next).padStart(6, '0')}`;
   }
 
   function getTypeCode(typeId) {
@@ -105,6 +116,7 @@
   function resetForm() {
     supplierForm.reset();
     fields.id.value = '';
+    fields.code.value = nextSupplierCode();
     fields.creditLimit.value = '0';
     fields.paymentTermsDays.value = '0';
     formTitle.textContent = 'Nuevo proveedor';
@@ -199,6 +211,9 @@
       const data = await request(`${getApiBase()}/suppliers/?organization_id=${organizationId}`);
       suppliers = data;
       renderTable();
+      if (!fields.id.value) {
+        fields.code.value = nextSupplierCode();
+      }
       setFeedback(`Se cargaron ${data.length} proveedores.`);
     } catch (error) {
       setFeedback(`Error al cargar proveedores: ${error.message}`, true);
@@ -273,7 +288,10 @@
     }
 
     if (action === 'delete') {
-      if (!window.confirm(`¿Desea eliminar al proveedor ${target.legal_name}?`)) {
+      const shouldDelete = window.appAlerts?.confirm
+        ? await window.appAlerts.confirm(`¿Desea eliminar al proveedor ${target.legal_name}?`, 'Eliminar proveedor')
+        : window.confirm(`¿Desea eliminar al proveedor ${target.legal_name}?`);
+      if (!shouldDelete) {
         return;
       }
 

@@ -27,6 +27,9 @@
   function setFeedback(msg, error) {
     $('feedback').textContent = msg;
     $('feedback').style.color = error ? '#ff6b6b' : 'var(--muted)';
+    if (window.appAlerts?.toast) {
+      window.appAlerts.toast(msg, error ? 'error' : 'success');
+    }
   }
 
   function syncInstallmentsUI() {
