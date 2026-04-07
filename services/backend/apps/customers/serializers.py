@@ -34,9 +34,20 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
+    slug = serializers.SlugField(required=False, allow_blank=True)
+
     class Meta:
         model = Organization
         fields = ["id", "name", "slug"]
+        extra_kwargs = {
+            "name": {"required": True},
+        }
+
+    def validate_name(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError("El nombre de la organización es obligatorio.")
+        return cleaned
 
     def create(self, validated_data):
         name = validated_data.get("name", "").strip()

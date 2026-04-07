@@ -10,7 +10,7 @@
 
 .filters {
   display: grid;
-  grid-template-columns: 240px 180px 1fr auto;
+  grid-template-columns: 220px 220px 280px auto 1fr auto;
   gap: 0.8rem;
   align-items: end;
 }
@@ -75,7 +75,7 @@ td .btn {
 
 @media (max-width: 1200px) {
   .filters {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .grid {
