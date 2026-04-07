@@ -49,3 +49,15 @@
   color: var(--accent-2);
   text-decoration: none;
 }
+
+.auth-form input.is-invalid {
+  border-color: #ff6b81;
+}
+
+.field-error {
+  display: block;
+  min-height: 1rem;
+  margin-top: .3rem;
+  color: #ff8b9b;
+  font-size: .8rem;
+}
