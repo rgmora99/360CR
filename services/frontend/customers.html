@@ -34,9 +34,14 @@
               <input id="api-base" type="text" value="/api" />
             </label>
             <label>
-              Organización (ID)
-              <input id="organization-id" type="number" min="1" value="1" />
+              Organización
+              <select id="organization-id"></select>
             </label>
+            <label>
+              Nueva organización
+              <input id="organization-name" type="text" placeholder="Ej: Comercial Central S.A." />
+            </label>
+            <button id="create-organization" class="btn btn-secondary" type="button">Crear organización</button>
             <label>
               Buscar
               <input id="search" type="text" placeholder="Razón social, código o correo" />
@@ -50,7 +55,7 @@
               <form id="customer-form" class="customer-form">
                 <input type="hidden" id="customer-id" />
                 <div class="form-grid">
-                  <label>Código<input id="code" required /></label>
+                  <label>Código<input id="code" required readonly /></label>
                   <label>Tipo de cliente<select id="customer-type" required></select></label>
                   <label id="legal-name-label">Razón social<input id="legal-name" required /></label>
                   <label id="trade-name-wrapper">Nombre comercial<input id="trade-name" /></label>
@@ -98,6 +103,8 @@
       </section>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="/assets/js/alerts.js"></script>
     <script src="/assets/js/navigation.js"></script>
     <script>
       window.renderSharedNavigation({ activeModule: 'clientes' });

@@ -31,12 +31,44 @@ class CustomerSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        extra_kwargs = {
+            "code": {"required": False, "allow_blank": True},
+        }
+
+    def create(self, validated_data):
+        if not validated_data.get("code"):
+            organization = validated_data["organization"]
+            next_number = 1
+            existing_codes = Customer.objects.filter(organization=organization).values_list("code", flat=True)
+            for item in existing_codes:
+                digits = "".join(ch for ch in (item or "") if ch.isdigit())
+                if digits:
+                    next_number = max(next_number, int(digits) + 1)
+
+            candidate = f"C{next_number:06d}"
+            while Customer.objects.filter(organization=organization, code=candidate).exists():
+                next_number += 1
+                candidate = f"C{next_number:06d}"
+
+            validated_data["code"] = candidate
+        return super().create(validated_data)
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
+    slug = serializers.SlugField(required=False, allow_blank=True)
+
     class Meta:
         model = Organization
         fields = ["id", "name", "slug"]
+        extra_kwargs = {
+            "name": {"required": True},
+        }
+
+    def validate_name(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError("El nombre de la organización es obligatorio.")
+        return cleaned
 
     def create(self, validated_data):
         name = validated_data.get("name", "").strip()

@@ -1,6 +1,8 @@
 (function initCustomersModule() {
   const apiBaseInput = document.getElementById('api-base');
   const organizationIdInput = document.getElementById('organization-id');
+  const organizationNameInput = document.getElementById('organization-name');
+  const createOrganizationButton = document.getElementById('create-organization');
   const searchInput = document.getElementById('search');
   const loadButton = document.getElementById('load-customers');
   const customersBody = document.getElementById('customers-body');
@@ -86,9 +88,26 @@
     return organizationId;
   }
 
+  function renderOrganizations() {
+    organizationIdInput.innerHTML = organizations
+      .map((item) => `<option value="${item.id}">${item.name} (#${item.id})</option>`)
+      .join('');
+  }
+
   function setFeedback(message, isError) {
     feedback.textContent = message;
     feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    if (window.appAlerts?.toast) {
+      window.appAlerts.toast(message, isError ? 'error' : 'success');
+    }
+  }
+
+  function nextCustomerCode() {
+    const numbers = customers
+      .map((item) => Number(String(item.code || '').replace(/\D/g, '')))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const next = (numbers.length ? Math.max(...numbers) : 0) + 1;
+    return `C${String(next).padStart(6, '0')}`;
   }
 
   function getTypeCode(typeId) {
@@ -147,6 +166,7 @@
   function resetForm() {
     customerForm.reset();
     fields.id.value = '';
+    fields.code.value = nextCustomerCode();
     fields.creditLimit.value = '0';
     fields.paymentTermsDays.value = '0';
     formTitle.textContent = 'Nuevo cliente';
@@ -207,10 +227,35 @@
       organizations = await request(apiUrl('/organizations/'));
     }
 
+    renderOrganizations();
+
     const current = Number(organizationIdInput.value);
     if (!organizations.some((item) => item.id === current)) {
       organizationIdInput.value = organizations[0].id;
       setFeedback(`Se ajustó organization_id a ${organizations[0].id} (${organizations[0].name}).`);
+    }
+  }
+
+  async function createOrganization() {
+    const name = organizationNameInput.value.trim();
+    if (!name) {
+      setFeedback('Debe indicar un nombre de organización para crearla.', true);
+      return;
+    }
+
+    try {
+      const created = await request(apiUrl('/organizations/'), {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      setFeedback(`Organización creada: ${created.name} (#${created.id}).`);
+      organizationNameInput.value = '';
+      await loadOrganizations();
+      organizationIdInput.value = created.id;
+      await loadCustomers();
+    } catch (error) {
+      logError('No se pudo crear la organización', error.message);
+      setFeedback(`No se pudo crear organización: ${error.message}`, true);
     }
   }
 
@@ -270,6 +315,9 @@
       const data = await request(apiUrl(`/customers/?organization_id=${organizationId}`));
       customers = data;
       renderTable();
+      if (!fields.id.value) {
+        fields.code.value = nextCustomerCode();
+      }
       setFeedback(`Se cargaron ${data.length} clientes.`);
     } catch (error) {
       logError('Error al cargar clientes', error.message);
@@ -347,7 +395,10 @@
     }
 
     if (action === 'delete') {
-      if (!window.confirm(`¿Desea eliminar al cliente ${target.legal_name}?`)) {
+      const shouldDelete = window.appAlerts?.confirm
+        ? await window.appAlerts.confirm(`¿Desea eliminar al cliente ${target.legal_name}?`, 'Eliminar cliente')
+        : window.confirm(`¿Desea eliminar al cliente ${target.legal_name}?`);
+      if (!shouldDelete) {
         return;
       }
 
@@ -370,6 +421,8 @@
   fields.type.addEventListener('change', () => syncFormLabelsFromType(fields.type.value));
   searchInput.addEventListener('input', renderTable);
   loadButton.addEventListener('click', loadCustomers);
+  createOrganizationButton.addEventListener('click', createOrganization);
+  organizationIdInput.addEventListener('change', loadCustomers);
 
   logInfo('Inicializando módulo clientes', { apiBase: getApiBase(), organizationId: organizationIdInput.value });
 

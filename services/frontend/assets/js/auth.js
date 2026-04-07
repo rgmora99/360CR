@@ -13,12 +13,14 @@
   }
 
   if (registerForm) {
-    registerForm.addEventListener('submit', (event) => {
+    registerForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const data = new FormData(registerForm);
       const payload = Object.fromEntries(data.entries());
       console.log('Register submit payload:', payload);
-      alert('Cuenta creada. Ahora inicia sesión para entrar al panel principal.');
+      if (window.appAlerts?.notify) {
+        await window.appAlerts.notify('Cuenta creada. Ahora inicia sesión para entrar al panel principal.', 'success', 'Registro exitoso');
+      }
       window.location.href = '/auth/login.html';
     });
   }
