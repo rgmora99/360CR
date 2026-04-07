@@ -19,6 +19,7 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ["id", "organization", "sku", "product_type", "name", "unit_price", "tax_rate", "stock", "is_active", "created_at"]
+        validators = []
 
     def validate_name(self, value):
         clean_name = value.strip()
