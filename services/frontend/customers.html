@@ -34,9 +34,14 @@
               <input id="api-base" type="text" value="/api" />
             </label>
             <label>
-              Organización (ID)
-              <input id="organization-id" type="number" min="1" value="1" />
+              Organización
+              <select id="organization-id"></select>
             </label>
+            <label>
+              Nueva organización
+              <input id="organization-name" type="text" placeholder="Ej: Comercial Central S.A." />
+            </label>
+            <button id="create-organization" class="btn btn-secondary" type="button">Crear organización</button>
             <label>
               Buscar
               <input id="search" type="text" placeholder="Razón social, código o correo" />
