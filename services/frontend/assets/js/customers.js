@@ -34,6 +34,16 @@
   let customers = [];
   let customerTypes = [];
   let organizations = [];
+  const SESSION_KEY = 'cr360.session';
+
+  function getActiveOrganizationFromSession() {
+    try {
+      const session = JSON.parse(localStorage.getItem(SESSION_KEY) || '{}');
+      return Number(session?.active_organization_id) || null;
+    } catch (_error) {
+      return null;
+    }
+  }
 
   function logInfo(message, payload) {
     console.info(`[Clientes] ${message}`, payload || '');
@@ -128,7 +138,8 @@
     logInfo(`Request ${method} ${url}`);
 
     const response = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+      credentials: 'include',
       ...options,
     });
 
@@ -142,7 +153,14 @@
 
     if (!response.ok) {
       if (contentType.includes('application/json')) {
-        throw new Error(bodyText || 'Error inesperado del servidor.');
+        let detail = bodyText;
+        try {
+          const parsed = JSON.parse(bodyText);
+          detail = parsed?.detail || bodyText;
+        } catch (_error) {
+          detail = bodyText;
+        }
+        throw new Error(detail || 'Error inesperado del servidor.');
       }
 
       if (bodyText.startsWith('<!doctype html') || bodyText.startsWith('<html')) {
@@ -230,9 +248,17 @@
     renderOrganizations();
 
     const current = Number(organizationIdInput.value);
-    if (!organizations.some((item) => item.id === current)) {
-      organizationIdInput.value = organizations[0].id;
-      setFeedback(`Se ajustó organization_id a ${organizations[0].id} (${organizations[0].name}).`);
+    const preferred = getActiveOrganizationFromSession();
+    const selectedId = organizations.some((item) => item.id === preferred)
+      ? preferred
+      : organizations.some((item) => item.id === current)
+        ? current
+        : organizations[0].id;
+
+    if (selectedId !== current) {
+      organizationIdInput.value = selectedId;
+      const selectedOrganization = organizations.find((item) => item.id === selectedId);
+      setFeedback(`Se ajustó organization_id a ${selectedId} (${selectedOrganization?.name || 'N/D'}).`);
     }
   }
 
