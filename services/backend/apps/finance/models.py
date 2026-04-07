@@ -39,8 +39,16 @@ class Transaction(models.Model):
 
 
 class Product(models.Model):
+    TYPE_PHYSICAL = "physical"
+    TYPE_SERVICE = "service"
+    TYPE_CHOICES = [
+        (TYPE_PHYSICAL, "Producto"),
+        (TYPE_SERVICE, "Servicio"),
+    ]
+
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
     sku = models.CharField(max_length=40)
+    product_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_PHYSICAL)
     name = models.CharField(max_length=160)
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     tax_rate = models.DecimalField(

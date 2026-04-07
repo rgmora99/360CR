@@ -34,33 +34,68 @@
     $('feedback').style.color = error ? '#ff6b6b' : 'var(--muted)';
   }
 
+  function updateStockState() {
+    const isService = $('product-type').value === 'service';
+    $('stock').value = isService ? 0 : $('stock').value || 0;
+    $('stock').disabled = isService;
+  }
+
+  function validatePayload(payload) {
+    if (!payload.name || payload.name.length < 2) {
+      throw new Error('El nombre debe tener al menos 2 caracteres.');
+    }
+    if (!Number.isFinite(payload.unit_price) || payload.unit_price <= 0) {
+      throw new Error('El precio debe ser un número mayor a 0.');
+    }
+    if (!Number.isFinite(payload.tax_rate) || payload.tax_rate < 0 || payload.tax_rate > 100) {
+      throw new Error('El impuesto debe estar entre 0 y 100.');
+    }
+    if (payload.product_type === 'physical' && (!Number.isInteger(payload.stock) || payload.stock < 0)) {
+      throw new Error('El stock debe ser un entero mayor o igual a 0.');
+    }
+  }
+
   async function loadProducts() {
     const data = await request(`/products/?organization_id=${orgId()}`);
     state.products = data;
     $('products-body').innerHTML =
-      data.map((p) => `<tr><td>${p.sku}</td><td>${p.name}</td><td>${p.unit_price}</td><td>${p.stock}</td><td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td></tr>`).join('') ||
+      data
+        .map(
+          (p) =>
+            `<tr><td>${p.sku}</td><td>${p.name} ${p.product_type === 'service' ? '(Servicio)' : ''}</td><td>${p.unit_price}</td><td>${p.product_type === 'service' ? 'N/A' : p.stock}</td><td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td></tr>`,
+        )
+        .join('') ||
       '<tr><td colspan="5">Sin productos</td></tr>';
   }
 
   $('product-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const id = $('product-id').value;
-    const payload = {
-      organization: orgId(),
-      sku: $('sku').value.trim(),
-      name: $('product-name').value.trim(),
-      unit_price: Number($('unit-price').value),
-      tax_rate: Number($('tax-rate').value),
-      stock: Number($('stock').value),
-      is_active: true,
-    };
-    await request(id ? `/products/${id}/` : '/products/', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
-    $('product-form').reset();
-    $('product-id').value = '';
-    $('tax-rate').value = 13;
-    $('stock').value = 0;
-    await loadProducts();
-    feedback('Inventario actualizado.');
+    try {
+      e.preventDefault();
+      const id = $('product-id').value;
+      const isService = $('product-type').value === 'service';
+      const payload = {
+        organization: orgId(),
+        name: $('product-name').value.trim(),
+        product_type: $('product-type').value,
+        unit_price: Number($('unit-price').value),
+        tax_rate: Number($('tax-rate').value),
+        stock: isService ? 0 : Number($('stock').value),
+        is_active: true,
+      };
+      validatePayload(payload);
+      await request(id ? `/products/${id}/` : '/products/', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+      $('product-form').reset();
+      $('product-id').value = '';
+      $('tax-rate').value = 13;
+      $('stock').value = 0;
+      $('sku').value = 'Se generará automáticamente';
+      $('product-type').value = 'physical';
+      updateStockState();
+      await loadProducts();
+      feedback('Inventario actualizado.');
+    } catch (error) {
+      feedback(error.message, true);
+    }
   });
 
   $('products-body').addEventListener('click', async (e) => {
@@ -71,9 +106,11 @@
       $('product-id').value = p.id;
       $('sku').value = p.sku;
       $('product-name').value = p.name;
+      $('product-type').value = p.product_type || 'physical';
       $('unit-price').value = p.unit_price;
       $('tax-rate').value = p.tax_rate;
       $('stock').value = p.stock;
+      updateStockState();
     }
     if (delId) {
       await request(`/products/${delId}/`, { method: 'DELETE' });
@@ -84,5 +121,8 @@
 
   $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || $('organization-id').value;
   $('organization-id').addEventListener('change', () => localStorage.setItem('activeOrganizationId', $('organization-id').value));
+  $('product-type').addEventListener('change', updateStockState);
+  $('sku').value = 'Se generará automáticamente';
+  updateStockState();
   loadProducts().catch((e) => feedback(e.message, true));
 })();
