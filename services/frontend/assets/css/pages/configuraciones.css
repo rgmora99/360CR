@@ -28,6 +28,18 @@
   width: 100%;
 }
 
+.org-tools select {
+  width: 100%;
+}
+
+.team-tools {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.team-tools .btn {
+  grid-column: 1 / -1;
+}
+
 .section-help {
   color: var(--color-muted);
   margin: 0 0 0.9rem;
@@ -69,5 +81,9 @@
 @media (max-width: 900px) {
   .org-tools {
     grid-template-columns: 1fr;
+  }
+
+  .team-tools .btn {
+    grid-column: auto;
   }
 }

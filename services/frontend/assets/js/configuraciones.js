@@ -6,9 +6,26 @@
   const orgNameInput = document.getElementById('org-name');
   const createOrganizationButton = document.getElementById('create-organization');
   const orgFeedback = document.getElementById('org-feedback');
+  const inviteEmailInput = document.getElementById('invite-email');
+  const inviteRoleSelect = document.getElementById('invite-role');
+  const createInvitationButton = document.getElementById('create-invitation');
+  const invitationsList = document.getElementById('invitations-list');
+  const teamFeedback = document.getElementById('team-feedback');
   const API_BASE = '/api';
+  const INVITATIONS_STORAGE_KEY = 'cr360.config.invitations';
+  let rolesCache = [];
 
-  if (!usersList || !rolesGroups || !systemSettingsList || !organizationsList) {
+  if (
+    !usersList ||
+    !rolesGroups ||
+    !systemSettingsList ||
+    !organizationsList ||
+    !inviteEmailInput ||
+    !inviteRoleSelect ||
+    !createInvitationButton ||
+    !invitationsList ||
+    !teamFeedback
+  ) {
     return;
   }
 
@@ -47,6 +64,14 @@
   const setOrgFeedback = (message, isError = false) => {
     orgFeedback.textContent = message;
     orgFeedback.style.color = isError ? '#b42318' : 'var(--color-muted)';
+    if (window.appAlerts?.toast) {
+      window.appAlerts.toast(message, isError ? 'error' : 'success');
+    }
+  };
+
+  const setTeamFeedback = (message, isError = false) => {
+    teamFeedback.textContent = message;
+    teamFeedback.style.color = isError ? '#b42318' : 'var(--color-muted)';
     if (window.appAlerts?.toast) {
       window.appAlerts.toast(message, isError ? 'error' : 'success');
     }
@@ -166,6 +191,77 @@
       .join('');
   };
 
+  const renderRoleOptions = (roles) => {
+    if (!roles.length) {
+      inviteRoleSelect.innerHTML = '<option value="">Sin roles disponibles</option>';
+      return;
+    }
+
+    inviteRoleSelect.innerHTML = roles
+      .map((role) => `<option value="${role.id}">${role.name}</option>`)
+      .join('');
+  };
+
+  const getStoredInvitations = () => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(INVITATIONS_STORAGE_KEY) || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  };
+
+  const saveInvitations = (invitations) => {
+    localStorage.setItem(INVITATIONS_STORAGE_KEY, JSON.stringify(invitations));
+  };
+
+  const renderInvitations = () => {
+    const invitations = getStoredInvitations();
+    if (!invitations.length) {
+      invitationsList.innerHTML = '<li>Sin invitaciones pendientes.</li>';
+      return;
+    }
+
+    invitationsList.innerHTML = invitations
+      .map(
+        (invitation) => `<li>
+          <strong>${invitation.email}</strong>
+          <span>Rol: ${invitation.roleName}</span>
+          <small>Creada: ${new Date(invitation.createdAt).toLocaleString('es-CR')}</small>
+        </li>`,
+      )
+      .join('');
+  };
+
+  const createInvitation = () => {
+    const email = inviteEmailInput.value.trim().toLowerCase();
+    const roleId = Number(inviteRoleSelect.value);
+    const selectedRole = rolesCache.find((role) => role.id === roleId);
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setTeamFeedback('Ingresa un correo válido para crear la invitación.', true);
+      return;
+    }
+
+    if (!selectedRole) {
+      setTeamFeedback('Selecciona un rol para la invitación.', true);
+      return;
+    }
+
+    const invitations = getStoredInvitations();
+    invitations.unshift({
+      id: Date.now(),
+      email,
+      roleId: selectedRole.id,
+      roleName: selectedRole.name,
+      createdAt: new Date().toISOString(),
+    });
+    saveInvitations(invitations);
+    inviteEmailInput.value = '';
+    setTeamFeedback(`Invitación registrada para ${email} con rol ${selectedRole.name}.`);
+    renderInvitations();
+  };
+
   const renderSettings = (settings) => {
     if (!settings.length) {
       systemSettingsList.innerHTML = '<li>Sin parámetros cargados.</li>';
@@ -196,8 +292,11 @@
       }
 
       const [users, roles, systemSettings] = await Promise.all([usersRes.json(), rolesRes.json(), settingsRes.json()]);
+      rolesCache = roles;
       renderUsers(users);
       renderRoles(roles);
+      renderRoleOptions(roles);
+      renderInvitations();
       renderSettings(systemSettings);
     } catch (error) {
       showError(error.message || 'Error inesperado al cargar configuraciones.');
@@ -205,6 +304,7 @@
   };
 
   createOrganizationButton.addEventListener('click', createOrganization);
+  createInvitationButton.addEventListener('click', createInvitation);
   loadData();
   loadOrganizations();
 })();

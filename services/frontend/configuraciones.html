@@ -54,6 +54,24 @@
               <p class="section-help">Catálogo base para delegar permisos según responsabilidad.</p>
               <div id="roles-groups"></div>
             </article>
+
+            <article class="card">
+              <h2>Autogestión del equipo</h2>
+              <p class="section-help">Invita usuarios y delega roles sin depender del equipo técnico.</p>
+              <div class="org-tools team-tools">
+                <label>
+                  Correo del usuario
+                  <input id="invite-email" type="email" placeholder="usuario@negocio.com" />
+                </label>
+                <label>
+                  Rol inicial
+                  <select id="invite-role"></select>
+                </label>
+                <button id="create-invitation" class="btn btn-primary" type="button">Crear invitación</button>
+              </div>
+              <p id="team-feedback" class="section-help">Sin acciones recientes.</p>
+              <ul id="invitations-list" class="settings-list"></ul>
+            </article>
           </section>
 
           <section class="card">
