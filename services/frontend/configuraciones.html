@@ -30,6 +30,24 @@
 
           <section class="settings-grid">
             <article class="card">
+              <h2>Mantenimiento de organizaciones</h2>
+              <p class="section-help">Administra las organizaciones disponibles para los módulos operativos.</p>
+              <div class="org-tools">
+                <label>
+                  API base
+                  <input id="org-api-base" type="text" value="/api" />
+                </label>
+                <label>
+                  Nueva organización
+                  <input id="org-name" type="text" placeholder="Ej: Comercial Central S.A." />
+                </label>
+                <button id="create-organization" class="btn btn-primary" type="button">Crear organización</button>
+              </div>
+              <p id="org-feedback" class="section-help">Sin datos cargados.</p>
+              <ul id="organizations-list" class="settings-list"></ul>
+            </article>
+
+            <article class="card">
               <h2>Usuarios del sistema</h2>
               <p class="section-help">Cuentas activas para operación, soporte y liderazgo.</p>
               <ul id="users-list" class="settings-list"></ul>

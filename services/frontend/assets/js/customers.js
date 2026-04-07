@@ -1,8 +1,6 @@
 (function initCustomersModule() {
   const apiBaseInput = document.getElementById('api-base');
   const organizationIdInput = document.getElementById('organization-id');
-  const organizationNameInput = document.getElementById('organization-name');
-  const createOrganizationButton = document.getElementById('create-organization');
   const searchInput = document.getElementById('search');
   const loadButton = document.getElementById('load-customers');
   const customersBody = document.getElementById('customers-body');
@@ -99,6 +97,11 @@
   }
 
   function renderOrganizations() {
+    if (!organizations.length) {
+      organizationIdInput.innerHTML = '<option value="">Sin organizaciones</option>';
+      return;
+    }
+
     organizationIdInput.innerHTML = organizations
       .map((item) => `<option value="${item.id}">${item.name} (#${item.id})</option>`)
       .join('');
@@ -234,15 +237,9 @@
   async function loadOrganizations() {
     organizations = await request(apiUrl('/organizations/'));
     if (!organizations.length) {
-      logInfo('No hay organizaciones, creando organización por defecto.');
-      const created = await request(apiUrl('/organizations/'), {
-        method: 'POST',
-        body: JSON.stringify({
-          name: 'Organización Principal',
-        }),
-      });
-      logInfo('Organización por defecto creada', created);
-      organizations = await request(apiUrl('/organizations/'));
+      renderOrganizations();
+      setFeedback('No hay organizaciones disponibles. Créala desde Configuración > Mantenimiento de organizaciones.', true);
+      return;
     }
 
     renderOrganizations();
@@ -259,29 +256,6 @@
       organizationIdInput.value = selectedId;
       const selectedOrganization = organizations.find((item) => item.id === selectedId);
       setFeedback(`Se ajustó organization_id a ${selectedId} (${selectedOrganization?.name || 'N/D'}).`);
-    }
-  }
-
-  async function createOrganization() {
-    const name = organizationNameInput.value.trim();
-    if (!name) {
-      setFeedback('Debe indicar un nombre de organización para crearla.', true);
-      return;
-    }
-
-    try {
-      const created = await request(apiUrl('/organizations/'), {
-        method: 'POST',
-        body: JSON.stringify({ name }),
-      });
-      setFeedback(`Organización creada: ${created.name} (#${created.id}).`);
-      organizationNameInput.value = '';
-      await loadOrganizations();
-      organizationIdInput.value = created.id;
-      await loadCustomers();
-    } catch (error) {
-      logError('No se pudo crear la organización', error.message);
-      setFeedback(`No se pudo crear organización: ${error.message}`, true);
     }
   }
 
@@ -447,7 +421,6 @@
   fields.type.addEventListener('change', () => syncFormLabelsFromType(fields.type.value));
   searchInput.addEventListener('input', renderTable);
   loadButton.addEventListener('click', loadCustomers);
-  createOrganizationButton.addEventListener('click', createOrganization);
   organizationIdInput.addEventListener('change', loadCustomers);
 
   logInfo('Inicializando módulo clientes', { apiBase: getApiBase(), organizationId: organizationIdInput.value });

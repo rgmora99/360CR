@@ -2,8 +2,13 @@
   const usersList = document.getElementById('users-list');
   const rolesGroups = document.getElementById('roles-groups');
   const systemSettingsList = document.getElementById('system-settings-list');
+  const organizationsList = document.getElementById('organizations-list');
+  const orgApiBaseInput = document.getElementById('org-api-base');
+  const orgNameInput = document.getElementById('org-name');
+  const createOrganizationButton = document.getElementById('create-organization');
+  const orgFeedback = document.getElementById('org-feedback');
 
-  if (!usersList || !rolesGroups || !systemSettingsList) {
+  if (!usersList || !rolesGroups || !systemSettingsList || !organizationsList) {
     return;
   }
 
@@ -20,6 +25,101 @@
     }
     // eslint-disable-next-line no-alert
     alert(message);
+  };
+
+  const normalizeApiBase = (rawBase) => {
+    let base = (rawBase || '/api').trim();
+    if (!base.startsWith('http') && !base.startsWith('/')) {
+      base = `/${base}`;
+    }
+    base = base.replace(/\/+$/, '');
+    base = base.replace(/\/organizations(\/.*)?$/i, '');
+    if (!/\/api$/i.test(base)) {
+      base = `${base}/api`;
+    }
+    return base;
+  };
+
+  const getApiBase = () => {
+    const normalized = normalizeApiBase(orgApiBaseInput.value);
+    if (normalized !== orgApiBaseInput.value) {
+      orgApiBaseInput.value = normalized;
+    }
+    return normalized;
+  };
+
+  const setOrgFeedback = (message, isError = false) => {
+    orgFeedback.textContent = message;
+    orgFeedback.style.color = isError ? '#b42318' : 'var(--color-muted)';
+    if (window.appAlerts?.toast) {
+      window.appAlerts.toast(message, isError ? 'error' : 'success');
+    }
+  };
+
+  const orgRequest = async (path, options) => {
+    const response = await fetch(`${getApiBase()}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+      credentials: 'include',
+      ...options,
+    });
+
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(text || 'No fue posible completar la operación.');
+    }
+
+    if (!text) {
+      return null;
+    }
+
+    return JSON.parse(text);
+  };
+
+  const renderOrganizations = (organizations) => {
+    if (!organizations.length) {
+      organizationsList.innerHTML = '<li>Sin organizaciones registradas.</li>';
+      return;
+    }
+
+    organizationsList.innerHTML = organizations
+      .map(
+        (organization) => `<li>
+          <strong>${organization.name}</strong>
+          <span>ID #${organization.id}</span>
+        </li>`,
+      )
+      .join('');
+  };
+
+  const loadOrganizations = async () => {
+    try {
+      const organizations = await orgRequest('/organizations/');
+      renderOrganizations(organizations);
+      setOrgFeedback(`Se cargaron ${organizations.length} organizaciones.`);
+    } catch (error) {
+      renderOrganizations([]);
+      setOrgFeedback(error.message || 'No fue posible cargar organizaciones.', true);
+    }
+  };
+
+  const createOrganization = async () => {
+    const name = orgNameInput.value.trim();
+    if (!name) {
+      setOrgFeedback('Debe indicar un nombre para crear la organización.', true);
+      return;
+    }
+
+    try {
+      const created = await orgRequest('/organizations/', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      orgNameInput.value = '';
+      setOrgFeedback(`Organización creada: ${created.name} (#${created.id}).`);
+      await loadOrganizations();
+    } catch (error) {
+      setOrgFeedback(error.message || 'No fue posible crear la organización.', true);
+    }
   };
 
   const renderUsers = (users) => {
@@ -108,5 +208,8 @@
     }
   };
 
+  createOrganizationButton.addEventListener('click', createOrganization);
+  orgApiBaseInput.addEventListener('blur', loadOrganizations);
   loadData();
+  loadOrganizations();
 })();
