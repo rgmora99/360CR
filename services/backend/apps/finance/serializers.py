@@ -62,6 +62,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "consecutive_number",
             "sale_condition",
             "payment_method",
+            "tax_regime",
+            "installment_count",
+            "installment_interval_days",
             "issue_date",
             "currency",
             "exchange_rate",
@@ -81,7 +84,10 @@ class InvoiceCreateSerializer(serializers.Serializer):
     customer = serializers.IntegerField()
     document_type = serializers.ChoiceField(choices=Invoice.DOCUMENT_CHOICES, default=Invoice.DOCUMENT_INVOICE)
     sale_condition = serializers.RegexField(r"^\d{2}$")
-    payment_method = serializers.RegexField(r"^\d{2}$")
+    payment_method = serializers.ChoiceField(choices=Invoice.PAYMENT_METHOD_CHOICES)
+    tax_regime = serializers.ChoiceField(choices=Invoice.TAX_REGIME_CHOICES, default=Invoice.REGIME_SIMPLIFIED)
+    installment_count = serializers.IntegerField(required=False, min_value=1, default=1)
+    installment_interval_days = serializers.IntegerField(required=False, min_value=1, default=30)
     currency = serializers.RegexField(r"^[A-Z]{3}$", default="CRC")
     exchange_rate = serializers.DecimalField(max_digits=10, decimal_places=4, default=Decimal("1.0000"))
     notes = serializers.CharField(required=False, allow_blank=True)
@@ -97,6 +103,14 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
         if customer.status != Customer.STATUS_ACTIVE:
             raise serializers.ValidationError("Solo se puede facturar clientes activos.")
+
+        if attrs["payment_method"] == Invoice.PAYMENT_INSTALLMENTS:
+            if attrs["installment_count"] < 2:
+                raise serializers.ValidationError("La facturación a plazos requiere al menos 2 cuotas.")
+            if attrs["sale_condition"] != "02":
+                raise serializers.ValidationError("Para pago a plazos, la condición de venta debe ser crédito (02).")
+        else:
+            attrs["installment_count"] = 1
 
         consecutive_base = f"00100001{attrs['document_type']}"
         if len(consecutive_base) != 10:
@@ -119,6 +133,9 @@ class InvoiceCreateSerializer(serializers.Serializer):
             consecutive_number=consecutive_number,
             sale_condition=validated_data["sale_condition"],
             payment_method=validated_data["payment_method"],
+            tax_regime=validated_data["tax_regime"],
+            installment_count=validated_data.get("installment_count", 1),
+            installment_interval_days=validated_data.get("installment_interval_days", 30),
             currency=validated_data["currency"],
             exchange_rate=validated_data["exchange_rate"],
             notes=validated_data.get("notes", ""),
@@ -130,13 +147,17 @@ class InvoiceCreateSerializer(serializers.Serializer):
         tax_total = Decimal("0.00")
 
         for index, item in enumerate(validated_data["items"], start=1):
-            product = Product.objects.filter(id=item["product"], organization_id=organization_id, is_active=True).first()
+            product = Product.objects.select_for_update().filter(id=item["product"], organization_id=organization_id, is_active=True).first()
             if not product:
                 raise serializers.ValidationError(f"Producto inválido en la línea {index}.")
 
             quantity = item["quantity"]
             if quantity <= 0:
                 raise serializers.ValidationError(f"Cantidad inválida en la línea {index}.")
+            if quantity != quantity.to_integral_value():
+                raise serializers.ValidationError(
+                    f"La línea {index} usa cantidad decimal ({quantity}), pero el inventario maneja unidades enteras."
+                )
 
             if quantity > product.stock:
                 raise serializers.ValidationError(f"Stock insuficiente para {product.name}.")
@@ -145,7 +166,8 @@ class InvoiceCreateSerializer(serializers.Serializer):
             line_subtotal = money(quantity * unit_price)
             discount_amount = money(line_subtotal * (item.get("discount_percent", Decimal("0.00")) / Decimal("100")))
             taxable = line_subtotal - discount_amount
-            line_tax = money(taxable * (product.tax_rate / Decimal("100")))
+            applied_tax_rate = Decimal("0.00") if invoice.tax_regime == Invoice.REGIME_SIMPLIFIED else product.tax_rate
+            line_tax = money(taxable * (applied_tax_rate / Decimal("100")))
             line_total = taxable + line_tax
 
             InvoiceItem.objects.create(
@@ -156,7 +178,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
                 quantity=quantity,
                 unit_price=unit_price,
                 discount_percent=item.get("discount_percent", Decimal("0.00")),
-                tax_rate=product.tax_rate,
+                tax_rate=applied_tax_rate,
                 subtotal=line_subtotal,
                 discount_amount=discount_amount,
                 tax_amount=line_tax,

@@ -75,13 +75,34 @@ class Invoice(models.Model):
         (DOCUMENT_CREDIT_NOTE, "Nota de crédito"),
     ]
 
+    REGIME_SIMPLIFIED = "simplified"
+    REGIME_GENERAL = "general"
+    TAX_REGIME_CHOICES = [
+        (REGIME_SIMPLIFIED, "Régimen simplificado"),
+        (REGIME_GENERAL, "Régimen general"),
+    ]
+
+    PAYMENT_CASH = "01"
+    PAYMENT_CARD = "02"
+    PAYMENT_TRANSFER = "03"
+    PAYMENT_INSTALLMENTS = "04"
+    PAYMENT_METHOD_CHOICES = [
+        (PAYMENT_CASH, "Efectivo"),
+        (PAYMENT_CARD, "Tarjeta"),
+        (PAYMENT_TRANSFER, "Transferencia"),
+        (PAYMENT_INSTALLMENTS, "A plazos"),
+    ]
+
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT)
     invoice_number = models.CharField(max_length=50)
     document_type = models.CharField(max_length=2, choices=DOCUMENT_CHOICES, default=DOCUMENT_INVOICE)
     consecutive_number = models.CharField(max_length=20)
     sale_condition = models.CharField(max_length=2, default="01")
-    payment_method = models.CharField(max_length=2, default="01")
+    payment_method = models.CharField(max_length=2, choices=PAYMENT_METHOD_CHOICES, default=PAYMENT_CASH)
+    tax_regime = models.CharField(max_length=20, choices=TAX_REGIME_CHOICES, default=REGIME_SIMPLIFIED)
+    installment_count = models.PositiveSmallIntegerField(default=1)
+    installment_interval_days = models.PositiveSmallIntegerField(default=30)
     issue_date = models.DateTimeField(auto_now_add=True)
     currency = models.CharField(max_length=3, default="CRC")
     exchange_rate = models.DecimalField(max_digits=10, decimal_places=4, default=Decimal("1.0000"))
