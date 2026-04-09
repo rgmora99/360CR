@@ -1,4 +1,3 @@
-import re
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
@@ -6,6 +5,7 @@ from rest_framework import serializers
 
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, InvoiceItem, Product
+from apps.suppliers.models import Supplier
 from apps.tenants.models import Membership
 
 
@@ -14,11 +14,30 @@ def money(value):
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    sku = serializers.CharField(required=False, allow_blank=True)
+    sku = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    supplier_name = serializers.CharField(source="supplier.legal_name", read_only=True)
 
     class Meta:
         model = Product
-        fields = ["id", "organization", "sku", "product_type", "name", "unit_price", "tax_rate", "stock", "is_active", "created_at"]
+        fields = [
+            "id",
+            "organization",
+            "sku",
+            "product_type",
+            "name",
+            "description",
+            "physical_location",
+            "supplier",
+            "supplier_name",
+            "unit_price",
+            "cost_price",
+            "tax_rate",
+            "stock",
+            "item_status",
+            "is_active",
+            "created_at",
+        ]
+        validators = []
 
     def validate_name(self, value):
         clean_name = value.strip()
@@ -30,37 +49,52 @@ class ProductSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         product_type = attrs.get("product_type") or getattr(self.instance, "product_type", Product.TYPE_PHYSICAL)
         stock_value = attrs.get("stock", getattr(self.instance, "stock", 0))
+        organization = attrs.get("organization") or getattr(self.instance, "organization", None)
+        supplier = attrs.get("supplier", getattr(self.instance, "supplier", None))
         if product_type == Product.TYPE_SERVICE:
             attrs["stock"] = 0
         elif stock_value is None or stock_value < 0:
             raise serializers.ValidationError({"stock": "El stock debe ser un entero mayor o igual a 0."})
+
+        if supplier and organization and not Supplier.objects.filter(id=supplier.id, organization_id=organization.id).exists():
+            raise serializers.ValidationError({"supplier": "El proveedor debe pertenecer a la misma organización del producto."})
         return attrs
 
-    @staticmethod
-    def _slugify_for_sku(name):
-        compact = re.sub(r"[^A-Z0-9]+", "-", name.upper()).strip("-")
-        return compact[:20] or "ITEM"
-
-    def _generate_sku(self, organization_id, name):
-        prefix = self._slugify_for_sku(name)
-        for sequence in range(1, 10000):
-            candidate = f"{prefix}-{sequence:04d}"
+    def _generate_sku(self, organization_id, product_type):
+        next_number = Product.objects.filter(organization_id=organization_id).count() + 1
+        prefix = "SVC" if product_type == Product.TYPE_SERVICE else "PRD"
+        for sequence in range(next_number, next_number + 10000):
+            candidate = f"{prefix}-{organization_id:03d}-{sequence:06d}"
             exists = Product.objects.filter(organization_id=organization_id, sku=candidate).exclude(id=getattr(self.instance, "id", None)).exists()
             if not exists:
                 return candidate
         raise serializers.ValidationError({"sku": "No fue posible generar un SKU único. Intente con otro nombre."})
 
+    def _resolve_sku(self, validated_data, instance=None):
+        organization = validated_data.get("organization") or getattr(instance, "organization", None)
+        product_type = validated_data.get("product_type") or getattr(instance, "product_type", Product.TYPE_PHYSICAL)
+        explicit_sku = (validated_data.get("sku") or "").strip()
+
+        if explicit_sku:
+            exists = Product.objects.filter(organization_id=organization.id, sku=explicit_sku).exclude(id=getattr(instance, "id", None)).exists()
+            if exists:
+                raise serializers.ValidationError({"sku": "Ya existe un producto con ese SKU en la organización."})
+            return explicit_sku
+
+        if instance and instance.sku:
+            name_changed = "name" in validated_data and validated_data["name"] != instance.name
+            organization_changed = "organization" in validated_data and validated_data["organization"].id != instance.organization.id
+            if not name_changed and not organization_changed:
+                return instance.sku
+
+        return self._generate_sku(organization.id, product_type)
+
     def create(self, validated_data):
-        validated_data["sku"] = self._generate_sku(validated_data["organization"].id, validated_data["name"])
+        validated_data["sku"] = self._resolve_sku(validated_data)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        name = validated_data.get("name", instance.name)
-        organization = validated_data.get("organization", instance.organization)
-        if name != instance.name or not instance.sku:
-            validated_data["sku"] = self._generate_sku(organization.id, name)
-        else:
-            validated_data["sku"] = instance.sku
+        validated_data["sku"] = self._resolve_sku(validated_data, instance=instance)
         return super().update(instance, validated_data)
 
 

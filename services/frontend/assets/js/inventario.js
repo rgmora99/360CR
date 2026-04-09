@@ -1,6 +1,6 @@
 (function initInventario() {
   const $ = (id) => document.getElementById(id);
-  const state = { products: [] };
+  const state = { products: [], organizations: [], suppliers: [] };
   const apiBase = () => '/api';
   function orgId() {
     const raw = ($('organization-id').value || window.AppSession?.getActiveOrganizationId?.() || '').toString().trim();
@@ -53,6 +53,15 @@
     if (payload.product_type === 'physical' && (!Number.isInteger(payload.stock) || payload.stock < 0)) {
       throw new Error('El stock debe ser un entero mayor o igual a 0.');
     }
+    if (!Number.isFinite(payload.cost_price) || payload.cost_price <= 0) {
+      throw new Error('El costo debe ser un número mayor a 0.');
+    }
+  }
+
+  function statusLabel(code) {
+    if (code === 'damaged') return 'Dañado';
+    if (code === 'raw_material') return 'Materia prima';
+    return 'Buen estado';
   }
 
   async function loadProducts() {
@@ -62,10 +71,46 @@
       data
         .map(
           (p) =>
-            `<tr><td>${p.sku}</td><td>${p.name} ${p.product_type === 'service' ? '(Servicio)' : ''}</td><td>${p.unit_price}</td><td>${p.product_type === 'service' ? 'N/A' : p.stock}</td><td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td></tr>`,
+            `<tr>
+              <td>${p.sku}</td>
+              <td><strong>${p.name}</strong><br><small>${p.description || '-'}</small></td>
+              <td>${p.physical_location || '-'}</td>
+              <td>${p.supplier_name || '-'}</td>
+              <td>${p.cost_price}</td>
+              <td>${p.unit_price}</td>
+              <td>${p.product_type === 'service' ? 'N/A' : p.stock}</td>
+              <td>${statusLabel(p.item_status)}</td>
+              <td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td>
+            </tr>`,
         )
         .join('') ||
-      '<tr><td colspan="5">Sin productos</td></tr>';
+      '<tr><td colspan="9">Sin productos</td></tr>';
+  }
+
+  function renderLocations() {
+    const options = ['<option value="">Selecciona ubicación</option>']
+      .concat(state.organizations.map((org) => `<option value="${org.name}">${org.name} (Sucursal #${org.id})</option>`))
+      .join('');
+    $('physical-location').innerHTML = options;
+  }
+
+  function renderSuppliers() {
+    const options = ['<option value="">Sin proveedor</option>']
+      .concat(state.suppliers.map((supplier) => `<option value="${supplier.id}">${supplier.legal_name}</option>`))
+      .join('');
+    $('supplier-id').innerHTML = options;
+  }
+
+  async function loadOrganizations() {
+    state.organizations = await request('/organizations/');
+    renderLocations();
+  }
+
+  async function loadSuppliers() {
+    const organization = orgId();
+    const suppliers = await request(`/suppliers/?organization_id=${organization}`);
+    state.suppliers = suppliers.filter((item) => item.status === 'active');
+    renderSuppliers();
   }
 
   $('product-form').addEventListener('submit', async (e) => {
@@ -76,10 +121,15 @@
       const payload = {
         organization: orgId(),
         name: $('product-name').value.trim(),
+        description: $('description').value.trim(),
+        physical_location: $('physical-location').value.trim(),
+        supplier: $('supplier-id').value ? Number($('supplier-id').value) : null,
         product_type: $('product-type').value,
         unit_price: Number($('unit-price').value),
+        cost_price: Number($('cost-price').value),
         tax_rate: Number($('tax-rate').value),
         stock: isService ? 0 : Number($('stock').value),
+        item_status: $('item-status').value,
         is_active: true,
       };
       validatePayload(payload);
@@ -88,6 +138,8 @@
       $('product-id').value = '';
       $('tax-rate').value = 13;
       $('stock').value = 0;
+      $('cost-price').value = '0.01';
+      $('item-status').value = 'ok';
       $('sku').value = 'Se generará automáticamente';
       $('product-type').value = 'physical';
       updateStockState();
@@ -106,10 +158,15 @@
       $('product-id').value = p.id;
       $('sku').value = p.sku;
       $('product-name').value = p.name;
+      $('description').value = p.description || '';
+      $('physical-location').value = p.physical_location || '';
+      $('supplier-id').value = p.supplier || '';
       $('product-type').value = p.product_type || 'physical';
       $('unit-price').value = p.unit_price;
+      $('cost-price').value = p.cost_price;
       $('tax-rate').value = p.tax_rate;
       $('stock').value = p.stock;
+      $('item-status').value = p.item_status || 'ok';
       updateStockState();
     }
     if (delId) {
@@ -120,9 +177,16 @@
   });
 
   $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || $('organization-id').value;
-  $('organization-id').addEventListener('change', () => localStorage.setItem('activeOrganizationId', $('organization-id').value));
+  $('organization-id').addEventListener('change', async () => {
+    localStorage.setItem('activeOrganizationId', $('organization-id').value);
+    try {
+      await Promise.all([loadProducts(), loadSuppliers()]);
+    } catch (error) {
+      feedback(error.message, true);
+    }
+  });
   $('product-type').addEventListener('change', updateStockState);
   $('sku').value = 'Se generará automáticamente';
   updateStockState();
-  loadProducts().catch((e) => feedback(e.message, true));
+  Promise.all([loadOrganizations(), loadSuppliers(), loadProducts()]).catch((e) => feedback(e.message, true));
 })();
