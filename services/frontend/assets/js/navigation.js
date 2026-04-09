@@ -1,5 +1,6 @@
 (function initSharedNavigation() {
   const SESSION_KEY = 'cr360.session';
+  const LEGACY_ORG_KEY = 'activeOrganizationId';
 
   function loadCachedSession() {
     try {
@@ -12,6 +13,47 @@
   function saveSession(sessionData) {
     localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData || {}));
   }
+
+  function normalizeSession(sessionData) {
+    const organizations = Array.isArray(sessionData?.organizations) ? sessionData.organizations : [];
+    const availableIds = organizations.map((org) => Number(org.id)).filter((id) => Number.isFinite(id) && id > 0);
+    const requested = Number(sessionData?.active_organization_id);
+    const fallback = availableIds[0] || null;
+    const activeId = availableIds.includes(requested) ? requested : fallback;
+    return {
+      ...sessionData,
+      organizations,
+      active_organization_id: activeId,
+    };
+  }
+
+  window.AppSession = {
+    getSession() {
+      return normalizeSession(loadCachedSession());
+    },
+    save(sessionData) {
+      const normalized = normalizeSession(sessionData);
+      saveSession(normalized);
+      return normalized;
+    },
+    getOrganizations() {
+      return this.getSession().organizations || [];
+    },
+    getActiveOrganizationId() {
+      const session = this.getSession();
+      return Number(session.active_organization_id) || null;
+    },
+    setActiveOrganizationId(organizationId) {
+      const current = this.getSession();
+      const selectedId = Number(organizationId);
+      const exists = (current.organizations || []).some((org) => Number(org.id) === selectedId);
+      const next = {
+        ...current,
+        active_organization_id: exists ? selectedId : current.active_organization_id,
+      };
+      saveSession(normalizeSession(next));
+    },
+  };
 
   async function fetchSession() {
     const response = await fetch('/api/auth/session/', {
@@ -72,7 +114,7 @@
       { key: 'configuraciones', label: 'Configuraciones', href: '/configuraciones.html' },
     ];
 
-    const cachedSession = loadCachedSession();
+    const cachedSession = window.AppSession.getSession();
     const topbarState = getTopbarState(cachedSession);
 
     const menuMarkup = menuItems
@@ -168,8 +210,8 @@
     const organizationSwitcher = document.getElementById('organization-switcher');
     organizationSwitcher?.addEventListener('change', () => {
       const selectedId = Number(organizationSwitcher.value);
-      const currentSession = loadCachedSession();
-      saveSession({ ...currentSession, active_organization_id: selectedId });
+      const currentSession = window.AppSession.getSession();
+      window.AppSession.setActiveOrganizationId(selectedId);
       const selected = (currentSession.organizations || []).find((org) => org.id === selectedId);
       const nameNode = document.getElementById('active-organization-name');
       if (nameNode) {
@@ -179,8 +221,15 @@
 
     fetchSession()
       .then((sessionData) => {
-        saveSession(sessionData);
-        const refreshedState = getTopbarState(sessionData);
+        const current = window.AppSession.getSession();
+        const preferredId = Number(current?.active_organization_id);
+        const mergedSession = {
+          ...sessionData,
+          active_organization_id: preferredId || sessionData?.active_organization_id,
+        };
+        const normalizedSession = window.AppSession.save(mergedSession);
+        localStorage.removeItem(LEGACY_ORG_KEY);
+        const refreshedState = getTopbarState(normalizedSession);
         const orgNameNode = document.getElementById('active-organization-name');
         const userNode = document.getElementById('active-user-label');
         if (orgNameNode) {

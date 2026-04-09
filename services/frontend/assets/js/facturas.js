@@ -1,7 +1,13 @@
 (function initFacturas() {
   const $ = (id) => document.getElementById(id);
   const apiBase = () => '/api';
-  const orgId = () => Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
+  const orgId = () => {
+    const id = Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
+    if (!id || id < 1) {
+      throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
+    }
+    return id;
+  };
   const logPrefix = '[Facturas API]';
 
   async function request(path, options) {
@@ -41,7 +47,7 @@
     feedback('Correo enviado al cliente.');
   });
 
-  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || $('organization-id').value;
-  $('organization-id').addEventListener('change', () => localStorage.setItem('activeOrganizationId', $('organization-id').value));
+  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || '';
+  $('organization-id').addEventListener('change', () => window.AppSession?.setActiveOrganizationId?.($('organization-id').value));
   loadInvoices().catch((e) => feedback(e.message, true));
 })();

@@ -4,6 +4,7 @@
   const systemSettingsGroups = document.getElementById('system-settings-groups');
   const organizationsList = document.getElementById('organizations-list');
   const orgNameInput = document.getElementById('org-name');
+  const orgParentSelect = document.getElementById('org-parent');
   const createOrganizationButton = document.getElementById('create-organization');
   const orgFeedback = document.getElementById('org-feedback');
   const inviteEmailInput = document.getElementById('invite-email');
@@ -20,6 +21,7 @@
     !rolesGroups ||
     !systemSettingsGroups ||
     !organizationsList ||
+    !orgParentSelect ||
     !inviteEmailInput ||
     !inviteRoleSelect ||
     !createInvitationButton ||
@@ -105,14 +107,23 @@
   const renderOrganizations = (organizations) => {
     if (!organizations.length) {
       organizationsList.innerHTML = '<li>Sin organizaciones registradas.</li>';
+      orgParentSelect.innerHTML = '<option value="">Sin padre (organización raíz)</option>';
       return;
     }
+
+    orgParentSelect.innerHTML = ['<option value="">Sin padre (organización raíz)</option>']
+      .concat(
+        organizations.map(
+          (organization) => `<option value="${organization.id}">${organization.name} (#${organization.id})</option>`,
+        ),
+      )
+      .join('');
 
     organizationsList.innerHTML = organizations
       .map(
         (organization) => `<li>
           <strong>${organization.name}</strong>
-          <span>ID #${organization.id}</span>
+          <span>ID #${organization.id}${organization.parent_organization ? ` · Sucursal de #${organization.parent_organization}` : ' · Organización raíz'}</span>
         </li>`,
       )
       .join('');
@@ -137,11 +148,13 @@
     }
 
     try {
+      const parentOrganization = orgParentSelect.value ? Number(orgParentSelect.value) : null;
       const created = await orgRequest('/organizations/', {
         method: 'POST',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, parent_organization: parentOrganization }),
       });
       orgNameInput.value = '';
+      orgParentSelect.value = '';
       setOrgFeedback(`Organización creada: ${created.name} (#${created.id}).`);
       await loadOrganizations();
     } catch (error) {

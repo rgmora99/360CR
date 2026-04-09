@@ -3,7 +3,13 @@
   const state = { customers: [], products: [], lines: [] };
 
   const apiBase = () => '/api';
-  const orgId = () => Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
+  const orgId = () => {
+    const id = Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
+    if (!id || id < 1) {
+      throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
+    }
+    return id;
+  };
   const logPrefix = '[Facturacion API]';
 
   async function request(path, options) {
@@ -135,7 +141,7 @@
   });
 
   syncInstallmentsUI();
-  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || $('organization-id').value;
-  $('organization-id').addEventListener('change', () => localStorage.setItem('activeOrganizationId', $('organization-id').value));
+  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || '';
+  $('organization-id').addEventListener('change', () => window.AppSession?.setActiveOrganizationId?.($('organization-id').value));
   Promise.all([loadCustomers(), loadProducts()]).catch((e) => setFeedback(e.message, true));
 })();

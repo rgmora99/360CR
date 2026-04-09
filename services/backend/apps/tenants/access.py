@@ -1,12 +1,29 @@
 from rest_framework.exceptions import PermissionDenied
 
-from apps.tenants.models import Membership
+from apps.tenants.models import Membership, Organization
 
 
 def get_allowed_organization_ids(user):
     if not user.is_authenticated:
         return []
-    return list(Membership.objects.filter(user=user).values_list("organization_id", flat=True))
+    direct_ids = set(Membership.objects.filter(user=user).values_list("organization_id", flat=True))
+    if not direct_ids:
+        return []
+
+    allowed_ids = set(direct_ids)
+    pending_parents = set(direct_ids)
+
+    # Incluye sucursales/hijas de manera recursiva para habilitar estructuras jerárquicas.
+    while pending_parents:
+        children = set(
+            Organization.objects.filter(parent_organization_id__in=pending_parents).values_list("id", flat=True)
+        ) - allowed_ids
+        if not children:
+            break
+        allowed_ids.update(children)
+        pending_parents = children
+
+    return sorted(allowed_ids)
 
 
 class OrganizationScopedViewMixin:

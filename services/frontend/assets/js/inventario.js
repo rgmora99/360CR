@@ -6,7 +6,7 @@
     const raw = ($('organization-id').value || window.AppSession?.getActiveOrganizationId?.() || '').toString().trim();
     const numeric = Number(raw.replace(/[^\d]/g, ''));
     if (!numeric || numeric < 1) {
-      throw new Error('Debe indicar un organization_id válido (entero mayor a 0).');
+      throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
     }
     return numeric;
   }
@@ -176,9 +176,9 @@
     }
   });
 
-  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || $('organization-id').value;
+  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || '';
   $('organization-id').addEventListener('change', async () => {
-    localStorage.setItem('activeOrganizationId', $('organization-id').value);
+    window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
     try {
       await Promise.all([loadProducts(), loadSuppliers()]);
     } catch (error) {

@@ -56,10 +56,11 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 class OrganizationSerializer(serializers.ModelSerializer):
     slug = serializers.SlugField(required=False, allow_blank=True)
+    parent_organization_name = serializers.CharField(source="parent_organization.name", read_only=True)
 
     class Meta:
         model = Organization
-        fields = ["id", "name", "slug"]
+        fields = ["id", "name", "slug", "parent_organization", "parent_organization_name"]
         extra_kwargs = {
             "name": {"required": True},
         }
