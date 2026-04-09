@@ -14,11 +14,12 @@ def money(value):
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    sku = serializers.CharField(required=False, allow_blank=True)
+    sku = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Product
         fields = ["id", "organization", "sku", "product_type", "name", "unit_price", "tax_rate", "stock", "is_active", "created_at"]
+        validators = []
 
     def validate_name(self, value):
         clean_name = value.strip()
@@ -50,17 +51,31 @@ class ProductSerializer(serializers.ModelSerializer):
                 return candidate
         raise serializers.ValidationError({"sku": "No fue posible generar un SKU único. Intente con otro nombre."})
 
+    def _resolve_sku(self, validated_data, instance=None):
+        organization = validated_data.get("organization") or getattr(instance, "organization", None)
+        name = validated_data.get("name") or getattr(instance, "name", "")
+        explicit_sku = (validated_data.get("sku") or "").strip()
+
+        if explicit_sku:
+            exists = Product.objects.filter(organization_id=organization.id, sku=explicit_sku).exclude(id=getattr(instance, "id", None)).exists()
+            if exists:
+                raise serializers.ValidationError({"sku": "Ya existe un producto con ese SKU en la organización."})
+            return explicit_sku
+
+        if instance and instance.sku:
+            name_changed = "name" in validated_data and validated_data["name"] != instance.name
+            organization_changed = "organization" in validated_data and validated_data["organization"].id != instance.organization.id
+            if not name_changed and not organization_changed:
+                return instance.sku
+
+        return self._generate_sku(organization.id, name)
+
     def create(self, validated_data):
-        validated_data["sku"] = self._generate_sku(validated_data["organization"].id, validated_data["name"])
+        validated_data["sku"] = self._resolve_sku(validated_data)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        name = validated_data.get("name", instance.name)
-        organization = validated_data.get("organization", instance.organization)
-        if name != instance.name or not instance.sku:
-            validated_data["sku"] = self._generate_sku(organization.id, name)
-        else:
-            validated_data["sku"] = instance.sku
+        validated_data["sku"] = self._resolve_sku(validated_data, instance=instance)
         return super().update(instance, validated_data)
 
 
