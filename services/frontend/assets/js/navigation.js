@@ -57,7 +57,7 @@
       { key: 'inicio', label: 'Inicio', href: '/dashboard.html' },
       { key: 'clientes', label: 'Clientes', href: '/customers.html' },
       { key: 'proveedores', label: 'Proveedores', href: '/suppliers.html' },
-      { key: 'agenda', label: 'Agenda', href: '#' },
+      { key: 'agenda', label: 'Agenda', href: '/agenda.html' },
       {
         key: 'facturacion-menu',
         label: 'Facturación',
