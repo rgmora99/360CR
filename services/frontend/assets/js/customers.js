@@ -2,7 +2,6 @@
   const API_BASE = '/api';
   const organizationIdInput = document.getElementById('organization-id');
   const searchInput = document.getElementById('search');
-  const loadButton = document.getElementById('load-customers');
   const customersBody = document.getElementById('customers-body');
   const feedback = document.getElementById('feedback');
 
@@ -32,6 +31,7 @@
   let customers = [];
   let customerTypes = [];
   let organizations = [];
+  let customersLoaded = false;
   const SESSION_KEY = 'cr360.session';
 
   function getActiveOrganizationFromSession() {
@@ -254,6 +254,18 @@
     }
   }
 
+
+  function formatCustomerType(typeCode) {
+    if (typeCode === 'fisico') return 'Persona física';
+    if (typeCode === 'juridico') return 'Persona jurídica';
+    return typeCode || '-';
+  }
+
+  function formatCustomerStatus(status) {
+    const labels = { active: 'Activo', inactive: 'Inactivo', blocked: 'Bloqueado' };
+    return labels[status] || status || '-';
+  }
+
   function renderTable() {
     const term = searchInput.value.trim().toLowerCase();
 
@@ -274,9 +286,9 @@
       const typeCode = getTypeCode(item.customer_type) || '-';
       tr.innerHTML = `
         <td>${item.code}</td>
-        <td>${typeCode}</td>
+        <td>${formatCustomerType(typeCode)}</td>
         <td>${item.legal_name}</td>
-        <td>${item.status}</td>
+        <td><span class="status status-${item.status}">${formatCustomerStatus(item.status)}</span></td>
         <td>
           <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
           <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
@@ -313,9 +325,11 @@
       if (!fields.id.value) {
         fields.code.value = nextCustomerCode();
       }
-      setFeedback(`Se cargaron ${data.length} clientes.`);
+      customersLoaded = true;
+      setFeedback(`Mostrando ${data.length} cliente${data.length === 1 ? '' : 's'} de la organización seleccionada.`);
     } catch (error) {
       logError('Error al cargar clientes', error.message);
+      customersLoaded = false;
       setFeedback(`Error al cargar clientes: ${error.message}`, true);
     }
   }
@@ -410,8 +424,12 @@
 
   fields.type.addEventListener('change', () => syncFormLabelsFromType(fields.type.value));
   searchInput.addEventListener('input', renderTable);
-  loadButton.addEventListener('click', loadCustomers);
   organizationIdInput.addEventListener('change', loadCustomers);
+
+  window.addEventListener('focus', () => {
+    if (!customersLoaded) return;
+    loadCustomers();
+  });
 
   logInfo('Inicializando módulo clientes', { apiBase: getApiBase(), organizationId: organizationIdInput.value });
 

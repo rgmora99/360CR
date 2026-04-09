@@ -8,11 +8,24 @@
   margin: 0.7rem 0;
 }
 
+.module-header .subtitle {
+  max-width: 72ch;
+  line-height: 1.5;
+}
+
 .filters {
   display: grid;
-  grid-template-columns: 220px 220px 1fr auto;
+  grid-template-columns: minmax(220px, 260px) minmax(260px, 1fr);
   gap: 0.8rem;
   align-items: end;
+}
+
+.filters-hint {
+  margin: 0;
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.85rem;
+  opacity: 0.9;
 }
 
 label {
@@ -67,6 +80,35 @@ td {
   padding: 0.7rem 0.4rem;
 }
 
+.status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+
+.status-active {
+  color: #8af4b1;
+  background: rgba(32, 124, 76, 0.2);
+  border-color: rgba(132, 237, 176, 0.35);
+}
+
+.status-inactive {
+  color: #ffd27b;
+  background: rgba(133, 103, 34, 0.2);
+  border-color: rgba(255, 209, 120, 0.35);
+}
+
+.status-blocked {
+  color: #ff9c9c;
+  background: rgba(128, 43, 43, 0.2);
+  border-color: rgba(255, 148, 148, 0.35);
+}
+
 td .btn {
   padding: 0.4rem 0.65rem;
   font-size: 0.8rem;
@@ -75,7 +117,7 @@ td .btn {
 
 @media (max-width: 1200px) {
   .filters {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .grid {
