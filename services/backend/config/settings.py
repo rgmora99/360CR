@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     "apps.suppliers",
     "apps.configuration",
     "apps.agenda",
+    "apps.loyalty",
 ]
 
 MIDDLEWARE = [
