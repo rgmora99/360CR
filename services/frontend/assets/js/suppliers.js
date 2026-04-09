@@ -1,6 +1,5 @@
 (function initSuppliersModule() {
   const searchInput = document.getElementById('search');
-  const loadButton = document.getElementById('load-suppliers');
   const suppliersBody = document.getElementById('suppliers-body');
   const feedback = document.getElementById('feedback');
 
@@ -29,6 +28,7 @@
 
   let suppliers = [];
   let supplierTypes = [];
+  let suppliersLoaded = false;
 
   function getApiBase() {
     const value = '/api';
@@ -133,6 +133,18 @@
     };
   }
 
+
+  function formatSupplierType(typeCode) {
+    if (typeCode === 'fisico') return 'Persona física';
+    if (typeCode === 'juridico') return 'Persona jurídica';
+    return typeCode || '-';
+  }
+
+  function formatSupplierStatus(status) {
+    const labels = { active: 'Activo', inactive: 'Inactivo', blocked: 'Bloqueado' };
+    return labels[status] || status || '-';
+  }
+
   function renderTable() {
     const term = searchInput.value.trim().toLowerCase();
 
@@ -153,9 +165,9 @@
       const typeCode = getTypeCode(item.supplier_type) || '-';
       tr.innerHTML = `
         <td>${item.code}</td>
-        <td>${typeCode}</td>
+        <td>${formatSupplierType(typeCode)}</td>
         <td>${item.legal_name}</td>
-        <td>${item.status}</td>
+        <td><span class="status status-${item.status}">${formatSupplierStatus(item.status)}</span></td>
         <td>
           <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
           <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
@@ -205,8 +217,10 @@
       if (!fields.id.value) {
         fields.code.value = nextSupplierCode();
       }
-      setFeedback(`Se cargaron ${data.length} proveedores.`);
+      suppliersLoaded = true;
+      setFeedback(`Mostrando ${data.length} proveedor${data.length === 1 ? '' : 'es'} en la lista.`);
     } catch (error) {
+      suppliersLoaded = false;
       setFeedback(`Error al cargar proveedores: ${error.message}`, true);
     }
   }
@@ -298,7 +312,11 @@
 
   fields.type.addEventListener('change', refreshPersonKindLabels);
   searchInput.addEventListener('input', renderTable);
-  loadButton.addEventListener('click', loadSuppliers);
+
+  window.addEventListener('focus', () => {
+    if (!suppliersLoaded) return;
+    loadSuppliers();
+  });
 
   loadSupplierTypes()
     .then(loadSuppliers)
