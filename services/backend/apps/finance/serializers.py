@@ -1,4 +1,3 @@
-import re
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
@@ -34,7 +33,6 @@ class ProductSerializer(serializers.ModelSerializer):
             "cost_price",
             "tax_rate",
             "stock",
-            "reorder_level",
             "item_status",
             "is_active",
             "created_at",
@@ -62,15 +60,11 @@ class ProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"supplier": "El proveedor debe pertenecer a la misma organización del producto."})
         return attrs
 
-    @staticmethod
-    def _slugify_for_sku(name):
-        compact = re.sub(r"[^A-Z0-9]+", "-", name.upper()).strip("-")
-        return compact[:20] or "ITEM"
-
-    def _generate_sku(self, organization_id, name):
+    def _generate_sku(self, organization_id, product_type):
         next_number = Product.objects.filter(organization_id=organization_id).count() + 1
+        prefix = "SVC" if product_type == Product.TYPE_SERVICE else "PRD"
         for sequence in range(next_number, next_number + 10000):
-            candidate = f"PRD-{organization_id:03d}-{sequence:06d}"
+            candidate = f"{prefix}-{organization_id:03d}-{sequence:06d}"
             exists = Product.objects.filter(organization_id=organization_id, sku=candidate).exclude(id=getattr(self.instance, "id", None)).exists()
             if not exists:
                 return candidate
@@ -78,7 +72,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def _resolve_sku(self, validated_data, instance=None):
         organization = validated_data.get("organization") or getattr(instance, "organization", None)
-        name = validated_data.get("name") or getattr(instance, "name", "")
+        product_type = validated_data.get("product_type") or getattr(instance, "product_type", Product.TYPE_PHYSICAL)
         explicit_sku = (validated_data.get("sku") or "").strip()
 
         if explicit_sku:
@@ -93,7 +87,7 @@ class ProductSerializer(serializers.ModelSerializer):
             if not name_changed and not organization_changed:
                 return instance.sku
 
-        return self._generate_sku(organization.id, name)
+        return self._generate_sku(organization.id, product_type)
 
     def create(self, validated_data):
         validated_data["sku"] = self._resolve_sku(validated_data)

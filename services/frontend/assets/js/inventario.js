@@ -1,6 +1,6 @@
 (function initInventario() {
   const $ = (id) => document.getElementById(id);
-  const state = { products: [] };
+  const state = { products: [], organizations: [], suppliers: [] };
   const apiBase = () => '/api';
   function orgId() {
     const raw = ($('organization-id').value || window.AppSession?.getActiveOrganizationId?.() || '').toString().trim();
@@ -56,9 +56,6 @@
     if (!Number.isFinite(payload.cost_price) || payload.cost_price <= 0) {
       throw new Error('El costo debe ser un número mayor a 0.');
     }
-    if (!Number.isInteger(payload.reorder_level) || payload.reorder_level < 0) {
-      throw new Error('El nivel de reorden debe ser un entero mayor o igual a 0.');
-    }
   }
 
   function statusLabel(code) {
@@ -82,13 +79,38 @@
               <td>${p.cost_price}</td>
               <td>${p.unit_price}</td>
               <td>${p.product_type === 'service' ? 'N/A' : p.stock}</td>
-              <td>${p.reorder_level ?? 0}</td>
               <td>${statusLabel(p.item_status)}</td>
               <td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td>
             </tr>`,
         )
         .join('') ||
-      '<tr><td colspan="10">Sin productos</td></tr>';
+      '<tr><td colspan="9">Sin productos</td></tr>';
+  }
+
+  function renderLocations() {
+    const options = ['<option value="">Selecciona ubicación</option>']
+      .concat(state.organizations.map((org) => `<option value="${org.name}">${org.name} (Sucursal #${org.id})</option>`))
+      .join('');
+    $('physical-location').innerHTML = options;
+  }
+
+  function renderSuppliers() {
+    const options = ['<option value="">Sin proveedor</option>']
+      .concat(state.suppliers.map((supplier) => `<option value="${supplier.id}">${supplier.legal_name}</option>`))
+      .join('');
+    $('supplier-id').innerHTML = options;
+  }
+
+  async function loadOrganizations() {
+    state.organizations = await request('/organizations/');
+    renderLocations();
+  }
+
+  async function loadSuppliers() {
+    const organization = orgId();
+    const suppliers = await request(`/suppliers/?organization_id=${organization}`);
+    state.suppliers = suppliers.filter((item) => item.status === 'active');
+    renderSuppliers();
   }
 
   $('product-form').addEventListener('submit', async (e) => {
@@ -107,7 +129,6 @@
         cost_price: Number($('cost-price').value),
         tax_rate: Number($('tax-rate').value),
         stock: isService ? 0 : Number($('stock').value),
-        reorder_level: Number($('reorder-level').value),
         item_status: $('item-status').value,
         is_active: true,
       };
@@ -117,7 +138,6 @@
       $('product-id').value = '';
       $('tax-rate').value = 13;
       $('stock').value = 0;
-      $('reorder-level').value = 0;
       $('cost-price').value = '0.01';
       $('item-status').value = 'ok';
       $('sku').value = 'Se generará automáticamente';
@@ -146,7 +166,6 @@
       $('cost-price').value = p.cost_price;
       $('tax-rate').value = p.tax_rate;
       $('stock').value = p.stock;
-      $('reorder-level').value = p.reorder_level ?? 0;
       $('item-status').value = p.item_status || 'ok';
       updateStockState();
     }
@@ -158,9 +177,16 @@
   });
 
   $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || $('organization-id').value;
-  $('organization-id').addEventListener('change', () => localStorage.setItem('activeOrganizationId', $('organization-id').value));
+  $('organization-id').addEventListener('change', async () => {
+    localStorage.setItem('activeOrganizationId', $('organization-id').value);
+    try {
+      await Promise.all([loadProducts(), loadSuppliers()]);
+    } catch (error) {
+      feedback(error.message, true);
+    }
+  });
   $('product-type').addEventListener('change', updateStockState);
   $('sku').value = 'Se generará automáticamente';
   updateStockState();
-  loadProducts().catch((e) => feedback(e.message, true));
+  Promise.all([loadOrganizations(), loadSuppliers(), loadProducts()]).catch((e) => feedback(e.message, true));
 })();
