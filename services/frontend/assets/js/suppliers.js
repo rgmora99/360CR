@@ -36,9 +36,9 @@
   }
 
   function getOrganizationId() {
-    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.() || localStorage.getItem('activeOrganizationId') || 1);
+    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
     if (!organizationId || organizationId < 1) {
-      throw new Error('Debe indicar un organization_id válido.');
+      throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
     }
     return organizationId;
   }

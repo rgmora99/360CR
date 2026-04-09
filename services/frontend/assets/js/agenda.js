@@ -33,10 +33,9 @@
   }
 
   function getOrganizationId() {
-    const session = JSON.parse(localStorage.getItem('cr360.session') || '{}');
-    const organizationId = Number(session?.active_organization_id || session?.organizations?.[0]?.id || 1);
+    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
     if (!organizationId || organizationId < 1) {
-      throw new Error('Debe indicar un organization_id válido.');
+      throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
     }
     return organizationId;
   }

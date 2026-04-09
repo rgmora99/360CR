@@ -1,4 +1,5 @@
 from rest_framework import viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 
 from apps.customers.models import Customer, CustomerAddress, CustomerContact, CustomerType
@@ -9,7 +10,7 @@ from apps.customers.serializers import (
     CustomerTypeSerializer,
     OrganizationSerializer,
 )
-from apps.tenants.models import Organization
+from apps.tenants.models import Membership, Organization
 from apps.tenants.access import OrganizationScopedViewMixin
 
 
@@ -44,7 +45,16 @@ class OrganizationViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         return Organization.objects.all().order_by("id").filter(id__in=self.get_allowed_organization_ids())
 
     def perform_create(self, serializer):
-        serializer.save()
+        parent = serializer.validated_data.get("parent_organization")
+        if parent and parent.id not in self.get_allowed_organization_ids():
+            raise PermissionDenied("No tiene acceso a la organización padre seleccionada")
+
+        organization = serializer.save()
+        Membership.objects.get_or_create(
+            user=self.request.user,
+            organization=organization,
+            defaults={"role": Membership.ROLE_OWNER},
+        )
 
 
 class CustomerContactViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
