@@ -1,7 +1,7 @@
 (function initConfiguracionesModule() {
   const usersList = document.getElementById('users-list');
   const rolesGroups = document.getElementById('roles-groups');
-  const systemSettingsList = document.getElementById('system-settings-list');
+  const systemSettingsGroups = document.getElementById('system-settings-groups');
   const organizationsList = document.getElementById('organizations-list');
   const orgNameInput = document.getElementById('org-name');
   const createOrganizationButton = document.getElementById('create-organization');
@@ -18,7 +18,7 @@
   if (
     !usersList ||
     !rolesGroups ||
-    !systemSettingsList ||
+    !systemSettingsGroups ||
     !organizationsList ||
     !inviteEmailInput ||
     !inviteRoleSelect ||
@@ -33,6 +33,12 @@
     it_admin: 'Administrador de TI',
     business_manager: 'Jefatura / Dirección',
     cross_functional: 'Uso transversal',
+  };
+  const settingCategoryLabels = {
+    security: 'Seguridad',
+    operations: 'Operaciones',
+    finance: 'Finanzas',
+    notifications: 'Notificaciones',
   };
 
   const showError = (message) => {
@@ -264,17 +270,37 @@
 
   const renderSettings = (settings) => {
     if (!settings.length) {
-      systemSettingsList.innerHTML = '<li>Sin parámetros cargados.</li>';
+      systemSettingsGroups.innerHTML = '<p class="section-help">Sin parámetros cargados.</p>';
       return;
     }
 
-    systemSettingsList.innerHTML = settings
+    const groupedSettings = settings.reduce((acc, setting) => {
+      if (!acc[setting.category]) {
+        acc[setting.category] = [];
+      }
+      acc[setting.category].push(setting);
+      return acc;
+    }, {});
+
+    systemSettingsGroups.innerHTML = Object.entries(groupedSettings)
+      .sort(([categoryA], [categoryB]) => categoryA.localeCompare(categoryB))
       .map(
-        (setting) => `<li>
-          <strong>${setting.key}</strong>
-          <span>${setting.description}</span>
-          <small>Categoría: ${setting.category}${setting.is_sensitive ? ' · Sensible' : ''}</small>
-        </li>`,
+        ([category, categorySettings]) => `
+          <section class="settings-group-card">
+            <h3>${settingCategoryLabels[category] || category}</h3>
+            <ul class="settings-list">
+              ${categorySettings
+                .map(
+                  (setting) => `<li>
+                    <strong>${setting.key}</strong>
+                    <span>${setting.description}</span>
+                    <small>${setting.is_sensitive ? 'Parámetro sensible' : 'Parámetro estándar'}</small>
+                  </li>`,
+                )
+                .join('')}
+            </ul>
+          </section>
+        `,
       )
       .join('');
   };
