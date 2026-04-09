@@ -109,6 +109,7 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  padding-block: 0.85rem;
 }
 
 .menu-toggle {
@@ -128,7 +129,7 @@ body {
 
 .workspace .label {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -136,33 +137,44 @@ body {
 
 .workspace strong {
   display: block;
-  margin-top: 0.2rem;
+  margin-top: 0.1rem;
+  line-height: 1.2;
 }
 
 .workspace .subtitle {
-  margin: 0.2rem 0 0;
+  margin: 0.12rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 
 .topbar-controls {
   display: flex;
   gap: 0.8rem;
+  align-items: center;
 }
 
-.topbar-controls label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+.topbar-field {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 220px);
+  align-items: center;
+  gap: 0.45rem;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.topbar-field span {
+  opacity: 0.9;
 }
 
 .topbar-controls select {
-  min-width: 180px;
+  min-width: 150px;
+  max-width: 220px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(10, 18, 34, 0.9);
   color: var(--txt);
-  padding: 0.55rem 0.65rem;
+  padding: 0.44rem 0.58rem;
 }
 
 .content {
@@ -296,10 +308,17 @@ h1 {
 
   .topbar-controls {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topbar-field {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
   }
 
   .topbar-controls select {
     min-width: 100%;
+    max-width: none;
   }
 }
 

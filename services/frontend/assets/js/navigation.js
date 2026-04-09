@@ -123,8 +123,8 @@
         <p class="subtitle">Usuario: <span id="active-user-label">${topbarState.userLabel}</span></p>
       </div>
       <div class="topbar-controls">
-        <label>
-          Negocio
+        <label class="topbar-field">
+          <span>Negocio</span>
           <select id="organization-switcher">
             ${topbarState.organizations
               .map(
@@ -134,8 +134,8 @@
               .join('') || '<option value="">Sin organizaciones</option>'}
           </select>
         </label>
-        <label>
-          Perfil
+        <label class="topbar-field">
+          <span>Perfil</span>
           <select>
             <option>${topbarState.userLabel}</option>
           </select>
