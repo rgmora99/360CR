@@ -338,3 +338,33 @@ Con esta estructura:
 - Componentes reutilizables (`botones`, `cards`, `navbar`) en `components.css`.
 - Estilos por pantalla en `pages/`.
 - Lógica JS separada por contexto (`main.js`, `auth.js`).
+
+## Módulo de fidelización (Loyalty)
+Se agregó un módulo completo y escalable de fidelización de clientes con diseño normalizado (catálogos, reglas, membresías, ledger de puntos y canjes).
+
+### Entidades principales
+- `LoyaltyProgram`: programa por organización.
+- `LoyaltyTier`: niveles por programa (Silver, Gold, etc.) con multiplicador.
+- `LoyaltyRule`: reglas de acumulación, canje y expiración.
+- `LoyaltyMember`: afiliación cliente-programa.
+- `LoyaltyPointEntry`: libro mayor inmutable de movimientos de puntos.
+- `LoyaltyReward`: catálogo de recompensas.
+- `LoyaltyRedemption`: historial de canjes con trazabilidad al ledger.
+
+### Endpoints REST
+Todos bajo `/api/`:
+- `loyalty-programs`
+- `loyalty-tiers`
+- `loyalty-rules`
+- `loyalty-members`
+  - acción `POST /api/loyalty-members/accrue/` para acumular puntos
+  - acción `POST /api/loyalty-members/redeem/` para canjear puntos
+- `loyalty-entries` (solo lectura)
+- `loyalty-rewards`
+- `loyalty-redemptions` (solo lectura)
+
+### Características de escalabilidad y consistencia
+- Restricción multi-tenant por organización.
+- Índices compuestos para consultas por programa, estado y fechas.
+- Restricciones de integridad (unicidad y checks).
+- Operaciones críticas de puntos y canjes en transacciones atómicas.
