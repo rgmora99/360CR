@@ -4,6 +4,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from apps.customers.models import Customer
+from apps.suppliers.models import Supplier
 from apps.tenants.models import Organization
 
 
@@ -45,12 +46,24 @@ class Product(models.Model):
         (TYPE_PHYSICAL, "Producto"),
         (TYPE_SERVICE, "Servicio"),
     ]
+    STATUS_OK = "ok"
+    STATUS_DAMAGED = "damaged"
+    STATUS_RAW_MATERIAL = "raw_material"
+    STATUS_CHOICES = [
+        (STATUS_OK, "Buen estado"),
+        (STATUS_DAMAGED, "Dañado"),
+        (STATUS_RAW_MATERIAL, "Materia prima"),
+    ]
 
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
     sku = models.CharField(max_length=40)
     product_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_PHYSICAL)
     name = models.CharField(max_length=160)
+    description = models.TextField(blank=True)
+    physical_location = models.CharField(max_length=120, blank=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True)
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    cost_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.01"), validators=[MinValueValidator(Decimal("0.01"))])
     tax_rate = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -58,6 +71,8 @@ class Product(models.Model):
         validators=[MinValueValidator(Decimal("0.00")), MaxValueValidator(Decimal("100.00"))],
     )
     stock = models.PositiveIntegerField(default=0)
+    reorder_level = models.PositiveIntegerField(default=0)
+    item_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_OK)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
