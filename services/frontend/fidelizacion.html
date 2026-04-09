@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Módulo Fidelización | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
+    <link rel="stylesheet" href="/assets/css/pages/fidelizacion.css" />
+  </head>
+  <body>
+    <div class="dashboard-layout">
+      <aside id="shared-sidebar"></aside>
+
+      <section class="main-panel">
+        <header id="shared-topbar"></header>
+
+        <div class="page-wrap loyalty-page">
+          <section class="module-header card">
+            <div>
+              <p class="badge">Módulo</p>
+              <h1>Fidelización de clientes</h1>
+              <p class="subtitle">Configura programas de puntos y ejecuta acumulación/canje con trazabilidad.</p>
+            </div>
+          </section>
+
+          <section class="card filters">
+            <label>
+              Organización
+              <select id="organization-id"></select>
+            </label>
+            <label>
+              Programa
+              <select id="program-id"></select>
+            </label>
+            <button id="reload-data" class="btn btn-primary" type="button">Actualizar</button>
+          </section>
+
+          <section class="kpi-grid">
+            <article class="card kpi"><p>Miembros</p><strong id="kpi-members">0</strong></article>
+            <article class="card kpi"><p>Rewards activos</p><strong id="kpi-rewards">0</strong></article>
+            <article class="card kpi"><p>Movimientos hoy</p><strong id="kpi-entries">0</strong></article>
+          </section>
+
+          <section class="grid-2">
+            <article class="card">
+              <h2>Acumular puntos</h2>
+              <form id="accrue-form" class="form-grid">
+                <label>Miembro
+                  <select id="accrue-member" required></select>
+                </label>
+                <label>Monto de compra
+                  <input id="purchase-amount" type="number" min="0.01" step="0.01" required />
+                </label>
+                <label>Referencia
+                  <input id="accrue-reference" placeholder="Factura/Orden" />
+                </label>
+                <button type="submit" class="btn btn-primary">Acumular</button>
+              </form>
+            </article>
+
+            <article class="card">
+              <h2>Canjear recompensa</h2>
+              <form id="redeem-form" class="form-grid">
+                <label>Miembro
+                  <select id="redeem-member" required></select>
+                </label>
+                <label>Reward
+                  <select id="redeem-reward" required></select>
+                </label>
+                <label>Cantidad
+                  <input id="redeem-qty" type="number" min="1" value="1" required />
+                </label>
+                <label>Referencia
+                  <input id="redeem-reference" placeholder="Ticket/Cupón" />
+                </label>
+                <button type="submit" class="btn btn-primary">Canjear</button>
+              </form>
+            </article>
+          </section>
+
+          <section class="card table-card">
+            <div class="table-head">
+              <h2>Ledger de puntos</h2>
+              <p id="feedback">Carga inicial pendiente.</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Miembro</th>
+                    <th>Tipo</th>
+                    <th>Puntos</th>
+                    <th>Referencia</th>
+                  </tr>
+                </thead>
+                <tbody id="entries-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="/assets/js/alerts.js"></script>
+    <script src="/assets/js/navigation.js"></script>
+    <script>
+      window.renderSharedNavigation({ activeModule: 'fidelizacion' });
+    </script>
+    <script src="/assets/js/fidelizacion.js"></script>
+  </body>
+</html>
