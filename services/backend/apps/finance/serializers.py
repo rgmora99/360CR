@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, InvoiceItem, Product
+from apps.suppliers.models import Supplier
 from apps.tenants.models import Membership
 
 
@@ -15,10 +16,29 @@ def money(value):
 
 class ProductSerializer(serializers.ModelSerializer):
     sku = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    supplier_name = serializers.CharField(source="supplier.legal_name", read_only=True)
 
     class Meta:
         model = Product
-        fields = ["id", "organization", "sku", "product_type", "name", "unit_price", "tax_rate", "stock", "is_active", "created_at"]
+        fields = [
+            "id",
+            "organization",
+            "sku",
+            "product_type",
+            "name",
+            "description",
+            "physical_location",
+            "supplier",
+            "supplier_name",
+            "unit_price",
+            "cost_price",
+            "tax_rate",
+            "stock",
+            "reorder_level",
+            "item_status",
+            "is_active",
+            "created_at",
+        ]
         validators = []
 
     def validate_name(self, value):
@@ -31,10 +51,15 @@ class ProductSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         product_type = attrs.get("product_type") or getattr(self.instance, "product_type", Product.TYPE_PHYSICAL)
         stock_value = attrs.get("stock", getattr(self.instance, "stock", 0))
+        organization = attrs.get("organization") or getattr(self.instance, "organization", None)
+        supplier = attrs.get("supplier", getattr(self.instance, "supplier", None))
         if product_type == Product.TYPE_SERVICE:
             attrs["stock"] = 0
         elif stock_value is None or stock_value < 0:
             raise serializers.ValidationError({"stock": "El stock debe ser un entero mayor o igual a 0."})
+
+        if supplier and organization and not Supplier.objects.filter(id=supplier.id, organization_id=organization.id).exists():
+            raise serializers.ValidationError({"supplier": "El proveedor debe pertenecer a la misma organización del producto."})
         return attrs
 
     @staticmethod
@@ -43,9 +68,9 @@ class ProductSerializer(serializers.ModelSerializer):
         return compact[:20] or "ITEM"
 
     def _generate_sku(self, organization_id, name):
-        prefix = self._slugify_for_sku(name)
-        for sequence in range(1, 10000):
-            candidate = f"{prefix}-{sequence:04d}"
+        next_number = Product.objects.filter(organization_id=organization_id).count() + 1
+        for sequence in range(next_number, next_number + 10000):
+            candidate = f"PRD-{organization_id:03d}-{sequence:06d}"
             exists = Product.objects.filter(organization_id=organization_id, sku=candidate).exclude(id=getattr(self.instance, "id", None)).exists()
             if not exists:
                 return candidate
