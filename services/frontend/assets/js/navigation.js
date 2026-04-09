@@ -68,7 +68,7 @@
       },
       { key: 'inventario', label: 'Inventario', href: '/inventario.html' },
       { key: 'marketing', label: 'Marketing automático', href: '#' },
-      { key: 'fidelizacion', label: 'Fidelización de clientes', href: '#' },
+      { key: 'fidelizacion', label: 'Fidelización de clientes', href: '/fidelizacion.html' },
       { key: 'configuraciones', label: 'Configuraciones', href: '/configuraciones.html' },
     ];
 
