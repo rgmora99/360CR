@@ -2,27 +2,14 @@
   const $ = (id) => document.getElementById(id);
   const state = { products: [], organizations: [], suppliers: [] };
   const apiBase = () => '/api';
-
-  function resolveOrganizationId(rawValue) {
-    const raw = (rawValue || '').toString().trim();
+  function orgId() {
+    const raw = ($('organization-id').value || window.AppSession?.getActiveOrganizationId?.() || '').toString().trim();
     const numeric = Number(raw.replace(/[^\d]/g, ''));
-    return numeric > 0 ? numeric : null;
+    if (!numeric || numeric < 1) {
+      throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
+    }
+    return numeric;
   }
-
-  function orgIdForWrite() {
-    const activeOrganization = resolveOrganizationId(window.AppSession?.getActiveOrganizationId?.());
-    if (activeOrganization) return activeOrganization;
-
-    const filterOrganization = resolveOrganizationId($('organization-filter')?.value);
-    if (filterOrganization) return filterOrganization;
-
-    throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
-  }
-
-  function selectedOrganizationFilter() {
-    return resolveOrganizationId($('organization-filter')?.value);
-  }
-
   const logPrefix = '[Inventario API]';
 
   async function request(path, options) {
@@ -49,12 +36,16 @@
 
   function updateStockState() {
     const isService = $('product-type').value === 'service';
+    const requiresDuration = $('service-requires-duration').value === 'yes';
+    $('field-physical-location').style.display = isService ? 'none' : '';
+    $('field-stock').style.display = isService ? 'none' : '';
+    $('field-item-status').style.display = isService ? 'none' : '';
+    $('field-requires-duration').style.display = isService ? '' : 'none';
+    $('field-service-duration').style.display = isService && requiresDuration ? '' : 'none';
     $('stock').value = isService ? 0 : $('stock').value || 0;
     $('stock').disabled = isService;
-    $('service-duration-minutes').disabled = !isService;
-    if (!isService) {
-      $('service-duration-minutes').value = 30;
-    }
+    $('service-duration-minutes').disabled = !isService || !requiresDuration;
+    if (!isService || !requiresDuration) $('service-duration-minutes').value = 30;
   }
 
   function validatePayload(payload) {
@@ -70,8 +61,8 @@
     if (payload.product_type === 'physical' && (!Number.isInteger(payload.stock) || payload.stock < 0)) {
       throw new Error('El stock debe ser un entero mayor o igual a 0.');
     }
-    if (payload.product_type === 'service' && (!Number.isInteger(payload.service_duration_minutes) || payload.service_duration_minutes < 1)) {
-      throw new Error('La duración del servicio debe ser mayor o igual a 1 minuto.');
+    if (payload.product_type === 'service' && payload._requires_duration && (!Number.isInteger(payload.service_duration_minutes) || payload.service_duration_minutes < 1)) {
+      throw new Error('La duración del servicio debe ser mayor o igual a 1 minuto cuando el servicio lo requiere.');
     }
     if (!Number.isFinite(payload.cost_price) || payload.cost_price <= 0) {
       throw new Error('El costo debe ser un número mayor a 0.');
@@ -85,9 +76,7 @@
   }
 
   async function loadProducts() {
-    const filterOrganization = selectedOrganizationFilter();
-    const query = filterOrganization ? `?organization_id=${filterOrganization}` : '';
-    const data = await request(`/products/${query}`);
+    const data = await request(`/products/?organization_id=${orgId()}`);
     state.products = data;
     $('products-body').innerHTML =
       data
@@ -101,7 +90,7 @@
               <td>${p.cost_price}</td>
               <td>${p.unit_price}</td>
               <td>${p.product_type === 'service' ? 'N/A' : p.stock}</td>
-              <td>${p.product_type === 'service' ? `${p.service_duration_minutes || 30} min` : 'N/A'}</td>
+              <td>${p.product_type === 'service' ? (p.service_duration_minutes > 0 ? `${p.service_duration_minutes} min` : 'No requiere') : 'N/A'}</td>
               <td>${statusLabel(p.item_status)}</td>
               <td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td>
             </tr>`,
@@ -117,22 +106,6 @@
     $('physical-location').innerHTML = options;
   }
 
-  function renderOrganizationFilter() {
-    const current = selectedOrganizationFilter();
-    const options = ['<option value="">Todas las organizaciones</option>']
-      .concat(state.organizations.map((org) => `<option value="${org.id}">${org.name} (#${org.id})</option>`))
-      .join('');
-    $('organization-filter').innerHTML = options;
-
-    if (current && state.organizations.some((org) => org.id === current)) {
-      $('organization-filter').value = String(current);
-      return;
-    }
-
-    const activeOrganization = resolveOrganizationId(window.AppSession?.getActiveOrganizationId?.());
-    $('organization-filter').value = activeOrganization ? String(activeOrganization) : '';
-  }
-
   function renderSuppliers() {
     const options = ['<option value="">Sin proveedor</option>']
       .concat(state.suppliers.map((supplier) => `<option value="${supplier.id}">${supplier.legal_name}</option>`))
@@ -142,12 +115,11 @@
 
   async function loadOrganizations() {
     state.organizations = await request('/organizations/');
-    renderOrganizationFilter();
     renderLocations();
   }
 
   async function loadSuppliers() {
-    const organization = orgIdForWrite();
+    const organization = orgId();
     const suppliers = await request(`/suppliers/?organization_id=${organization}`);
     state.suppliers = suppliers.filter((item) => item.status === 'active');
     renderSuppliers();
@@ -159,7 +131,7 @@
       const id = $('product-id').value;
       const isService = $('product-type').value === 'service';
       const payload = {
-        organization: orgIdForWrite(),
+        organization: orgId(),
         name: $('product-name').value.trim(),
         description: $('description').value.trim(),
         physical_location: $('physical-location').value.trim(),
@@ -169,11 +141,13 @@
         cost_price: Number($('cost-price').value),
         tax_rate: Number($('tax-rate').value),
         stock: isService ? 0 : Number($('stock').value),
-        service_duration_minutes: isService ? Number($('service-duration-minutes').value) : 30,
-        item_status: $('item-status').value,
+        _requires_duration: isService ? $('service-requires-duration').value === 'yes' : false,
+        service_duration_minutes: isService && $('service-requires-duration').value === 'yes' ? Number($('service-duration-minutes').value) : 0,
+        item_status: isService ? 'ok' : $('item-status').value,
         is_active: true,
       };
       validatePayload(payload);
+      delete payload._requires_duration;
       await request(id ? `/products/${id}/` : '/products/', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
       $('product-form').reset();
       $('product-id').value = '';
@@ -181,6 +155,7 @@
       $('stock').value = 0;
       $('cost-price').value = '0.01';
       $('item-status').value = 'ok';
+      $('service-requires-duration').value = 'yes';
       $('service-duration-minutes').value = 30;
       $('sku').value = 'Se generará automáticamente';
       $('product-type').value = 'physical';
@@ -208,6 +183,7 @@
       $('cost-price').value = p.cost_price;
       $('tax-rate').value = p.tax_rate;
       $('stock').value = p.stock;
+      $('service-requires-duration').value = (p.service_duration_minutes || 0) > 0 ? 'yes' : 'no';
       $('service-duration-minutes').value = p.service_duration_minutes || 30;
       $('item-status').value = p.item_status || 'ok';
       updateStockState();
@@ -219,14 +195,17 @@
     }
   });
 
-  $('organization-filter').addEventListener('change', async () => {
+  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || '';
+  $('organization-id').addEventListener('change', async () => {
+    window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
     try {
-      await loadProducts();
+      await Promise.all([loadProducts(), loadSuppliers()]);
     } catch (error) {
       feedback(error.message, true);
     }
   });
   $('product-type').addEventListener('change', updateStockState);
+  $('service-requires-duration').addEventListener('change', updateStockState);
   $('sku').value = 'Se generará automáticamente';
   updateStockState();
   Promise.all([loadOrganizations(), loadSuppliers(), loadProducts()]).catch((e) => feedback(e.message, true));

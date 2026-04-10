@@ -1,14 +1,14 @@
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import IntegrityError, transaction
-from django.db.models import IntegerField, Max, Sum
+from django.db.models import IntegerField, Max
 from django.db.models.functions import Cast, Substr
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.customers.models import Customer
-from apps.finance.models import Invoice, InvoiceItem, Product, Purchase, PurchaseItem, TaxQuarterReport
+from apps.finance.models import Invoice, InvoiceItem, Product
 from apps.loyalty.models import LoyaltyMember, LoyaltyPointEntry, LoyaltyRule
 from apps.suppliers.models import Supplier
 from apps.tenants.models import Membership, Organization
@@ -63,8 +63,8 @@ class ProductSerializer(serializers.ModelSerializer):
         if product_type == Product.TYPE_SERVICE:
             attrs["stock"] = 0
             duration = attrs.get("service_duration_minutes", getattr(self.instance, "service_duration_minutes", 30))
-            if duration < 1:
-                raise serializers.ValidationError({"service_duration_minutes": "La duración del servicio debe ser mayor a 0 minutos."})
+            if duration < 0:
+                raise serializers.ValidationError({"service_duration_minutes": "La duración del servicio no puede ser negativa."})
         elif stock_value is None or stock_value < 0:
             raise serializers.ValidationError({"stock": "El stock debe ser un entero mayor o igual a 0."})
 
@@ -246,12 +246,12 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
         return attrs
 
-    def _get_next_invoice_sequence(self, document_type):
-        Organization.objects.select_for_update().first()
+    def _get_next_invoice_sequence(self, organization_id):
+        Organization.objects.select_for_update().filter(id=organization_id).first()
         current_max = (
             Invoice.objects.select_for_update()
-            .filter(document_type=document_type)
-            .annotate(sequence_number=Cast(Substr("consecutive_number", 11, 10), IntegerField()))
+            .filter(organization_id=organization_id, invoice_number__startswith=f"F-{organization_id:03d}-")
+            .annotate(sequence_number=Cast(Substr("invoice_number", 7, 8), IntegerField()))
             .aggregate(max_sequence=Max("sequence_number"))
             .get("max_sequence")
             or 0
@@ -264,9 +264,9 @@ class InvoiceCreateSerializer(serializers.Serializer):
         invoice = None
         for attempt in range(MAX_CREATE_RETRIES):
             try:
-                invoice_sequence = self._get_next_invoice_sequence(validated_data["document_type"])
+                invoice_sequence = self._get_next_invoice_sequence(organization_id)
+                invoice_number = f"F-{organization_id:03d}-{invoice_sequence:08d}"
                 consecutive_number = f"00100001{validated_data['document_type']}{invoice_sequence:010d}"
-                invoice_number = f"F-{validated_data['document_type']}-{invoice_sequence:010d}"
 
                 invoice = Invoice.objects.create(
                     organization_id=organization_id,
@@ -411,179 +411,3 @@ class InvoiceCreateSerializer(serializers.Serializer):
         member.last_activity_at = timezone.now()
         member.save(update_fields=["lifetime_points", "available_points", "last_activity_at", "updated_at"])
         return awarded_points
-
-
-class PurchaseItemWriteSerializer(serializers.Serializer):
-    description = serializers.CharField(max_length=220)
-    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
-    quantity = serializers.DecimalField(max_digits=12, decimal_places=3, min_value=Decimal("0.001"), default=Decimal("1.000"))
-
-
-class PurchaseItemSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PurchaseItem
-        fields = ["id", "line_number", "description", "unit_price", "quantity", "subtotal"]
-
-
-class PurchaseSerializer(serializers.ModelSerializer):
-    items = PurchaseItemSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = Purchase
-        fields = [
-            "id",
-            "organization",
-            "supplier_name",
-            "supplier_tax_id",
-            "buyer_name",
-            "buyer_tax_id",
-            "issue_date",
-            "invoice_number",
-            "numeric_key",
-            "subtotal",
-            "items",
-            "created_at",
-        ]
-
-
-class PurchaseCreateSerializer(serializers.Serializer):
-    organization = serializers.IntegerField()
-    supplier_name = serializers.CharField(max_length=200)
-    supplier_tax_id = serializers.CharField(max_length=50)
-    buyer_name = serializers.CharField(max_length=200)
-    buyer_tax_id = serializers.CharField(max_length=50)
-    issue_date = serializers.DateField()
-    invoice_number = serializers.CharField(max_length=40)
-    numeric_key = serializers.RegexField(r"^\d{50}$")
-    items = PurchaseItemWriteSerializer(many=True)
-
-    def validate(self, attrs):
-        request = self.context.get("request")
-        if request and request.user.is_authenticated:
-            has_access = Membership.objects.filter(user=request.user, organization_id=attrs["organization"]).exists()
-            if not has_access:
-                raise serializers.ValidationError("No tiene acceso a la organización seleccionada.")
-        if not attrs["items"]:
-            raise serializers.ValidationError("Debe incluir al menos una línea de compra.")
-        return attrs
-
-    @transaction.atomic
-    def create(self, validated_data):
-        items = validated_data.pop("items")
-        purchase = Purchase.objects.create(
-            organization_id=validated_data["organization"],
-            supplier_name=validated_data["supplier_name"].strip(),
-            supplier_tax_id=validated_data["supplier_tax_id"].strip(),
-            buyer_name=validated_data["buyer_name"].strip(),
-            buyer_tax_id=validated_data["buyer_tax_id"].strip(),
-            issue_date=validated_data["issue_date"],
-            invoice_number=validated_data["invoice_number"].strip(),
-            numeric_key=validated_data["numeric_key"],
-        )
-        subtotal = Decimal("0.00")
-        for idx, item in enumerate(items, start=1):
-            line_subtotal = money(item["unit_price"] * item["quantity"])
-            subtotal += line_subtotal
-            PurchaseItem.objects.create(
-                purchase=purchase,
-                line_number=idx,
-                description=item["description"].strip(),
-                unit_price=item["unit_price"],
-                quantity=item["quantity"],
-                subtotal=line_subtotal,
-            )
-        purchase.subtotal = money(subtotal)
-        purchase.save(update_fields=["subtotal"])
-        return purchase
-
-
-def quarter_bounds(year: int, quarter: int):
-    start_month = (quarter - 1) * 3 + 1
-    end_month = start_month + 2
-    start = date(year, start_month, 1)
-    if end_month == 12:
-        end = date(year, 12, 31)
-    else:
-        end = date(year, end_month + 1, 1) - timedelta(days=1)
-    return start, end
-
-
-def quarter_due_date(year: int, quarter: int):
-    close_month = quarter * 3
-    due_month = close_month + 1
-    due_year = year
-    if due_month > 12:
-        due_month = 1
-        due_year += 1
-    return date(due_year, due_month, 15)
-
-
-class TaxQuarterReportSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TaxQuarterReport
-        fields = [
-            "id",
-            "organization",
-            "year",
-            "quarter",
-            "economic_activity",
-            "rts_factor",
-            "purchases_total",
-            "estimated_tax",
-            "due_date",
-            "declaration_form",
-            "created_at",
-            "updated_at",
-        ]
-
-
-class TaxQuarterReportCalculateSerializer(serializers.Serializer):
-    organization = serializers.IntegerField()
-    issue_date = serializers.DateField(required=False)
-    year = serializers.IntegerField(required=False, min_value=2000, max_value=2500)
-    quarter = serializers.IntegerField(required=False, min_value=1, max_value=4)
-    economic_activity = serializers.CharField(max_length=120)
-    rts_factor = serializers.DecimalField(max_digits=8, decimal_places=4, min_value=Decimal("0.0001"))
-
-    def validate(self, attrs):
-        request = self.context.get("request")
-        if request and request.user.is_authenticated:
-            has_access = Membership.objects.filter(user=request.user, organization_id=attrs["organization"]).exists()
-            if not has_access:
-                raise serializers.ValidationError("No tiene acceso a la organización seleccionada.")
-
-        if attrs.get("issue_date"):
-            attrs["year"] = attrs["issue_date"].year
-            attrs["quarter"] = ((attrs["issue_date"].month - 1) // 3) + 1
-        elif attrs.get("year") and attrs.get("quarter"):
-            attrs["year"] = int(attrs["year"])
-            attrs["quarter"] = int(attrs["quarter"])
-        else:
-            raise serializers.ValidationError("Debe indicar issue_date o bien year y quarter.")
-        return attrs
-
-    @transaction.atomic
-    def create(self, validated_data):
-        start, end = quarter_bounds(validated_data["year"], validated_data["quarter"])
-        purchases_total = (
-            Purchase.objects.filter(
-                organization_id=validated_data["organization"],
-                issue_date__gte=start,
-                issue_date__lte=end,
-            ).aggregate(total=Sum("subtotal")).get("total")
-            or Decimal("0.00")
-        )
-        report, _created = TaxQuarterReport.objects.update_or_create(
-            organization_id=validated_data["organization"],
-            year=validated_data["year"],
-            quarter=validated_data["quarter"],
-            defaults={
-                "economic_activity": validated_data["economic_activity"].strip(),
-                "rts_factor": validated_data["rts_factor"],
-                "purchases_total": money(purchases_total),
-                "estimated_tax": money(purchases_total * validated_data["rts_factor"]),
-                "due_date": quarter_due_date(validated_data["year"], validated_data["quarter"]),
-                "declaration_form": "D-105",
-            },
-        )
-        return report

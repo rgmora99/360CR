@@ -153,7 +153,9 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         if not starts_at:
             return Response({"detail": "starts_at inválido."}, status=400)
 
-        duration_minutes = max(int(service.service_duration_minutes or 30), 1)
+        duration_minutes = int(service.service_duration_minutes or 0)
+        if duration_minutes <= 0:
+            duration_minutes = 30
         payload = dict(request.data)
         payload["ends_at"] = (starts_at + timedelta(minutes=duration_minutes)).isoformat()
 
