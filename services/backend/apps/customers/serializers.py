@@ -34,6 +34,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "code": {"required": False, "allow_blank": True},
         }
+        validators = []
 
     def create(self, validated_data):
         if not validated_data.get("code"):

@@ -51,6 +51,10 @@
     const isService = $('product-type').value === 'service';
     $('stock').value = isService ? 0 : $('stock').value || 0;
     $('stock').disabled = isService;
+    $('service-duration-minutes').disabled = !isService;
+    if (!isService) {
+      $('service-duration-minutes').value = 30;
+    }
   }
 
   function validatePayload(payload) {
@@ -65,6 +69,9 @@
     }
     if (payload.product_type === 'physical' && (!Number.isInteger(payload.stock) || payload.stock < 0)) {
       throw new Error('El stock debe ser un entero mayor o igual a 0.');
+    }
+    if (payload.product_type === 'service' && (!Number.isInteger(payload.service_duration_minutes) || payload.service_duration_minutes < 1)) {
+      throw new Error('La duración del servicio debe ser mayor o igual a 1 minuto.');
     }
     if (!Number.isFinite(payload.cost_price) || payload.cost_price <= 0) {
       throw new Error('El costo debe ser un número mayor a 0.');
@@ -94,12 +101,13 @@
               <td>${p.cost_price}</td>
               <td>${p.unit_price}</td>
               <td>${p.product_type === 'service' ? 'N/A' : p.stock}</td>
+              <td>${p.product_type === 'service' ? `${p.service_duration_minutes || 30} min` : 'N/A'}</td>
               <td>${statusLabel(p.item_status)}</td>
               <td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td>
             </tr>`,
         )
         .join('') ||
-      '<tr><td colspan="9">Sin productos</td></tr>';
+      '<tr><td colspan="10">Sin productos</td></tr>';
   }
 
   function renderLocations() {
@@ -161,6 +169,7 @@
         cost_price: Number($('cost-price').value),
         tax_rate: Number($('tax-rate').value),
         stock: isService ? 0 : Number($('stock').value),
+        service_duration_minutes: isService ? Number($('service-duration-minutes').value) : 30,
         item_status: $('item-status').value,
         is_active: true,
       };
@@ -172,6 +181,7 @@
       $('stock').value = 0;
       $('cost-price').value = '0.01';
       $('item-status').value = 'ok';
+      $('service-duration-minutes').value = 30;
       $('sku').value = 'Se generará automáticamente';
       $('product-type').value = 'physical';
       updateStockState();
@@ -198,6 +208,7 @@
       $('cost-price').value = p.cost_price;
       $('tax-rate').value = p.tax_rate;
       $('stock').value = p.stock;
+      $('service-duration-minutes').value = p.service_duration_minutes || 30;
       $('item-status').value = p.item_status || 'ok';
       updateStockState();
     }
