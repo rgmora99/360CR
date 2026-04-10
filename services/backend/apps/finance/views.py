@@ -8,8 +8,16 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.customers.models import Customer
-from apps.finance.models import Invoice, Product
-from apps.finance.serializers import InvoiceCreateSerializer, InvoiceSerializer, ProductSerializer
+from apps.finance.models import Invoice, Product, Purchase, TaxQuarterReport
+from apps.finance.serializers import (
+    InvoiceCreateSerializer,
+    InvoiceSerializer,
+    ProductSerializer,
+    PurchaseCreateSerializer,
+    PurchaseSerializer,
+    TaxQuarterReportCalculateSerializer,
+    TaxQuarterReportSerializer,
+)
 from apps.loyalty.models import LoyaltyMember
 from apps.tenants.access import OrganizationScopedViewMixin
 
@@ -251,3 +259,34 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         invoice.email_sent_at = timezone.now()
         invoice.save(update_fields=["email_sent_at"])
         return Response({"detail": "Correo enviado."})
+
+
+class PurchaseViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
+    serializer_class = PurchaseSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Purchase.objects.prefetch_related("items")
+        return self.scope_queryset(queryset)
+
+    def create(self, request, *args, **kwargs):
+        serializer = PurchaseCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        purchase = serializer.save()
+        return Response(PurchaseSerializer(purchase).data, status=status.HTTP_201_CREATED)
+
+
+class TaxQuarterReportViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
+    serializer_class = TaxQuarterReportSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        queryset = TaxQuarterReport.objects.all()
+        return self.scope_queryset(queryset)
+
+    def create(self, request, *args, **kwargs):
+        serializer = TaxQuarterReportCalculateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        report = serializer.save()
+        return Response(TaxQuarterReportSerializer(report).data, status=status.HTTP_201_CREATED)

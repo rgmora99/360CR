@@ -172,3 +172,55 @@ class InvoiceItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.invoice_id} - {self.line_number}"
+
+
+class Purchase(models.Model):
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    supplier_name = models.CharField(max_length=200)
+    supplier_tax_id = models.CharField(max_length=50)
+    buyer_name = models.CharField(max_length=200)
+    buyer_tax_id = models.CharField(max_length=50)
+    issue_date = models.DateField()
+    invoice_number = models.CharField(max_length=40)
+    numeric_key = models.CharField(max_length=50)
+    subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-issue_date", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "numeric_key"],
+                name="uq_purchase_org_numeric_key",
+            )
+        ]
+
+
+class PurchaseItem(models.Model):
+    purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name="items")
+    line_number = models.PositiveIntegerField(default=1)
+    description = models.CharField(max_length=220)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    quantity = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal("1.000"), validators=[MinValueValidator(Decimal("0.001"))])
+    subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    class Meta:
+        ordering = ["line_number"]
+
+
+class TaxQuarterReport(models.Model):
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    year = models.PositiveIntegerField()
+    quarter = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(4)])
+    economic_activity = models.CharField(max_length=120)
+    rts_factor = models.DecimalField(max_digits=8, decimal_places=4, validators=[MinValueValidator(Decimal("0.0001"))])
+    purchases_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    estimated_tax = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    due_date = models.DateField()
+    declaration_form = models.CharField(max_length=20, default="D-105")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-year", "-quarter", "-id"]
+        constraints = [models.UniqueConstraint(fields=["organization", "year", "quarter"], name="uq_tax_quarter_org")]
