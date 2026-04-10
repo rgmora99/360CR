@@ -76,6 +76,11 @@
                   <label>Moneda<input id="currency" value="CRC" maxlength="3" /></label>
                 </div>
                 <label>Notas<textarea id="notes" rows="3" maxlength="500" placeholder="Detalle interno de la factura (máx. 500 caracteres)"></textarea></label>
+                <label class="checkbox-inline">
+                  <input id="pay-with-points" type="checkbox" />
+                  Pagar con puntos de fidelización (1 punto = 1 CRC)
+                </label>
+                <p id="points-payment-help" class="subtitle"></p>
 
                 <div class="line-add">
                   <select id="line-product"></select>

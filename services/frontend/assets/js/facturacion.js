@@ -96,6 +96,45 @@
       ? ` · Fidelización: ${customer.loyalty.program_name} (${customer.loyalty.available_points} pts)`
       : ' · Sin membresía de fidelización';
     $('customer-meta').textContent = `${customer.email || 'sin correo'} · ${customer.phone || 'sin teléfono'}${loyaltyText}`;
+    syncPointsPaymentUI();
+  }
+
+  function calculateSubtotal() {
+    return state.lines.reduce((acc, line) => {
+      const product = state.products.find((it) => it.id === line.product);
+      if (!product) return acc;
+      return acc + Number(line.quantity) * Number(product.unit_price);
+    }, 0);
+  }
+
+  function syncPointsPaymentUI() {
+    const checkbox = $('pay-with-points');
+    const help = $('points-payment-help');
+    const customer = state.selectedCustomer;
+    const availablePoints = Number(customer?.loyalty?.available_points || 0);
+    const subtotal = calculateSubtotal();
+
+    if (!customer?.loyalty?.program_name) {
+      checkbox.checked = false;
+      checkbox.disabled = true;
+      help.textContent = 'El cliente seleccionado no tiene membresía activa.';
+      return;
+    }
+
+    if (!subtotal) {
+      checkbox.checked = false;
+      checkbox.disabled = true;
+      help.textContent = `Disponible: ${availablePoints} pts. Agrega líneas para validar pago con puntos.`;
+      return;
+    }
+
+    const requiredPoints = Math.round(subtotal);
+    const hasEnough = availablePoints >= requiredPoints;
+    checkbox.disabled = !hasEnough;
+    if (!hasEnough) checkbox.checked = false;
+    help.textContent = hasEnough
+      ? `Disponible: ${availablePoints} pts. Requeridos aprox.: ${requiredPoints} pts.`
+      : `Disponible: ${availablePoints} pts. Requiere aprox. ${requiredPoints} pts para cubrir la factura.`;
   }
 
   async function loadProducts() {
@@ -121,6 +160,7 @@
         })
         .join('') || '<tr><td colspan="5">Sin líneas</td></tr>';
     $('totals').textContent = `Subtotal aproximado: ${subtotal.toFixed(2)} CRC`;
+    syncPointsPaymentUI();
   }
 
   $('search-customer').addEventListener('click', () => {
@@ -142,6 +182,12 @@
   });
   $('customer-select').addEventListener('change', updateCustomerMeta);
   $('payment-method').addEventListener('change', syncInstallmentsUI);
+  $('pay-with-points').addEventListener('change', () => {
+    if ($('pay-with-points').checked) {
+      $('payment-method').value = '03';
+      syncInstallmentsUI();
+    }
+  });
 
   $('add-line').addEventListener('click', () => {
     const product = Number($('line-product').value);
@@ -201,14 +247,20 @@
         exchange_rate: 1,
         notes: $('notes').value.trim(),
         items: state.lines,
+        use_loyalty_points: $('pay-with-points').checked,
       };
 
       const invoice = await request('/invoices/', { method: 'POST', body: JSON.stringify(payload) });
-      const loyaltyMsg = invoice.loyalty_awarded_points
-        ? ` Se acreditaron ${invoice.loyalty_awarded_points} puntos al cliente.`
-        : '';
+      const awarded = Number(invoice.loyalty_awarded_points || 0);
+      const redeemed = Number(invoice.loyalty_redeemed_points || 0);
+      const loyaltyMsg = redeemed
+        ? ` Se cobraron ${redeemed} puntos de fidelización.`
+        : awarded
+          ? ` Se acreditaron ${awarded} puntos al cliente.`
+          : '';
       setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".${loyaltyMsg}`);
       state.lines = [];
+      $('pay-with-points').checked = false;
       renderLines();
       await loadProducts();
       await loadCustomers($('customer-search').value.trim());
