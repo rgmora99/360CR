@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, Product
-from apps.finance.serializers import InvoiceCreateSerializer, InvoiceSerializer, ProductSerializer, PurchaseCreateSerializer
+from apps.finance.serializers import InvoiceCreateSerializer, InvoiceSerializer, ProductSerializer
 from apps.loyalty.models import LoyaltyMember
 from apps.tenants.access import OrganizationScopedViewMixin
 
@@ -269,7 +269,7 @@ class PurchaseViewSet(OrganizationScopedViewMixin, viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     def create(self, request):
-        serializer = PurchaseCreateSerializer(data=request.data, context={"request": request})
+        serializer = InvoiceCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         invoice = serializer.save()
         return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
