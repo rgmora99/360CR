@@ -28,7 +28,51 @@
             </div>
           </section>
 
-          <section class="settings-grid">
+          <nav class="settings-submenu card" aria-label="Submenú de configuraciones">
+            <button class="submenu-tab is-active" type="button" data-settings-tab="usuarios">Usuarios</button>
+            <button class="submenu-tab" type="button" data-settings-tab="roles">Roles</button>
+            <button class="submenu-tab" type="button" data-settings-tab="organizaciones">Organizaciones</button>
+            <button class="submenu-tab" type="button" data-settings-tab="disponibilidad">Disponibilidad</button>
+            <button class="submenu-tab" type="button" data-settings-tab="sistema">Sistema</button>
+          </nav>
+
+          <section class="settings-panel is-active" data-settings-panel="usuarios">
+            <div class="settings-grid">
+              <article class="card">
+                <h2>Usuarios del sistema</h2>
+                <p class="section-help">Cuentas activas para operación, soporte y liderazgo.</p>
+                <ul id="users-list" class="settings-list"></ul>
+              </article>
+
+              <article class="card">
+                <h2>Autogestión del equipo</h2>
+                <p class="section-help">Invita usuarios y delega roles sin depender del equipo técnico.</p>
+                <div class="org-tools team-tools">
+                  <label>
+                    Correo del usuario
+                    <input id="invite-email" type="email" placeholder="usuario@negocio.com" />
+                  </label>
+                  <label>
+                    Rol inicial
+                    <select id="invite-role"></select>
+                  </label>
+                  <button id="create-invitation" class="btn btn-primary" type="button">Crear invitación</button>
+                </div>
+                <p id="team-feedback" class="section-help">Sin acciones recientes.</p>
+                <ul id="invitations-list" class="settings-list"></ul>
+              </article>
+            </div>
+          </section>
+
+          <section class="settings-panel" data-settings-panel="roles">
+            <article class="card">
+              <h2>Roles recomendados</h2>
+              <p class="section-help">Catálogo base para delegar permisos según responsabilidad.</p>
+              <div id="roles-groups"></div>
+            </article>
+          </section>
+
+          <section class="settings-panel" data-settings-panel="organizaciones">
             <article class="card">
               <h2>Mantenimiento de organizaciones</h2>
               <p class="section-help">Administra las organizaciones disponibles para los módulos operativos.</p>
@@ -48,46 +92,61 @@
               <p id="org-feedback" class="section-help">Sin datos cargados.</p>
               <ul id="organizations-list" class="settings-list"></ul>
             </article>
-
-            <article class="card">
-              <h2>Colaboradores de la organización</h2>
-              <p id="collaborators-summary" class="section-help">Sin resumen de plan.</p>
-              <ul id="users-list" class="settings-list"></ul>
-            </article>
-
-            <article class="card">
-              <h2>Roles recomendados</h2>
-              <p class="section-help">Catálogo base para delegar permisos según responsabilidad.</p>
-              <div id="roles-groups"></div>
-            </article>
-
-            <article class="card">
-              <h2>Autogestión del equipo</h2>
-              <p class="section-help">Invita usuarios y delega roles sin depender del equipo técnico.</p>
-              <div class="org-tools team-tools">
-                <label>
-                  Correo del usuario
-                  <input id="invite-email" type="email" placeholder="usuario@negocio.com" />
-                </label>
-                <label>
-                  Rol inicial
-                  <select id="invite-role">
-                    <option value="viewer">Colaborador</option>
-                    <option value="admin">Administrador</option>
-                    <option value="owner">Propietario</option>
-                  </select>
-                </label>
-                <button id="create-invitation" class="btn btn-primary" type="button">Crear invitación</button>
-              </div>
-              <p id="team-feedback" class="section-help">Sin acciones recientes.</p>
-              <ul id="invitations-list" class="settings-list"></ul>
-            </article>
           </section>
 
-          <section class="card">
-            <h2>Configuración del sistema</h2>
-            <p class="section-help">Parámetros globales organizados por categoría para facilitar la administración.</p>
-            <div id="system-settings-groups" class="settings-groups"></div>
+          <section class="settings-panel" data-settings-panel="disponibilidad">
+            <div class="settings-grid">
+              <article class="card">
+                <h2>Horarios de colaboradores</h2>
+                <p class="section-help">Configura disponibilidad para agenda por colaborador y día de la semana.</p>
+                <div class="org-tools team-tools">
+                  <label>
+                    Colaborador
+                    <select id="availability-collaborator"></select>
+                  </label>
+                  <label>
+                    Día
+                    <select id="availability-weekday">
+                      <option value="1">Lunes</option>
+                      <option value="2">Martes</option>
+                      <option value="3">Miércoles</option>
+                      <option value="4">Jueves</option>
+                      <option value="5">Viernes</option>
+                      <option value="6">Sábado</option>
+                      <option value="0">Domingo</option>
+                    </select>
+                  </label>
+                  <label>
+                    Hora inicio
+                    <input id="availability-start" type="time" value="08:00" />
+                  </label>
+                  <label>
+                    Hora fin
+                    <input id="availability-end" type="time" value="17:00" />
+                  </label>
+                  <label class="checkbox-field">
+                    <input id="availability-active" type="checkbox" checked />
+                    Disponible
+                  </label>
+                  <button id="save-availability-rule" class="btn btn-primary" type="button">Guardar horario</button>
+                </div>
+                <p id="availability-feedback" class="section-help">Sin cambios recientes.</p>
+              </article>
+
+              <article class="card">
+                <h2>Disponibilidad configurada</h2>
+                <p class="section-help">Resumen operativo para validar franjas activas antes de abrir cupos.</p>
+                <ul id="availability-rules-list" class="settings-list"></ul>
+              </article>
+            </div>
+          </section>
+
+          <section class="settings-panel" data-settings-panel="sistema">
+            <section class="card">
+              <h2>Configuración del sistema</h2>
+              <p class="section-help">Parámetros globales organizados por categoría para facilitar la administración.</p>
+              <div id="system-settings-groups" class="settings-groups"></div>
+            </section>
           </section>
         </main>
       </section>
