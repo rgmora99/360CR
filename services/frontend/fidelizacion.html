@@ -19,16 +19,16 @@
       <section class="main-panel">
         <header id="shared-topbar"></header>
 
-        <div class="page-wrap">
-          <section class="module-header card">
+        <main class="content loyalty-content">
+          <section class="hero compact">
             <div>
-              <p class="badge">Módulo</p>
+              <p class="badge">Módulo de fidelización</p>
               <h1>Fidelización de clientes</h1>
-              <p class="subtitle">CRUD de programas, reglas, miembros y recompensas + operaciones de acumulación y canje.</p>
+              <p class="subtitle">Gestiona programas, miembros, recompensas y movimientos con validaciones operativas.</p>
             </div>
           </section>
 
-          <section class="card filters">
+          <section class="card loyalty-filters">
             <label>
               Organización
               <select id="organization-id"></select>
@@ -41,203 +41,222 @@
             <p id="feedback" class="feedback">Carga inicial pendiente.</p>
           </section>
 
-          <section class="grid">
-            <article class="card">
-              <h2 id="program-form-title">Nuevo programa</h2>
-              <form id="program-form" class="form-grid">
-                <input id="program-form-id" type="hidden" />
-                <label>Código
-                  <input id="program-code" required placeholder="vip-clientes" />
-                </label>
-                <label>Nombre
-                  <input id="program-name" required placeholder="Programa VIP" />
-                </label>
-                <label>Nombre de puntos
-                  <input id="points-name" value="Puntos" />
-                </label>
-                <label>Activo
-                  <select id="program-active">
-                    <option value="true">Sí</option>
-                    <option value="false">No</option>
-                  </select>
-                </label>
-                <label class="full-width">Descripción
-                  <textarea id="program-description" rows="2"></textarea>
-                </label>
-                <div class="actions full-width">
-                  <button type="submit" class="btn btn-primary">Guardar programa</button>
-                  <button id="cancel-program-edit" type="button" class="btn btn-secondary">Cancelar edición</button>
+          <nav class="loyalty-submenu card" aria-label="Submenú de fidelización">
+            <button class="submenu-tab is-active" type="button" data-loyalty-tab="programas">Programas y reglas</button>
+            <button class="submenu-tab" type="button" data-loyalty-tab="miembros">Miembros y recompensas</button>
+            <button class="submenu-tab" type="button" data-loyalty-tab="operaciones">Operaciones</button>
+            <button class="submenu-tab" type="button" data-loyalty-tab="historial">Historial</button>
+          </nav>
+
+          <section class="loyalty-panel is-active" data-loyalty-panel="programas">
+            <div class="loyalty-grid">
+              <article class="card">
+                <h2 id="program-form-title">Nuevo programa</h2>
+                <p class="section-help">El código se genera automáticamente desde el nombre y se mantiene único por organización.</p>
+                <form id="program-form" class="form-grid">
+                  <input id="program-form-id" type="hidden" />
+                  <label>Código
+                    <input id="program-code" required readonly />
+                  </label>
+                  <label>Nombre
+                    <input id="program-name" required maxlength="120" placeholder="Programa VIP" />
+                  </label>
+                  <label>Nombre de puntos
+                    <input id="points-name" value="Puntos" maxlength="60" />
+                  </label>
+                  <label>Activo
+                    <select id="program-active">
+                      <option value="true">Sí</option>
+                      <option value="false">No</option>
+                    </select>
+                  </label>
+                  <label class="full-width">Descripción
+                    <textarea id="program-description" rows="2" maxlength="500" placeholder="Beneficios y objetivo del programa"></textarea>
+                  </label>
+                  <div class="actions full-width">
+                    <button type="submit" class="btn btn-primary">Guardar programa</button>
+                    <button id="cancel-program-edit" type="button" class="btn btn-secondary">Cancelar edición</button>
+                  </div>
+                </form>
+
+                <div class="table-wrap compact-table">
+                  <table>
+                    <thead>
+                      <tr><th>Código</th><th>Nombre</th><th>Activo</th><th>Acciones</th></tr>
+                    </thead>
+                    <tbody id="programs-body"></tbody>
+                  </table>
                 </div>
-              </form>
+              </article>
 
-              <div class="table-wrap compact-table">
-                <table>
-                  <thead>
-                    <tr><th>Código</th><th>Nombre</th><th>Activo</th><th>Acciones</th></tr>
-                  </thead>
-                  <tbody id="programs-body"></tbody>
-                </table>
-              </div>
-            </article>
-
-            <article class="card">
-              <h2>Regla de acumulación</h2>
-              <form id="rule-form" class="form-grid">
-                <input id="rule-id" type="hidden" />
-                <label>Puntos por unidad monetaria
-                  <input id="rule-points-per-currency" type="number" min="0.0001" step="0.0001" required />
-                </label>
-                <label>Días para expirar puntos
-                  <input id="rule-expire-days" type="number" min="0" step="1" placeholder="Opcional" />
-                </label>
-                <label>Mínimo de compra
-                  <input id="rule-min-purchase" type="number" min="0" step="0.01" value="0" />
-                </label>
-                <label>Activa
-                  <select id="rule-active">
-                    <option value="true">Sí</option>
-                    <option value="false">No</option>
-                  </select>
-                </label>
-                <div class="actions full-width">
-                  <button type="submit" class="btn btn-primary">Guardar regla</button>
-                </div>
-              </form>
-            </article>
-          </section>
-
-          <section class="grid">
-            <article class="card">
-              <h2 id="member-form-title">Nuevo miembro</h2>
-              <form id="member-form" class="form-grid">
-                <input id="member-form-id" type="hidden" />
-                <label>Cliente
-                  <select id="member-customer" required></select>
-                </label>
-                <label>Código de miembro
-                  <input id="member-code" required placeholder="MEM-0001" />
-                </label>
-                <label>Estado
-                  <select id="member-status">
-                    <option value="active">Activo</option>
-                    <option value="suspended">Suspendido</option>
-                    <option value="inactive">Inactivo</option>
-                  </select>
-                </label>
-                <div class="actions full-width">
-                  <button type="submit" class="btn btn-primary">Guardar miembro</button>
-                  <button id="cancel-member-edit" type="button" class="btn btn-secondary">Cancelar edición</button>
-                </div>
-              </form>
-
-              <div class="table-wrap compact-table">
-                <table>
-                  <thead>
-                    <tr><th>Cliente</th><th>Código</th><th>Saldo</th><th>Acciones</th></tr>
-                  </thead>
-                  <tbody id="members-body"></tbody>
-                </table>
-              </div>
-            </article>
-
-            <article class="card">
-              <h2 id="reward-form-title">Nueva recompensa</h2>
-              <form id="reward-form" class="form-grid">
-                <input id="reward-form-id" type="hidden" />
-                <label>Código
-                  <input id="reward-code" required placeholder="gift-card" />
-                </label>
-                <label>Nombre
-                  <input id="reward-name" required placeholder="Gift card" />
-                </label>
-                <label>Puntos
-                  <input id="reward-points" type="number" min="1" step="1" required />
-                </label>
-                <label>Stock
-                  <input id="reward-stock" type="number" min="0" step="1" value="0" />
-                </label>
-                <label>Activo
-                  <select id="reward-active">
-                    <option value="true">Sí</option>
-                    <option value="false">No</option>
-                  </select>
-                </label>
-                <div class="actions full-width">
-                  <button type="submit" class="btn btn-primary">Guardar recompensa</button>
-                  <button id="cancel-reward-edit" type="button" class="btn btn-secondary">Cancelar edición</button>
-                </div>
-              </form>
-
-              <div class="table-wrap compact-table">
-                <table>
-                  <thead>
-                    <tr><th>Nombre</th><th>Costo</th><th>Stock</th><th>Acciones</th></tr>
-                  </thead>
-                  <tbody id="rewards-body"></tbody>
-                </table>
-              </div>
-            </article>
-          </section>
-
-          <section class="grid">
-            <article class="card">
-              <h2>Acumular puntos</h2>
-              <form id="accrue-form" class="form-grid">
-                <label>Miembro
-                  <select id="accrue-member" required></select>
-                </label>
-                <label>Monto de compra
-                  <input id="purchase-amount" type="number" min="0.01" step="0.01" required />
-                </label>
-                <label class="full-width">Referencia
-                  <input id="accrue-reference" placeholder="Factura/Orden" />
-                </label>
-                <div class="actions full-width">
-                  <button type="submit" class="btn btn-primary">Acumular</button>
-                </div>
-              </form>
-            </article>
-
-            <article class="card">
-              <h2>Canjear recompensa</h2>
-              <form id="redeem-form" class="form-grid">
-                <label>Miembro
-                  <select id="redeem-member" required></select>
-                </label>
-                <label>Reward
-                  <select id="redeem-reward" required></select>
-                </label>
-                <label>Cantidad
-                  <input id="redeem-qty" type="number" min="1" value="1" required />
-                </label>
-                <label class="full-width">Referencia
-                  <input id="redeem-reference" placeholder="Ticket/Cupón" />
-                </label>
-                <div class="actions full-width">
-                  <button type="submit" class="btn btn-primary">Canjear</button>
-                </div>
-              </form>
-            </article>
-          </section>
-
-          <section class="card">
-            <h2>Ledger de puntos</h2>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Miembro</th>
-                    <th>Tipo</th>
-                    <th>Puntos</th>
-                    <th>Referencia</th>
-                  </tr>
-                </thead>
-                <tbody id="entries-body"></tbody>
-              </table>
+              <article class="card">
+                <h2>Regla de acumulación</h2>
+                <p class="section-help">Define la equivalencia de compra a puntos y controles mínimos de operación.</p>
+                <form id="rule-form" class="form-grid">
+                  <input id="rule-id" type="hidden" />
+                  <label>Puntos por unidad monetaria
+                    <input id="rule-points-per-currency" type="number" min="0.0001" max="10000" step="0.0001" required />
+                  </label>
+                  <label>Días para expirar puntos
+                    <input id="rule-expire-days" type="number" min="0" max="3650" step="1" placeholder="Opcional" />
+                  </label>
+                  <label>Mínimo de compra
+                    <input id="rule-min-purchase" type="number" min="0" max="99999999" step="0.01" value="0" />
+                  </label>
+                  <label>Activa
+                    <select id="rule-active">
+                      <option value="true">Sí</option>
+                      <option value="false">No</option>
+                    </select>
+                  </label>
+                  <div class="actions full-width">
+                    <button type="submit" class="btn btn-primary">Guardar regla</button>
+                  </div>
+                </form>
+              </article>
             </div>
           </section>
-        </div>
+
+          <section class="loyalty-panel" data-loyalty-panel="miembros">
+            <div class="loyalty-grid">
+              <article class="card">
+                <h2 id="member-form-title">Nuevo miembro</h2>
+                <p class="section-help">El código de membresía se crea automáticamente al seleccionar el cliente.</p>
+                <form id="member-form" class="form-grid">
+                  <input id="member-form-id" type="hidden" />
+                  <label>Cliente
+                    <select id="member-customer" required></select>
+                  </label>
+                  <label>Código de miembro
+                    <input id="member-code" required readonly />
+                  </label>
+                  <label>Estado
+                    <select id="member-status">
+                      <option value="active">Activo</option>
+                      <option value="suspended">Suspendido</option>
+                      <option value="inactive">Inactivo</option>
+                    </select>
+                  </label>
+                  <div class="actions full-width">
+                    <button type="submit" class="btn btn-primary">Guardar miembro</button>
+                    <button id="cancel-member-edit" type="button" class="btn btn-secondary">Cancelar edición</button>
+                  </div>
+                </form>
+
+                <div class="table-wrap compact-table">
+                  <table>
+                    <thead>
+                      <tr><th>Cliente</th><th>Código</th><th>Saldo</th><th>Acciones</th></tr>
+                    </thead>
+                    <tbody id="members-body"></tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article class="card">
+                <h2 id="reward-form-title">Nueva recompensa</h2>
+                <p class="section-help">El código de recompensa también se genera automáticamente desde el nombre.</p>
+                <form id="reward-form" class="form-grid">
+                  <input id="reward-form-id" type="hidden" />
+                  <label>Código
+                    <input id="reward-code" required readonly />
+                  </label>
+                  <label>Nombre
+                    <input id="reward-name" required maxlength="120" placeholder="Gift card" />
+                  </label>
+                  <label>Puntos
+                    <input id="reward-points" type="number" min="1" max="1000000" step="1" required />
+                  </label>
+                  <label>Stock
+                    <input id="reward-stock" type="number" min="0" max="1000000" step="1" value="0" />
+                  </label>
+                  <label>Activo
+                    <select id="reward-active">
+                      <option value="true">Sí</option>
+                      <option value="false">No</option>
+                    </select>
+                  </label>
+                  <div class="actions full-width">
+                    <button type="submit" class="btn btn-primary">Guardar recompensa</button>
+                    <button id="cancel-reward-edit" type="button" class="btn btn-secondary">Cancelar edición</button>
+                  </div>
+                </form>
+
+                <div class="table-wrap compact-table">
+                  <table>
+                    <thead>
+                      <tr><th>Nombre</th><th>Costo</th><th>Stock</th><th>Acciones</th></tr>
+                    </thead>
+                    <tbody id="rewards-body"></tbody>
+                  </table>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="loyalty-panel" data-loyalty-panel="operaciones">
+            <div class="loyalty-grid">
+              <article class="card">
+                <h2>Acumular puntos</h2>
+                <form id="accrue-form" class="form-grid">
+                  <label>Miembro
+                    <select id="accrue-member" required></select>
+                  </label>
+                  <label>Monto de compra
+                    <input id="purchase-amount" type="number" min="0.01" max="99999999" step="0.01" required />
+                  </label>
+                  <label class="full-width">Referencia
+                    <input id="accrue-reference" maxlength="100" placeholder="Factura/Orden" />
+                  </label>
+                  <div class="actions full-width">
+                    <button type="submit" class="btn btn-primary">Acumular</button>
+                  </div>
+                </form>
+              </article>
+
+              <article class="card">
+                <h2>Canjear recompensa</h2>
+                <form id="redeem-form" class="form-grid">
+                  <label>Miembro
+                    <select id="redeem-member" required></select>
+                  </label>
+                  <label>Recompensa
+                    <select id="redeem-reward" required></select>
+                  </label>
+                  <label>Cantidad
+                    <input id="redeem-qty" type="number" min="1" max="1000" value="1" required />
+                  </label>
+                  <label class="full-width">Referencia
+                    <input id="redeem-reference" maxlength="100" placeholder="Ticket/Cupón" />
+                  </label>
+                  <div class="actions full-width">
+                    <button type="submit" class="btn btn-primary">Canjear</button>
+                  </div>
+                </form>
+              </article>
+            </div>
+          </section>
+
+          <section class="loyalty-panel" data-loyalty-panel="historial">
+            <section class="card">
+              <h2>Ledger de puntos</h2>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Miembro</th>
+                      <th>Tipo</th>
+                      <th>Puntos</th>
+                      <th>Referencia</th>
+                    </tr>
+                  </thead>
+                  <tbody id="entries-body"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        </main>
       </section>
     </div>
 
