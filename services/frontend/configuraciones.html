@@ -50,8 +50,8 @@
             </article>
 
             <article class="card">
-              <h2>Usuarios del sistema</h2>
-              <p class="section-help">Cuentas activas para operación, soporte y liderazgo.</p>
+              <h2>Colaboradores de la organización</h2>
+              <p id="collaborators-summary" class="section-help">Sin resumen de plan.</p>
               <ul id="users-list" class="settings-list"></ul>
             </article>
 
@@ -71,7 +71,11 @@
                 </label>
                 <label>
                   Rol inicial
-                  <select id="invite-role"></select>
+                  <select id="invite-role">
+                    <option value="viewer">Colaborador</option>
+                    <option value="admin">Administrador</option>
+                    <option value="owner">Propietario</option>
+                  </select>
                 </label>
                 <button id="create-invitation" class="btn btn-primary" type="button">Crear invitación</button>
               </div>
