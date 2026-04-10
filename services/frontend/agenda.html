@@ -24,14 +24,14 @@
             <div>
               <p class="badge">Módulo</p>
               <h1>Agenda y Recordatorios</h1>
-              <p class="subtitle">Planifica citas, tareas y reuniones por organización.</p>
+              <p class="subtitle">Planifica citas por servicio, colaborador y disponibilidad.</p>
             </div>
           </section>
 
           <section class="card filters">
             <label>
               Buscar
-              <input id="search" type="text" placeholder="Título de la actividad" />
+              <input id="search" type="text" placeholder="Título o descripción" />
             </label>
             <label>
               Estado
@@ -42,17 +42,35 @@
                 <option value="cancelled">Cancelado</option>
               </select>
             </label>
-            <button id="load-events" class="btn btn-primary" type="button">Cargar agenda</button>
+            <label>
+              Servicio
+              <select id="service-filter"></select>
+            </label>
+            <label>
+              Colaborador
+              <select id="collaborator-filter"></select>
+            </label>
+            <label>
+              Desde
+              <input id="date-from-filter" type="date" />
+            </label>
+            <label>
+              Hasta
+              <input id="date-to-filter" type="date" />
+            </label>
+            <button id="load-events" class="btn btn-primary" type="button">Aplicar filtros</button>
           </section>
 
           <section class="grid">
             <article class="card">
-              <h2 id="form-title">Nuevo evento</h2>
+              <h2 id="form-title">Nueva cita</h2>
               <form id="event-form" class="event-form">
                 <input type="hidden" id="event-id" />
                 <div class="form-grid">
                   <label>Título<input id="title" required /></label>
                   <label>Tipo<select id="event-type" required></select></label>
+                  <label>Servicio<select id="service-id" required></select></label>
+                  <label>Colaborador<select id="collaborator-id" required></select></label>
                   <label>Estado
                     <select id="status">
                       <option value="pending">Pendiente</option>
@@ -93,7 +111,8 @@
                   <thead>
                     <tr>
                       <th>Título</th>
-                      <th>Tipo</th>
+                      <th>Servicio</th>
+                      <th>Colaborador</th>
                       <th>Inicio</th>
                       <th>Estado</th>
                       <th>Acciones</th>
@@ -103,6 +122,22 @@
                 </table>
               </div>
             </article>
+          </section>
+
+          <section class="card self-book-card">
+            <h2>Autoagendamiento para clientes</h2>
+            <p class="subtitle">Permite que tus clientes reserven desde disponibilidad real por colaborador.</p>
+            <form id="self-book-form" class="self-book-grid">
+              <label>Servicio<select id="self-service" required></select></label>
+              <label>Colaborador<select id="self-collaborator" required></select></label>
+              <label>Fecha<input id="self-date" type="date" required /></label>
+              <label>Inicio<input id="self-start" type="time" required /></label>
+              <label>Fin<input id="self-end" type="time" required /></label>
+              <label>Nombre cliente<input id="self-title" required placeholder="Ej: Cita Juan Pérez" /></label>
+              <button class="btn btn-primary" type="button" id="check-availability">Ver disponibilidad</button>
+              <button class="btn btn-secondary" type="submit">Agendar cita cliente</button>
+            </form>
+            <pre id="availability-result" class="availability-result">Sin consulta.</pre>
           </section>
         </div>
       </section>
