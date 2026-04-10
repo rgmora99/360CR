@@ -1,12 +1,15 @@
+from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import IntegrityError, transaction
 from django.db.models import IntegerField, Max
 from django.db.models.functions import Cast, Substr
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, InvoiceItem, Product
+from apps.loyalty.models import LoyaltyMember, LoyaltyPointEntry, LoyaltyRule
 from apps.suppliers.models import Supplier
 from apps.tenants.models import Membership, Organization
 
@@ -162,6 +165,7 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     items = InvoiceItemSerializer(many=True, read_only=True)
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
+    loyalty_awarded_points = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = Invoice
@@ -189,6 +193,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "email_sent_at",
             "notes",
             "items",
+            "loyalty_awarded_points",
         ]
 
 
@@ -340,4 +345,65 @@ class InvoiceCreateSerializer(serializers.Serializer):
         invoice.tax_total = money(tax_total)
         invoice.total = money(subtotal - discount_total + tax_total)
         invoice.save(update_fields=["subtotal", "discount_total", "tax_total", "total"])
+        invoice.loyalty_awarded_points = self._accrue_loyalty_points(
+            organization_id=organization_id,
+            customer_id=validated_data["customer"],
+            invoice=invoice,
+        )
         return invoice
+
+    def _accrue_loyalty_points(self, organization_id, customer_id, invoice):
+        member = (
+            LoyaltyMember.objects.select_for_update()
+            .select_related("program")
+            .filter(
+                program__organization_id=organization_id,
+                customer_id=customer_id,
+                status=LoyaltyMember.STATUS_ACTIVE,
+                program__is_active=True,
+            )
+            .order_by("id")
+            .first()
+        )
+        if not member:
+            return 0
+
+        active_rule = (
+            LoyaltyRule.objects.filter(program=member.program, rule_type=LoyaltyRule.RULE_EARN, is_active=True)
+            .order_by("id")
+            .first()
+        )
+        if not active_rule or not active_rule.points_per_currency_unit:
+            return 0
+
+        purchase_amount = invoice.total
+        if purchase_amount < active_rule.minimum_purchase_amount:
+            return 0
+
+        base_points = (purchase_amount * active_rule.points_per_currency_unit).to_integral_value(rounding=ROUND_HALF_UP)
+        multiplier = member.tier.multiplier if member.tier else Decimal("1.00")
+        awarded_points = int((base_points * multiplier).to_integral_value(rounding=ROUND_HALF_UP))
+        if awarded_points <= 0:
+            return 0
+
+        expires_at = None
+        if active_rule.points_expire_in_days:
+            expires_at = timezone.now() + timedelta(days=active_rule.points_expire_in_days)
+
+        LoyaltyPointEntry.objects.create(
+            member=member,
+            program=member.program,
+            related_rule=active_rule,
+            entry_type=LoyaltyPointEntry.TYPE_EARN,
+            points=awarded_points,
+            source_reference=invoice.invoice_number,
+            source_metadata={"invoice_id": invoice.id, "invoice_total": str(invoice.total), "tier_multiplier": str(multiplier)},
+            event_at=timezone.now(),
+            expires_at=expires_at,
+        )
+
+        member.lifetime_points += awarded_points
+        member.available_points += awarded_points
+        member.last_activity_at = timezone.now()
+        member.save(update_fields=["lifetime_points", "available_points", "last_activity_at", "updated_at"])
+        return awarded_points

@@ -1,6 +1,6 @@
 (function initFacturacion() {
   const $ = (id) => document.getElementById(id);
-  const state = { customers: [], products: [], lines: [] };
+  const state = { customers: [], products: [], lines: [], organizations: [], selectedCustomer: null };
 
   const apiBase = () => '/api';
   const orgId = () => {
@@ -44,18 +44,58 @@
     $('installments-interval-wrap').classList.toggle('hidden', !isInstallments);
   }
 
+  function validateFilters() {
+    const term = $('customer-search').value.trim();
+    if (term && term.length < 2) {
+      throw new Error('Para buscar clientes ingresa al menos 2 caracteres.');
+    }
+    if (term.length > 120) {
+      throw new Error('La búsqueda de cliente no puede superar 120 caracteres.');
+    }
+  }
+
+  function renderOrganizations() {
+    state.organizations = window.AppSession?.getOrganizations?.() || [];
+    const activeId = Number(window.AppSession?.getActiveOrganizationId?.());
+    $('organization-id').innerHTML =
+      state.organizations.map((org) => `<option value="${org.id}">${org.name}</option>`).join('') || '<option value="">Sin organizaciones</option>';
+    if (activeId && state.organizations.some((org) => org.id === activeId)) {
+      $('organization-id').value = String(activeId);
+    }
+  }
+
+  function renderCustomerSuggestions() {
+    $('customer-suggestions').innerHTML = state.customers
+      .map((c) => `<option value="${c.legal_name} · ${c.tax_id || 'sin cédula'}"></option>`)
+      .join('');
+  }
+
   async function loadCustomers(term = '') {
     const data = await request(`/invoices/customer-autocomplete/?organization_id=${orgId()}&q=${encodeURIComponent(term)}`);
     state.customers = data;
+    renderCustomerSuggestions();
     $('customer-select').innerHTML =
-      data.map((c) => `<option value="${c.id}">${c.legal_name} (${c.tax_id || 'sin cédula'})</option>`).join('') ||
+      data
+        .map(
+          (c) =>
+            `<option value="${c.id}">${c.legal_name} (${c.tax_id || 'sin cédula'})${c.loyalty?.program_name ? ` · ${c.loyalty.program_name}` : ''}</option>`,
+        )
+        .join('') ||
       '<option value="">Sin clientes activos</option>';
     updateCustomerMeta();
   }
 
   function updateCustomerMeta() {
     const customer = state.customers.find((c) => c.id === Number($('customer-select').value));
-    $('customer-meta').textContent = customer ? `${customer.email || 'sin correo'} · ${customer.phone || 'sin teléfono'}` : '';
+    state.selectedCustomer = customer || null;
+    if (!customer) {
+      $('customer-meta').textContent = '';
+      return;
+    }
+    const loyaltyText = customer.loyalty?.program_name
+      ? ` · Fidelización: ${customer.loyalty.program_name} (${customer.loyalty.available_points} pts)`
+      : ' · Sin membresía de fidelización';
+    $('customer-meta').textContent = `${customer.email || 'sin correo'} · ${customer.phone || 'sin teléfono'}${loyaltyText}`;
   }
 
   async function loadProducts() {
@@ -83,7 +123,23 @@
     $('totals').textContent = `Subtotal aproximado: ${subtotal.toFixed(2)} CRC`;
   }
 
-  $('search-customer').addEventListener('click', () => loadCustomers($('customer-search').value).catch((e) => setFeedback(e.message, true)));
+  $('search-customer').addEventListener('click', () => {
+    try {
+      validateFilters();
+      loadCustomers($('customer-search').value.trim()).catch((e) => setFeedback(e.message, true));
+    } catch (e) {
+      setFeedback(e.message, true);
+    }
+  });
+  $('clear-filters').addEventListener('click', () => {
+    $('customer-search').value = '';
+    loadCustomers().catch((e) => setFeedback(e.message, true));
+  });
+  $('customer-search').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    $('search-customer').click();
+  });
   $('customer-select').addEventListener('change', updateCustomerMeta);
   $('payment-method').addEventListener('change', syncInstallmentsUI);
 
@@ -91,7 +147,18 @@
     const product = Number($('line-product').value);
     const quantity = Number($('line-qty').value);
     const discount_percent = Number($('line-discount').value);
-    if (!product || quantity <= 0 || discount_percent < 0 || discount_percent > 100) return setFeedback('Línea inválida.', true);
+    const productDetail = state.products.find((item) => item.id === product);
+    if (!product || !productDetail) return setFeedback('Selecciona un producto válido.', true);
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 999999) return setFeedback('Cantidad inválida.', true);
+    if (productDetail.product_type === 'physical' && !Number.isInteger(quantity)) {
+      return setFeedback('Los productos físicos deben usar cantidad entera.', true);
+    }
+    if (productDetail.product_type === 'physical' && quantity > Number(productDetail.stock || 0)) {
+      return setFeedback(`Stock insuficiente para ${productDetail.name}.`, true);
+    }
+    if (!Number.isFinite(discount_percent) || discount_percent < 0 || discount_percent > 100) {
+      return setFeedback('El descuento debe estar entre 0 y 100.', true);
+    }
     state.lines.push({ product, quantity, discount_percent });
     renderLines();
   });
@@ -114,6 +181,12 @@
       const installmentCount = Number($('installment-count').value || 1);
       const installmentIntervalDays = Number($('installment-interval-days').value || 30);
       if (paymentMethod === '04' && installmentCount < 2) return setFeedback('Para pago a plazos use al menos 2 cuotas.', true);
+      if (paymentMethod === '04' && $('sale-condition').value !== '02') {
+        return setFeedback('Para pago a plazos debe seleccionar condición de venta: Crédito.', true);
+      }
+      const currency = $('currency').value.trim().toUpperCase();
+      if (!/^[A-Z]{3}$/.test(currency)) return setFeedback('La moneda debe tener formato de 3 letras (ejemplo: CRC).', true);
+      if ($('notes').value.length > 500) return setFeedback('Las notas no pueden superar 500 caracteres.', true);
 
       const payload = {
         organization: orgId(),
@@ -124,24 +197,31 @@
         tax_regime: $('tax-regime').value,
         installment_count: paymentMethod === '04' ? installmentCount : 1,
         installment_interval_days: paymentMethod === '04' ? installmentIntervalDays : 30,
-        currency: $('currency').value.toUpperCase(),
+        currency,
         exchange_rate: 1,
-        notes: $('notes').value,
+        notes: $('notes').value.trim(),
         items: state.lines,
       };
 
       const invoice = await request('/invoices/', { method: 'POST', body: JSON.stringify(payload) });
-      setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".`);
+      const loyaltyMsg = invoice.loyalty_awarded_points
+        ? ` Se acreditaron ${invoice.loyalty_awarded_points} puntos al cliente.`
+        : '';
+      setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".${loyaltyMsg}`);
       state.lines = [];
       renderLines();
       await loadProducts();
+      await loadCustomers($('customer-search').value.trim());
     } catch (err) {
       setFeedback(err.message || 'No se pudo insertar la factura.', true);
     }
   });
 
   syncInstallmentsUI();
-  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || '';
-  $('organization-id').addEventListener('change', () => window.AppSession?.setActiveOrganizationId?.($('organization-id').value));
+  renderOrganizations();
+  $('organization-id').addEventListener('change', () => {
+    window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
+    Promise.all([loadCustomers($('customer-search').value.trim()), loadProducts()]).catch((e) => setFeedback(e.message, true));
+  });
   Promise.all([loadCustomers(), loadProducts()]).catch((e) => setFeedback(e.message, true));
 })();
