@@ -74,6 +74,7 @@ class Product(models.Model):
     reorder_level = models.PositiveIntegerField(default=0)
     item_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_OK)
     is_active = models.BooleanField(default=True)
+    service_duration_minutes = models.PositiveIntegerField(default=30)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -139,12 +139,27 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="self-book")
     def self_book(self, request):
-        required_fields = ["organization", "event_type", "service", "collaborator", "title", "starts_at", "ends_at"]
+        required_fields = ["organization", "event_type", "service", "collaborator", "title", "starts_at"]
         missing = [field for field in required_fields if not request.data.get(field)]
         if missing:
             return Response({"detail": f"Campos requeridos faltantes: {', '.join(missing)}"}, status=400)
 
-        serializer = self.get_serializer(data=request.data)
+        try:
+            service = Product.objects.get(id=int(request.data.get("service")), organization_id=int(request.data.get("organization")))
+        except (TypeError, ValueError, Product.DoesNotExist):
+            return Response({"detail": "El servicio seleccionado no existe para esta organización."}, status=400)
+
+        starts_at = parse_datetime(str(request.data.get("starts_at")))
+        if not starts_at:
+            return Response({"detail": "starts_at inválido."}, status=400)
+
+        duration_minutes = int(service.service_duration_minutes or 0)
+        if duration_minutes <= 0:
+            duration_minutes = 30
+        payload = dict(request.data)
+        payload["ends_at"] = (starts_at + timedelta(minutes=duration_minutes)).isoformat()
+
+        serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
         serializer.save(status=AgendaEvent.STATUS_PENDING)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -162,7 +177,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
         services = list(
             Product.objects.filter(organization=organization, product_type=Product.TYPE_SERVICE, is_active=True)
-            .values("id", "name")
+            .values("id", "name", "service_duration_minutes")
             .order_by("name")
         )
 
