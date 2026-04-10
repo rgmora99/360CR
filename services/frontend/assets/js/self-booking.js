@@ -12,11 +12,21 @@
     date: $('self-date'),
     start: $('self-start'),
     end: $('self-end'),
-    title: $('self-title'),
+    taxId: $('self-tax-id'),
+    legalName: $('self-legal-name'),
+    email: $('self-email'),
+    phone: $('self-phone'),
+  };
+
+  const customerExtraFields = {
+    legalName: $('self-legal-name-wrap'),
+    email: $('self-email-wrap'),
+    phone: $('self-phone-wrap'),
   };
 
   let organizationId = null;
   let eventTypeId = null;
+  let selectedCustomer = null;
 
   function getApiBase() {
     return '/api';
@@ -56,6 +66,27 @@
     return JSON.parse(bodyText);
   }
 
+  async function requestAllow404(url) {
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    const bodyText = await response.text();
+    const payload = bodyText && contentType.includes('application/json') ? JSON.parse(bodyText) : null;
+
+    if (response.status === 404) {
+      return { notFound: true, payload };
+    }
+
+    if (!response.ok) {
+      throw new Error((payload && payload.detail) || bodyText || 'Error inesperado del servidor.');
+    }
+
+    return { notFound: false, payload };
+  }
+
   function populateSelect(select, items, placeholder, labelFn) {
     select.innerHTML = [`<option value="">${placeholder}</option>`]
       .concat(items.map((item) => `<option value="${item.id}">${labelFn(item)}</option>`))
@@ -79,6 +110,22 @@
     return new Date(value).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' });
   }
 
+  function setExtraFieldsVisible(isVisible) {
+    Object.values(customerExtraFields).forEach((node) => {
+      node.classList.toggle('is-hidden', !isVisible);
+    });
+    selfBook.legalName.required = isVisible;
+  }
+
+  function normalizeErrorMessage(error) {
+    try {
+      const payload = JSON.parse(error.message);
+      return payload.detail || error.message;
+    } catch (_error) {
+      return error.message;
+    }
+  }
+
   async function loadPublicContext() {
     const payload = await request(`${getApiBase()}/agenda-events/self-book-context/?organization_id=${organizationId}`);
     eventTypeId = payload.event_type_id;
@@ -86,6 +133,56 @@
 
     populateSelect(selfBook.service, payload.services, 'Seleccione servicio', (item) => item.name);
     populateSelect(selfBook.collaborator, payload.collaborators, 'Seleccione colaborador', (item) => item.email);
+  }
+
+  async function resolveCustomerByTaxId() {
+    const taxId = selfBook.taxId.value.trim();
+    if (!taxId) {
+      selectedCustomer = null;
+      setExtraFieldsVisible(false);
+      return;
+    }
+
+    const query = new URLSearchParams({ organization_id: String(organizationId), tax_id: taxId });
+    const result = await requestAllow404(`${getApiBase()}/agenda-events/self-book-customer/?${query.toString()}`);
+
+    if (result.notFound) {
+      selectedCustomer = null;
+      setExtraFieldsVisible(true);
+      availabilityResult.textContent = 'No encontramos esta cédula. Completa los datos para crear tu perfil cliente.';
+      return;
+    }
+
+    selectedCustomer = result.payload.customer;
+    setExtraFieldsVisible(false);
+    availabilityResult.textContent = `Cliente identificado: ${selectedCustomer.legal_name}.`;
+  }
+
+  async function ensureCustomer() {
+    if (selectedCustomer?.id) {
+      return selectedCustomer;
+    }
+
+    const taxId = selfBook.taxId.value.trim();
+    if (!taxId) {
+      throw new Error('Ingresa la cédula del cliente.');
+    }
+
+    const payload = {
+      organization_id: organizationId,
+      tax_id: taxId,
+      legal_name: selfBook.legalName.value.trim(),
+      email: selfBook.email.value.trim(),
+      phone: selfBook.phone.value.trim(),
+    };
+
+    const response = await request(`${getApiBase()}/agenda-events/self-book-customer/`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    selectedCustomer = response.customer;
+    return selectedCustomer;
   }
 
   async function checkAvailability() {
@@ -110,7 +207,7 @@
         .map((item) => `${formatDate(item.starts_at)} - ${formatDate(item.ends_at)} | ${item.title}`)
         .join('\n');
     } catch (error) {
-      availabilityResult.textContent = `Error: ${error.message}`;
+      availabilityResult.textContent = `Error: ${normalizeErrorMessage(error)}`;
     }
   }
 
@@ -118,12 +215,14 @@
     event.preventDefault();
 
     try {
+      const customer = await ensureCustomer();
       const payload = {
         organization: organizationId,
         event_type: eventTypeId,
         service: Number(selfBook.service.value),
         collaborator: Number(selfBook.collaborator.value),
-        title: selfBook.title.value.trim(),
+        customer: customer.id,
+        title: `Cita ${customer.legal_name}`,
         starts_at: combineDateAndTime(selfBook.date.value, selfBook.start.value),
         ends_at: combineDateAndTime(selfBook.date.value, selfBook.end.value),
         status: 'pending',
@@ -138,19 +237,32 @@
         body: JSON.stringify(payload),
       });
 
-      availabilityResult.textContent = 'Tu cita fue agendada correctamente.';
+      availabilityResult.textContent = `Tu cita fue agendada correctamente para ${customer.legal_name}.`;
       selfBookForm.reset();
+      selectedCustomer = null;
+      setExtraFieldsVisible(false);
     } catch (error) {
-      availabilityResult.textContent = `No se pudo autoagendar: ${error.message}`;
+      availabilityResult.textContent = `No se pudo autoagendar: ${normalizeErrorMessage(error)}`;
     }
+  });
+
+  selfBook.taxId.addEventListener('blur', () => {
+    resolveCustomerByTaxId().catch((error) => {
+      availabilityResult.textContent = `No se pudo validar la cédula: ${normalizeErrorMessage(error)}`;
+    });
+  });
+
+  selfBook.taxId.addEventListener('input', () => {
+    selectedCustomer = null;
   });
 
   checkAvailabilityButton.addEventListener('click', checkAvailability);
 
   try {
     organizationId = getOrganizationIdFromUrl();
+    setExtraFieldsVisible(false);
     loadPublicContext().catch((error) => {
-      availabilityResult.textContent = `No se pudo cargar el portal: ${error.message}`;
+      availabilityResult.textContent = `No se pudo cargar el portal: ${normalizeErrorMessage(error)}`;
     });
   } catch (error) {
     availabilityResult.textContent = error.message;
