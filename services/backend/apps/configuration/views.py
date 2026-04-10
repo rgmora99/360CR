@@ -1,6 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 
 from apps.configuration.models import RoleCatalog, SystemSetting, UserPreference, UserRoleAssignment
 from apps.configuration.serializers import (
@@ -36,8 +37,14 @@ class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSe
 # Compatibilidad retroactiva:
 # algunas versiones del contenedor importan OrganizationCollaboratorView desde urls.py.
 # Mantener este alias evita fallos de importación sin romper la API actual.
-class OrganizationCollaboratorView(ConfigurationUserViewSet):
-    pass
+class OrganizationCollaboratorView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return ConfigurationUserViewSet.as_view({"get": "list"})(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return ConfigurationUserViewSet.as_view({"post": "create"})(request, *args, **kwargs)
 
 
 class RoleCatalogViewSet(viewsets.ModelViewSet):

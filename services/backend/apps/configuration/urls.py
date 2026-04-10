@@ -18,11 +18,6 @@ router.register(r"config/user-preferences", UserPreferenceViewSet, basename="con
 router.register(r"config/user-role-assignments", UserRoleAssignmentViewSet, basename="config-user-role-assignment")
 
 urlpatterns = [
-    path(
-        "config/organization-collaborators/",
-        OrganizationCollaboratorView.as_view({"get": "list", "post": "create"}),
-        name="config-organization-collaborators",
-    ),
-    path("", include(router.urls)),
     path("config/organization-collaborators/", OrganizationCollaboratorView.as_view(), name="config-organization-collaborators"),
+    path("", include(router.urls)),
 ]
