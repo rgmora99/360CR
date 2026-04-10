@@ -9,7 +9,7 @@ from rest_framework.response import Response
 
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, Product
-from apps.finance.serializers import InvoiceCreateSerializer, InvoiceSerializer, ProductSerializer
+from apps.finance.serializers import InvoiceCreateSerializer, InvoiceSerializer, ProductSerializer, PurchaseCreateSerializer
 from apps.loyalty.models import LoyaltyMember
 from apps.tenants.access import OrganizationScopedViewMixin
 
@@ -263,3 +263,20 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         invoice.email_sent_at = timezone.now()
         invoice.save(update_fields=["email_sent_at"])
         return Response({"detail": "Correo enviado."})
+
+
+class PurchaseViewSet(OrganizationScopedViewMixin, viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def create(self, request):
+        serializer = PurchaseCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        invoice = serializer.save()
+        return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
+
+
+class TaxQuarterReportViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        return Response({"detail": "Reporte trimestral no implementado en esta versión."}, status=status.HTTP_501_NOT_IMPLEMENTED)

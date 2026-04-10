@@ -415,3 +415,10 @@ class InvoiceCreateSerializer(serializers.Serializer):
         member.last_activity_at = timezone.now()
         member.save(update_fields=["lifetime_points", "available_points", "last_activity_at", "updated_at"])
         return awarded_points
+
+
+class PurchaseCreateSerializer(InvoiceCreateSerializer):
+    """
+    Compatibilidad retroactiva.
+    Algunos despliegues aún importan PurchaseCreateSerializer desde este módulo.
+    """
