@@ -27,6 +27,7 @@
   let organizationId = null;
   let eventTypeId = null;
   let selectedCustomer = null;
+  let servicesById = new Map();
 
   function getApiBase() {
     return '/api';
@@ -101,9 +102,22 @@
     if (!payload.service || !payload.collaborator) {
       throw new Error('Selecciona servicio y colaborador.');
     }
-    if (payload.ends_at <= payload.starts_at) {
-      throw new Error('La hora final debe ser mayor que la inicial.');
+  }
+
+  function calculateEndTime() {
+    const serviceId = Number(selfBook.service.value);
+    const service = servicesById.get(serviceId);
+    if (!selfBook.start.value || !service?.service_duration_minutes) {
+      selfBook.end.value = '';
+      return;
     }
+
+    const [hours, minutes] = selfBook.start.value.split(':').map((part) => Number(part));
+    const startMinutes = hours * 60 + minutes;
+    const endMinutes = startMinutes + Number(service.service_duration_minutes);
+    const endHours = Math.floor((endMinutes % (24 * 60)) / 60);
+    const endMins = endMinutes % 60;
+    selfBook.end.value = `${String(endHours).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
   }
 
   function formatDate(value) {
@@ -130,6 +144,7 @@
     const payload = await request(`${getApiBase()}/agenda-events/self-book-context/?organization_id=${organizationId}`);
     eventTypeId = payload.event_type_id;
     subtitle.textContent = `Reserva tu cita para ${payload.organization_name}.`;
+    servicesById = new Map(payload.services.map((service) => [service.id, service]));
 
     populateSelect(selfBook.service, payload.services, 'Seleccione servicio', (item) => item.name);
     populateSelect(selfBook.collaborator, payload.collaborators, 'Seleccione colaborador', (item) => item.email);
@@ -224,7 +239,6 @@
         customer: customer.id,
         title: `Cita ${customer.legal_name}`,
         starts_at: combineDateAndTime(selfBook.date.value, selfBook.start.value),
-        ends_at: combineDateAndTime(selfBook.date.value, selfBook.end.value),
         status: 'pending',
         priority: 'medium',
         reminder_minutes: 30,
@@ -255,6 +269,8 @@
   selfBook.taxId.addEventListener('input', () => {
     selectedCustomer = null;
   });
+  selfBook.service.addEventListener('change', calculateEndTime);
+  selfBook.start.addEventListener('input', calculateEndTime);
 
   checkAvailabilityButton.addEventListener('click', checkAvailability);
 

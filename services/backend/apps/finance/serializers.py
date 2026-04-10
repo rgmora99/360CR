@@ -43,6 +43,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "stock",
             "item_status",
             "is_active",
+            "service_duration_minutes",
             "created_at",
         ]
         validators = []
@@ -61,6 +62,9 @@ class ProductSerializer(serializers.ModelSerializer):
         supplier = attrs.get("supplier", getattr(self.instance, "supplier", None))
         if product_type == Product.TYPE_SERVICE:
             attrs["stock"] = 0
+            duration = attrs.get("service_duration_minutes", getattr(self.instance, "service_duration_minutes", 30))
+            if duration < 0:
+                raise serializers.ValidationError({"service_duration_minutes": "La duración del servicio no puede ser negativa."})
         elif stock_value is None or stock_value < 0:
             raise serializers.ValidationError({"stock": "El stock debe ser un entero mayor o igual a 0."})
 
@@ -407,3 +411,10 @@ class InvoiceCreateSerializer(serializers.Serializer):
         member.last_activity_at = timezone.now()
         member.save(update_fields=["lifetime_points", "available_points", "last_activity_at", "updated_at"])
         return awarded_points
+
+
+class PurchaseCreateSerializer(InvoiceCreateSerializer):
+    """
+    Compatibilidad retroactiva.
+    Algunos despliegues aún importan PurchaseCreateSerializer desde este módulo.
+    """
