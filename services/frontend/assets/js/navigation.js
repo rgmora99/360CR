@@ -106,6 +106,7 @@
         children: [
           { key: 'facturacion-listado', label: 'Listado de facturas', href: '/facturas.html' },
           { key: 'facturacion-registrar', label: 'Registrar factura', href: '/facturacion.html' },
+          { key: 'compras-impuestos', label: 'Compras e impuestos', href: '/compras.html' },
         ],
       },
       { key: 'inventario', label: 'Inventario', href: '/inventario.html' },
