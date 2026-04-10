@@ -136,6 +136,15 @@
     return getTypeCode(fields.type.value) === 'fisico';
   }
 
+  function findCustomerByTaxId(taxId) {
+    const normalizedTaxId = window.CedulaPadron?.normalizeCedula(taxId) || String(taxId || '').replace(/\D/g, '');
+    if (!normalizedTaxId) return null;
+    return customers.find((customer) => {
+      const customerTaxId = window.CedulaPadron?.normalizeCedula(customer.tax_id) || String(customer.tax_id || '').replace(/\D/g, '');
+      return customerTaxId === normalizedTaxId;
+    }) || null;
+  }
+
   async function syncCustomerNameFromPadron() {
     if (!window.CedulaPadron || !isPhysicalCustomer()) {
       return;
@@ -148,21 +157,58 @@
     const normalizedTaxId = window.CedulaPadron.normalizeCedula(taxId);
     if (normalizedTaxId.length < 9) return;
 
-    const record = await window.CedulaPadron.resolveByCedula(taxId);
-    if (!record) {
-      setFeedback(`La cédula ${taxId} no existe en el padrón electoral.`, true);
-      return;
-    }
+    logInfo('Iniciando validación de cédula en padrón.', {
+      taxId,
+      normalizedTaxId,
+      currentLegalName: fields.legalName.value.trim(),
+    });
 
-    if (!fields.legalName.value.trim()) {
-      fields.legalName.value = record.fullName;
-      setFeedback(`Nombre autocompletado desde padrón para la cédula ${taxId}.`);
-      return;
-    }
+    try {
+      const record = await window.CedulaPadron.resolveByCedula(taxId);
+      if (!record) {
+        logInfo('No hubo coincidencia en padrón. Intentando fallback con clientes locales.', {
+          taxId: normalizedTaxId,
+          customersLoaded: customers.length,
+        });
+        const existingCustomer = findCustomerByTaxId(taxId);
+        if (existingCustomer?.legal_name && !fields.legalName.value.trim()) {
+          fields.legalName.value = existingCustomer.legal_name;
+          logInfo('Nombre recuperado desde cliente local.', {
+            customerId: existingCustomer.id,
+            legalName: existingCustomer.legal_name,
+          });
+          setFeedback(`Nombre recuperado desde clientes registrados para la cédula ${taxId}.`);
+          return;
+        }
+        setFeedback(`La cédula ${taxId} no existe en el padrón electoral.`, true);
+        return;
+      }
 
-    const isSameName = window.CedulaPadron.compareName(fields.legalName.value, record);
-    if (isSameName === false) {
-      setFeedback(`La cédula ${taxId} corresponde a "${record.fullName}". Verifica el nombre ingresado.`, true);
+      logInfo('Coincidencia encontrada en padrón.', {
+        taxId: normalizedTaxId,
+        fullName: record.fullName,
+      });
+      if (!fields.legalName.value.trim()) {
+        fields.legalName.value = record.fullName;
+        setFeedback(`Nombre autocompletado desde padrón para la cédula ${taxId}.`);
+        return;
+      }
+
+      const isSameName = window.CedulaPadron.compareName(fields.legalName.value, record);
+      if (isSameName === false) {
+        logInfo('Nombre ingresado no coincide con padrón.', {
+          taxId: normalizedTaxId,
+          enteredName: fields.legalName.value,
+          padronName: record.fullName,
+        });
+        setFeedback(`La cédula ${taxId} corresponde a "${record.fullName}". Verifica el nombre ingresado.`, true);
+      }
+    } catch (error) {
+      logError('Error validando cédula contra padrón.', {
+        taxId: normalizedTaxId,
+        message: error?.message || error,
+      });
+      setFeedback('No se pudo validar la cédula en este momento. Revisa la consola para más detalle.', true);
     }
   }
 
