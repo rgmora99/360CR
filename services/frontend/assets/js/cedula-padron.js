@@ -2,16 +2,7 @@
   const PADRON_SOURCES = [
     '/services/docs/PADRON_COMPLETO.txt',
     '/docs/PADRON_COMPLETO.txt',
-    '/docs/padron_completo.txt',
-    '/docs/PADRON_ELECTORAL.TXT',
-    '/docs/PADRON_ELECTORAL.txt',
-    '/docs/padron-electoral.txt',
-    '/docs/padron_electoral.txt',
-    '/PADRON_ELECTORAL.TXT',
-    '/padron-electoral.txt',
-    '/padron_electoral.txt',
-    '/docs/padron-electoral.csv',
-    '/docs/padron-electoral.tsv',
+    '/docs/padron_completo.txt'
   ];
 
   const state = {
