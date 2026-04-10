@@ -143,7 +143,14 @@ class PadronLookupView(APIView):
 
         record = PadronRecord.objects.filter(cedula=cedula).only("cedula", "full_name", "normalized_name").first()
         if not record:
-            return Response({"detail": "La cédula no existe en el padrón electoral.", "found": False}, status=404)
+            return Response(
+                {
+                    "detail": "La cédula no existe en el padrón electoral.",
+                    "found": False,
+                    "cedula": cedula,
+                },
+                status=200,
+            )
 
         normalized_name = record.normalized_name or unicodedata.normalize("NFD", record.full_name).encode("ascii", "ignore").decode("ascii").lower()
         return Response(

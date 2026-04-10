@@ -136,6 +136,15 @@
     return getTypeCode(fields.type.value) === 'fisico';
   }
 
+  function findCustomerByTaxId(taxId) {
+    const normalizedTaxId = window.CedulaPadron?.normalizeCedula(taxId) || String(taxId || '').replace(/\D/g, '');
+    if (!normalizedTaxId) return null;
+    return customers.find((customer) => {
+      const customerTaxId = window.CedulaPadron?.normalizeCedula(customer.tax_id) || String(customer.tax_id || '').replace(/\D/g, '');
+      return customerTaxId === normalizedTaxId;
+    }) || null;
+  }
+
   async function syncCustomerNameFromPadron() {
     if (!window.CedulaPadron || !isPhysicalCustomer()) {
       return;
@@ -150,6 +159,12 @@
 
     const record = await window.CedulaPadron.resolveByCedula(taxId);
     if (!record) {
+      const existingCustomer = findCustomerByTaxId(taxId);
+      if (existingCustomer?.legal_name && !fields.legalName.value.trim()) {
+        fields.legalName.value = existingCustomer.legal_name;
+        setFeedback(`Nombre recuperado desde clientes registrados para la cédula ${taxId}.`);
+        return;
+      }
       setFeedback(`La cédula ${taxId} no existe en el padrón electoral.`, true);
       return;
     }
