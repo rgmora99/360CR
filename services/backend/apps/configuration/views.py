@@ -13,10 +13,31 @@ from apps.configuration.serializers import (
 from apps.tenants.access import OrganizationScopedViewMixin
 
 
-class ConfigurationUserViewSet(viewsets.ModelViewSet):
+class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("id")
     serializer_class = ConfigurationUserSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        allowed_ids = self.get_allowed_organization_ids()
+        return (
+            User.objects.filter(membership__organization_id__in=allowed_ids)
+            .distinct()
+            .order_by("id")
+        )
+
+    def perform_create(self, serializer):
+        organization = serializer.validated_data.get("resolved_organization")
+        if organization:
+            self.validate_organization_payload(organization.id)
+        serializer.save()
+
+
+# Compatibilidad retroactiva:
+# algunas versiones del contenedor importan OrganizationCollaboratorView desde urls.py.
+# Mantener este alias evita fallos de importación sin romper la API actual.
+class OrganizationCollaboratorView(ConfigurationUserViewSet):
+    pass
 
 
 class RoleCatalogViewSet(viewsets.ModelViewSet):
