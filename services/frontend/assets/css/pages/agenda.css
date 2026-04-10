@@ -90,6 +90,12 @@ td .btn {
   gap: 0.75rem;
 }
 
+.self-book-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
 .availability-result {
   margin: 0;
   padding: 0.8rem;
@@ -116,5 +122,9 @@ td .btn {
   .form-grid,
   .self-book-grid {
     grid-template-columns: 1fr;
+  }
+
+  .self-book-actions {
+    flex-direction: column;
   }
 }

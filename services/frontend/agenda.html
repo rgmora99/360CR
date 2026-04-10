@@ -125,19 +125,17 @@
           </section>
 
           <section class="card self-book-card">
-            <h2>Autoagendamiento para clientes</h2>
-            <p class="subtitle">Permite que tus clientes reserven desde disponibilidad real por colaborador.</p>
-            <form id="self-book-form" class="self-book-grid">
-              <label>Servicio<select id="self-service" required></select></label>
-              <label>Colaborador<select id="self-collaborator" required></select></label>
-              <label>Fecha<input id="self-date" type="date" required /></label>
-              <label>Inicio<input id="self-start" type="time" required /></label>
-              <label>Fin<input id="self-end" type="time" required /></label>
-              <label>Nombre cliente<input id="self-title" required placeholder="Ej: Cita Juan Pérez" /></label>
-              <button class="btn btn-primary" type="button" id="check-availability">Ver disponibilidad</button>
-              <button class="btn btn-secondary" type="submit">Agendar cita cliente</button>
-            </form>
-            <pre id="availability-result" class="availability-result">Sin consulta.</pre>
+            <h2>Portal de autoagendamiento</h2>
+            <p class="subtitle">Comparte un link externo e independiente para que tus clientes solo puedan agendar.</p>
+            <label>
+              Link dinámico por organización
+              <input id="self-book-link" readonly />
+            </label>
+            <div class="self-book-actions">
+              <button class="btn btn-primary" type="button" id="open-self-book-link">Abrir portal cliente</button>
+              <button class="btn btn-secondary" type="button" id="copy-self-book-link">Copiar link</button>
+            </div>
+            <p id="self-book-link-feedback" class="subtitle">Selecciona una organización activa para generar el link.</p>
           </section>
         </div>
       </section>

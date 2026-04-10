@@ -11,6 +11,9 @@ from rest_framework.response import Response
 
 from apps.agenda.models import AgendaEvent, AgendaEventType
 from apps.agenda.serializers import AgendaEventSerializer, AgendaEventTypeSerializer
+from apps.customers.models import Customer, CustomerType
+from apps.customers.serializers import CustomerSerializer
+from apps.finance.models import Product
 from apps.tenants.access import OrganizationScopedViewMixin
 from apps.tenants.models import Membership, Organization
 
@@ -29,7 +32,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        if self.action in {"availability", "self_book"}:
+        if self.action in {"availability", "self_book", "self_book_context", "self_book_customer"}:
             return [AllowAny()]
         return [permission() for permission in self.permission_classes]
 
@@ -145,6 +148,125 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(status=AgendaEvent.STATUS_PENDING)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["get"], url_path="self-book-context")
+    def self_book_context(self, request):
+        organization_id = request.query_params.get("organization_id")
+        if not organization_id:
+            return Response({"detail": "organization_id es requerido"}, status=400)
+
+        try:
+            organization = Organization.objects.get(id=int(organization_id))
+        except (TypeError, ValueError, Organization.DoesNotExist):
+            return Response({"detail": "organization_id inválido"}, status=400)
+
+        services = list(
+            Product.objects.filter(organization=organization, product_type=Product.TYPE_SERVICE, is_active=True)
+            .values("id", "name")
+            .order_by("name")
+        )
+
+        collaborators = [
+            {"id": membership.user_id, "email": membership.user.email}
+            for membership in Membership.objects.select_related("user").filter(organization=organization).order_by("user__email")
+        ]
+
+        cita_type = AgendaEventType.objects.filter(code="cita").first() or AgendaEventType.objects.first()
+        if not cita_type:
+            return Response({"detail": "No hay tipos de evento configurados."}, status=400)
+
+        return Response(
+            {
+                "organization_id": organization.id,
+                "organization_name": organization.name,
+                "event_type_id": cita_type.id,
+                "services": services,
+                "collaborators": collaborators,
+            }
+        )
+
+    @action(detail=False, methods=["get", "post"], url_path="self-book-customer")
+    def self_book_customer(self, request):
+        if request.method.lower() == "get":
+            organization_id = request.query_params.get("organization_id")
+            tax_id = (request.query_params.get("tax_id") or "").strip()
+        else:
+            organization_id = request.data.get("organization_id")
+            tax_id = (request.data.get("tax_id") or "").strip()
+
+        if not organization_id:
+            return Response({"detail": "organization_id es requerido"}, status=400)
+        if not tax_id:
+            return Response({"detail": "tax_id es requerido"}, status=400)
+
+        try:
+            organization = Organization.objects.get(id=int(organization_id))
+        except (TypeError, ValueError, Organization.DoesNotExist):
+            return Response({"detail": "organization_id inválido"}, status=400)
+
+        existing_customer = Customer.objects.filter(organization=organization, tax_id=tax_id).first()
+        if request.method.lower() == "get":
+            if not existing_customer:
+                return Response({"exists": False, "detail": "Cliente no encontrado."}, status=404)
+            return Response(
+                {
+                    "exists": True,
+                    "customer": {
+                        "id": existing_customer.id,
+                        "legal_name": existing_customer.legal_name,
+                        "tax_id": existing_customer.tax_id,
+                        "email": existing_customer.email,
+                        "phone": existing_customer.phone,
+                    },
+                }
+            )
+
+        if existing_customer:
+            return Response(
+                {
+                    "created": False,
+                    "customer": {
+                        "id": existing_customer.id,
+                        "legal_name": existing_customer.legal_name,
+                        "tax_id": existing_customer.tax_id,
+                        "email": existing_customer.email,
+                        "phone": existing_customer.phone,
+                    },
+                }
+            )
+
+        legal_name = (request.data.get("legal_name") or "").strip()
+        if not legal_name:
+            return Response({"detail": "legal_name es requerido para crear el cliente."}, status=400)
+
+        customer_type, _created = CustomerType.objects.get_or_create(code="general", defaults={"name": "General"})
+        serializer = CustomerSerializer(
+            data={
+                "organization": organization.id,
+                "customer_type": customer_type.id,
+                "legal_name": legal_name,
+                "trade_name": (request.data.get("trade_name") or "").strip(),
+                "tax_id": tax_id,
+                "email": (request.data.get("email") or "").strip(),
+                "phone": (request.data.get("phone") or "").strip(),
+                "status": Customer.STATUS_ACTIVE,
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        customer = serializer.save()
+        return Response(
+            {
+                "created": True,
+                "customer": {
+                    "id": customer.id,
+                    "legal_name": customer.legal_name,
+                    "tax_id": customer.tax_id,
+                    "email": customer.email,
+                    "phone": customer.phone,
+                },
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     def perform_create(self, serializer):
         self.validate_organization_payload(serializer.validated_data["organization"].id)
