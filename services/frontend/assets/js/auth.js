@@ -1,6 +1,7 @@
 (function initAuthForms() {
   const loginForm = document.getElementById('login-form');
   const registerForm = document.getElementById('register-form');
+  const passwordSetupTrigger = document.getElementById('password-setup-trigger');
   const SESSION_KEY = 'cr360.session';
 
   const FIELD_LABELS = {
@@ -30,7 +31,7 @@
       const fieldErrors = {};
 
       Object.entries(payload).forEach(([field, value]) => {
-        if (field === 'detail') {
+        if (field === 'detail' || field === 'code' || field === 'setup_email') {
           return;
         }
 
@@ -174,6 +175,50 @@
     });
   }
 
+  async function openPasswordSetupModal(prefilledEmail = '') {
+    const result = await window.Swal.fire({
+      title: 'Configurar contraseña',
+      html:
+        '<p style="margin-bottom:8px;">Si tu cuenta fue creada por un administrador, define aquí tu contraseña para ingresar.</p>' +
+        `<input id="setup-email" class="swal2-input" type="email" placeholder="Correo electrónico" value="${prefilledEmail || ''}">` +
+        '<input id="setup-password" class="swal2-input" type="password" placeholder="Nueva contraseña (mínimo 8)">' +
+        '<input id="setup-password-confirm" class="swal2-input" type="password" placeholder="Confirmar contraseña">',
+      confirmButtonText: 'Guardar contraseña',
+      showCancelButton: true,
+      focusConfirm: false,
+      preConfirm: () => {
+        const email = (document.getElementById('setup-email')?.value || '').trim().toLowerCase();
+        const first = document.getElementById('setup-password')?.value || '';
+        const second = document.getElementById('setup-password-confirm')?.value || '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          window.Swal.showValidationMessage('Ingresa un correo válido.');
+          return false;
+        }
+        if (first.length < 8) {
+          window.Swal.showValidationMessage('La contraseña debe tener al menos 8 caracteres.');
+          return false;
+        }
+        if (first !== second) {
+          window.Swal.showValidationMessage('Las contraseñas no coinciden.');
+          return false;
+        }
+        return { email, password: first };
+      },
+    });
+
+    if (!result.isConfirmed || !result.value) {
+      return null;
+    }
+    return result.value;
+  }
+
+  function shouldTriggerPasswordSetup(error) {
+    return (
+      error?.code === 'password_setup_required' ||
+      /no tiene contraseña|debes crearla/i.test(String(error?.message || ''))
+    );
+  }
+
   if (loginForm) {
     initFormValidation(loginForm, FORM_RULES.login, async () => {
       const data = new FormData(loginForm);
@@ -187,41 +232,18 @@
         storeSession(sessionData);
         window.location.href = '/dashboard.html';
       } catch (error) {
-        if (error.code === 'password_setup_required') {
-          const result = await window.Swal.fire({
-            title: 'Crea tu contraseña',
-            html:
-              '<p style="margin-bottom:8px;">Tu cuenta fue creada por un administrador. Debes definir una contraseña para ingresar.</p>' +
-              '<input id="setup-password" class="swal2-input" type="password" placeholder="Nueva contraseña (mínimo 8)">' +
-              '<input id="setup-password-confirm" class="swal2-input" type="password" placeholder="Confirmar contraseña">',
-            confirmButtonText: 'Guardar contraseña',
-            showCancelButton: true,
-            focusConfirm: false,
-            preConfirm: () => {
-              const first = document.getElementById('setup-password')?.value || '';
-              const second = document.getElementById('setup-password-confirm')?.value || '';
-              if (first.length < 8) {
-                window.Swal.showValidationMessage('La contraseña debe tener al menos 8 caracteres.');
-                return false;
-              }
-              if (first !== second) {
-                window.Swal.showValidationMessage('Las contraseñas no coinciden.');
-                return false;
-              }
-              return first;
-            },
-          });
-
-          if (result.isConfirmed && result.value) {
+        if (shouldTriggerPasswordSetup(error)) {
+          const setupData = await openPasswordSetupModal(error?.extra?.setup_email || payload.email || '');
+          if (setupData) {
             try {
               await request('/auth/activate-password/', {
                 method: 'POST',
-                body: JSON.stringify({ email: payload.email, new_password: result.value }),
+                body: JSON.stringify({ email: setupData.email, new_password: setupData.password }),
               });
 
               const sessionData = await request('/auth/login/', {
                 method: 'POST',
-                body: JSON.stringify({ email: payload.email, password: result.value }),
+                body: JSON.stringify({ email: setupData.email, password: setupData.password }),
               });
               storeSession(sessionData);
               window.location.href = '/dashboard.html';
@@ -242,6 +264,32 @@
         setServerFieldErrors(loginForm, error.fieldErrors);
         if (window.appAlerts?.notify) {
           await window.appAlerts.notify(error.message, 'error', 'No se pudo iniciar sesión');
+        }
+      }
+    });
+  }
+
+  if (passwordSetupTrigger) {
+    passwordSetupTrigger.addEventListener('click', async () => {
+      const loginEmail = loginForm?.elements?.namedItem('email')?.value || '';
+      const setupData = await openPasswordSetupModal(loginEmail);
+      if (!setupData) return;
+
+      try {
+        await request('/auth/activate-password/', {
+          method: 'POST',
+          body: JSON.stringify({ email: setupData.email, new_password: setupData.password }),
+        });
+        if (window.appAlerts?.notify) {
+          await window.appAlerts.notify('Contraseña creada. Ahora puedes iniciar sesión.', 'success', 'Listo');
+        }
+        const passwordField = loginForm?.elements?.namedItem('password');
+        const emailField = loginForm?.elements?.namedItem('email');
+        if (emailField) emailField.value = setupData.email;
+        if (passwordField) passwordField.value = setupData.password;
+      } catch (error) {
+        if (window.appAlerts?.notify) {
+          await window.appAlerts.notify(error.message || 'No se pudo configurar la contraseña.', 'error', 'Error');
         }
       }
     });

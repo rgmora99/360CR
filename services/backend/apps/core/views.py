@@ -58,7 +58,7 @@ class LoginView(APIView):
                 {
                     "detail": "Tu cuenta aún no tiene contraseña. Debes crearla para ingresar.",
                     "code": "password_setup_required",
-                    "email": existing_user.email,
+                    "setup_email": existing_user.email,
                 },
                 status=428,
             )
