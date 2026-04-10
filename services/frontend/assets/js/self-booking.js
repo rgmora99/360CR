@@ -29,6 +29,7 @@
   let selectedCustomer = null;
   let servicesById = new Map();
   let padronTypingTimer = null;
+  let isSubmitting = false;
 
   function getApiBase() {
     return '/api';
@@ -259,6 +260,13 @@
 
   selfBookForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (isSubmitting) {
+      return;
+    }
+
+    const submitButton = selfBookForm.querySelector('button[type="submit"]');
+    isSubmitting = true;
+    if (submitButton) submitButton.disabled = true;
 
     try {
       const customer = await ensureCustomer();
@@ -277,17 +285,22 @@
 
       validatePayload(payload);
 
-      await request(`${getApiBase()}/agenda-events/self-book/`, {
+      const bookingResult = await request(`${getApiBase()}/agenda-events/self-book/`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
 
-      availabilityResult.textContent = `Tu cita fue agendada correctamente para ${customer.legal_name}.`;
+      availabilityResult.textContent = bookingResult?.duplicate
+        ? `Ya tenías una cita igual para ${customer.legal_name}. No se duplicó el registro.`
+        : `Tu cita fue agendada correctamente para ${customer.legal_name}.`;
       selfBookForm.reset();
       selectedCustomer = null;
       setExtraFieldsVisible(false);
     } catch (error) {
       availabilityResult.textContent = `No se pudo autoagendar: ${normalizeErrorMessage(error)}`;
+    } finally {
+      isSubmitting = false;
+      if (submitButton) submitButton.disabled = false;
     }
   });
 

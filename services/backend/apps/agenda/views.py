@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -157,12 +158,52 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         if duration_minutes <= 0:
             duration_minutes = 30
         payload = dict(request.data)
-        payload["ends_at"] = (starts_at + timedelta(minutes=duration_minutes)).isoformat()
+        ends_at = starts_at + timedelta(minutes=duration_minutes)
+        payload["ends_at"] = ends_at.isoformat()
+
+        duplicate_event = (
+            AgendaEvent.objects.filter(
+                organization_id=int(request.data.get("organization")),
+                event_type_id=int(request.data.get("event_type")),
+                service_id=int(request.data.get("service")),
+                collaborator_id=int(request.data.get("collaborator")),
+                customer_id=request.data.get("customer"),
+                starts_at=starts_at,
+                ends_at=ends_at,
+            )
+            .exclude(status=AgendaEvent.STATUS_CANCELLED)
+            .order_by("id")
+            .first()
+        )
+        if duplicate_event:
+            serializer = self.get_serializer(duplicate_event)
+            return Response({**serializer.data, "duplicate": True}, status=status.HTTP_200_OK)
 
         serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
-        serializer.save(status=AgendaEvent.STATUS_PENDING)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        try:
+            with transaction.atomic():
+                serializer.save(status=AgendaEvent.STATUS_PENDING)
+        except IntegrityError:
+            duplicate_event = (
+                AgendaEvent.objects.filter(
+                    organization_id=int(request.data.get("organization")),
+                    event_type_id=int(request.data.get("event_type")),
+                    service_id=int(request.data.get("service")),
+                    collaborator_id=int(request.data.get("collaborator")),
+                    customer_id=request.data.get("customer"),
+                    starts_at=starts_at,
+                    ends_at=ends_at,
+                )
+                .exclude(status=AgendaEvent.STATUS_CANCELLED)
+                .order_by("id")
+                .first()
+            )
+            if duplicate_event:
+                duplicate_serializer = self.get_serializer(duplicate_event)
+                return Response({**duplicate_serializer.data, "duplicate": True}, status=status.HTTP_200_OK)
+            raise
+        return Response({**serializer.data, "duplicate": False}, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], url_path="self-book-context")
     def self_book_context(self, request):
