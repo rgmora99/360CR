@@ -1,12 +1,26 @@
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.db import models
 
 
 class Organization(models.Model):
+    DIGITS_3 = RegexValidator(r"^\d{3}$", "Debe contener exactamente 3 dígitos.")
+    DIGITS_5 = RegexValidator(r"^\d{5}$", "Debe contener exactamente 5 dígitos.")
+
     name = models.CharField(max_length=200)
     slug = models.SlugField(unique=True)
     parent_organization = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="child_organizations")
+    hacienda_branch_code = models.CharField(max_length=3, default="001", validators=[DIGITS_3])
+    hacienda_terminal_code = models.CharField(max_length=5, default="00001", validators=[DIGITS_5])
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["hacienda_branch_code", "hacienda_terminal_code"],
+                name="uq_org_hacienda_branch_terminal",
+            )
+        ]
 
     def __str__(self) -> str:
         return self.name

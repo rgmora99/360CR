@@ -63,8 +63,8 @@ class ProductSerializer(serializers.ModelSerializer):
         if product_type == Product.TYPE_SERVICE:
             attrs["stock"] = 0
             duration = attrs.get("service_duration_minutes", getattr(self.instance, "service_duration_minutes", 30))
-            if duration < 0:
-                raise serializers.ValidationError({"service_duration_minutes": "La duración del servicio no puede ser negativa."})
+            if duration < 1:
+                raise serializers.ValidationError({"service_duration_minutes": "La duración del servicio debe ser mayor a 0 minutos."})
         elif stock_value is None or stock_value < 0:
             raise serializers.ValidationError({"stock": "El stock debe ser un entero mayor o igual a 0."})
 
@@ -217,6 +217,10 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
+        organization = Organization.objects.filter(id=attrs["organization"]).first()
+        if not organization:
+            raise serializers.ValidationError("La organización seleccionada no existe.")
+
         if request and request.user.is_authenticated:
             has_access = Membership.objects.filter(user=request.user, organization_id=attrs["organization"]).exists()
             if not has_access:
@@ -240,17 +244,18 @@ class InvoiceCreateSerializer(serializers.Serializer):
         else:
             attrs["installment_count"] = 1
 
-        terminal_code = f"{attrs['organization']:05d}"[-5:]
-        consecutive_base = f"001{terminal_code}{attrs['document_type']}"
+        consecutive_base = f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}{attrs['document_type']}"
         if len(consecutive_base) != 10:
             raise serializers.ValidationError("Error interno generando consecutivo base.")
 
         return attrs
 
     def _get_next_invoice_sequence(self, organization_id, document_type):
-        Organization.objects.select_for_update().filter(id=organization_id).first()
-        terminal_code = f"{organization_id:05d}"[-5:]
-        consecutive_prefix = f"001{terminal_code}{document_type}"
+        organization = Organization.objects.select_for_update().filter(id=organization_id).first()
+        if not organization:
+            raise serializers.ValidationError("La organización seleccionada no existe.")
+
+        consecutive_prefix = f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}{document_type}"
         current_max = (
             Invoice.objects.select_for_update()
             .filter(consecutive_number__startswith=consecutive_prefix)
@@ -267,9 +272,12 @@ class InvoiceCreateSerializer(serializers.Serializer):
         invoice = None
         for attempt in range(MAX_CREATE_RETRIES):
             try:
-                terminal_code = f"{organization_id:05d}"[-5:]
+                organization = Organization.objects.get(id=organization_id)
                 invoice_sequence = self._get_next_invoice_sequence(organization_id, validated_data["document_type"])
-                consecutive_number = f"001{terminal_code}{validated_data['document_type']}{invoice_sequence:010d}"
+                consecutive_number = (
+                    f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}"
+                    f"{validated_data['document_type']}{invoice_sequence:010d}"
+                )
                 invoice_number = f"F-{consecutive_number}"
 
                 invoice = Invoice.objects.create(
@@ -415,10 +423,3 @@ class InvoiceCreateSerializer(serializers.Serializer):
         member.last_activity_at = timezone.now()
         member.save(update_fields=["lifetime_points", "available_points", "last_activity_at", "updated_at"])
         return awarded_points
-
-
-class PurchaseCreateSerializer(InvoiceCreateSerializer):
-    """
-    Compatibilidad retroactiva.
-    Algunos despliegues aún importan PurchaseCreateSerializer desde este módulo.
-    """

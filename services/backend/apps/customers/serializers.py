@@ -61,7 +61,15 @@ class OrganizationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Organization
-        fields = ["id", "name", "slug", "parent_organization", "parent_organization_name"]
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "parent_organization",
+            "parent_organization_name",
+            "hacienda_branch_code",
+            "hacienda_terminal_code",
+        ]
         extra_kwargs = {
             "name": {"required": True},
         }

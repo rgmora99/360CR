@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("customers", "0001_initial"),
-        ("finance", "0007_purchase_purchaseitem_taxquarterreport_and_more"),
+        ("finance", "0006_product_service_duration_minutes"),
         ("tenants", "0002_organization_parent_organization"),
     ]
 
