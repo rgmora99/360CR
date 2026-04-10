@@ -1,5 +1,6 @@
 import re
 import unicodedata
+import logging
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
@@ -11,6 +12,8 @@ from rest_framework.response import Response
 
 from apps.core.models import PadronRecord
 from apps.tenants.models import Membership, Organization
+
+logger = logging.getLogger(__name__)
 
 
 class RegisterView(APIView):
@@ -138,11 +141,14 @@ class PadronLookupView(APIView):
     def get(self, request):
         raw_cedula = request.query_params.get("cedula", "")
         cedula = re.sub(r"\D", "", raw_cedula or "")
+        logger.info("PadronLookupView request", extra={"user_id": request.user.id, "raw_cedula": raw_cedula, "cedula": cedula})
         if len(cedula) != 9:
+            logger.warning("PadronLookupView invalid cedula length", extra={"user_id": request.user.id, "cedula": cedula})
             return Response({"detail": "La cédula debe tener 9 dígitos.", "found": False}, status=400)
 
         record = PadronRecord.objects.filter(cedula=cedula).only("cedula", "full_name", "normalized_name").first()
         if not record:
+            logger.info("PadronLookupView cedula not found", extra={"user_id": request.user.id, "cedula": cedula})
             return Response(
                 {
                     "detail": "La cédula no existe en el padrón electoral.",
@@ -153,6 +159,7 @@ class PadronLookupView(APIView):
             )
 
         normalized_name = record.normalized_name or unicodedata.normalize("NFD", record.full_name).encode("ascii", "ignore").decode("ascii").lower()
+        logger.info("PadronLookupView cedula found", extra={"user_id": request.user.id, "cedula": cedula})
         return Response(
             {
                 "found": True,
