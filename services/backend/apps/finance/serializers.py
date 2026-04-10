@@ -240,17 +240,20 @@ class InvoiceCreateSerializer(serializers.Serializer):
         else:
             attrs["installment_count"] = 1
 
-        consecutive_base = f"00100001{attrs['document_type']}"
+        terminal_code = f"{attrs['organization']:05d}"[-5:]
+        consecutive_base = f"001{terminal_code}{attrs['document_type']}"
         if len(consecutive_base) != 10:
             raise serializers.ValidationError("Error interno generando consecutivo base.")
 
         return attrs
 
-    def _get_next_invoice_sequence(self, document_type):
-        Organization.objects.select_for_update().first()
+    def _get_next_invoice_sequence(self, organization_id, document_type):
+        Organization.objects.select_for_update().filter(id=organization_id).first()
+        terminal_code = f"{organization_id:05d}"[-5:]
+        consecutive_prefix = f"001{terminal_code}{document_type}"
         current_max = (
             Invoice.objects.select_for_update()
-            .filter(document_type=document_type)
+            .filter(consecutive_number__startswith=consecutive_prefix)
             .annotate(sequence_number=Cast(Substr("consecutive_number", 11, 10), IntegerField()))
             .aggregate(max_sequence=Max("sequence_number"))
             .get("max_sequence")
@@ -264,9 +267,10 @@ class InvoiceCreateSerializer(serializers.Serializer):
         invoice = None
         for attempt in range(MAX_CREATE_RETRIES):
             try:
-                invoice_sequence = self._get_next_invoice_sequence(validated_data["document_type"])
-                consecutive_number = f"00100001{validated_data['document_type']}{invoice_sequence:010d}"
-                invoice_number = f"F-{validated_data['document_type']}-{invoice_sequence:010d}"
+                terminal_code = f"{organization_id:05d}"[-5:]
+                invoice_sequence = self._get_next_invoice_sequence(organization_id, validated_data["document_type"])
+                consecutive_number = f"001{terminal_code}{validated_data['document_type']}{invoice_sequence:010d}"
+                invoice_number = f"F-{consecutive_number}"
 
                 invoice = Invoice.objects.create(
                     organization_id=organization_id,
