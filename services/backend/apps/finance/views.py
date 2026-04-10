@@ -18,23 +18,126 @@ def _escape_pdf_text(value):
     return str(value).replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
 
 
-def generate_simple_pdf(lines):
-    content_ops = ["BT /F1 11 Tf 40 760 Td"]
-    for idx, line in enumerate(lines):
-        if idx == 0:
-            content_ops.append(f"({_escape_pdf_text(line)}) Tj")
-        else:
-            content_ops.append("0 -14 Td")
-            content_ops.append(f"({_escape_pdf_text(line)}) Tj")
-    content_ops.append("ET")
+def _add_text(content_ops, x, y, text, font="F1", size=10, color=(0, 0, 0)):
+    content_ops.append(f"{color[0]} {color[1]} {color[2]} rg")
+    content_ops.append(f"BT /{font} {size} Tf {x} {y} Td ({_escape_pdf_text(text)}) Tj ET")
+
+
+def _add_rect(content_ops, x, y, width, height, fill=None, stroke=None, line_width=1):
+    if fill is not None:
+        content_ops.append(f"{fill[0]} {fill[1]} {fill[2]} rg")
+        content_ops.append(f"{x} {y} {width} {height} re f")
+    if stroke is not None:
+        content_ops.append(f"{stroke[0]} {stroke[1]} {stroke[2]} RG")
+        content_ops.append(f"{line_width} w")
+        content_ops.append(f"{x} {y} {width} {height} re S")
+
+
+def generate_invoice_pdf(invoice):
+    blue = (0.11, 0.47, 0.78)
+    light_blue = (0.93, 0.96, 1)
+    gray = (0.35, 0.35, 0.35)
+    dark_gray = (0.2, 0.2, 0.2)
+    page_width = 612
+    page_height = 792
+    left_margin = 40
+    right_margin = 40
+    content_width = page_width - left_margin - right_margin
+    content_ops = []
+
+    # Encabezado
+    _add_text(content_ops, left_margin, page_height - 58, "FACTURA ELECTRONICA", font="F2", size=18, color=blue)
+    _add_text(content_ops, left_margin, page_height - 78, "360CR", font="F2", size=11, color=gray)
+    _add_rect(content_ops, left_margin, page_height - 92, content_width, 1.4, fill=blue)
+
+    header_box_w = 220
+    header_box_h = 56
+    header_box_x = page_width - right_margin - header_box_w
+    header_box_y = page_height - 104
+    _add_rect(content_ops, header_box_x, header_box_y, header_box_w, header_box_h, fill=light_blue, stroke=blue)
+    _add_text(content_ops, header_box_x + 10, header_box_y + 38, f"N. FACTURA: {invoice.invoice_number}", font="F2", size=10, color=dark_gray)
+    _add_text(content_ops, header_box_x + 10, header_box_y + 24, f"CONSECUTIVO: {invoice.consecutive_number}", size=9, color=gray)
+    _add_text(content_ops, header_box_x + 10, header_box_y + 10, f"FECHA: {invoice.issue_date.strftime('%Y-%m-%d %H:%M')}", size=9, color=gray)
+
+    # Bloques de información
+    top_y = page_height - 220
+    block_height = 105
+    block_gap = 20
+    block_width = (page_width - left_margin - right_margin - block_gap) / 2
+
+    _add_rect(content_ops, left_margin, top_y, block_width, block_height, fill=light_blue, stroke=blue)
+    _add_rect(content_ops, left_margin + block_width + block_gap, top_y, block_width, block_height, fill=light_blue, stroke=blue)
+    _add_rect(content_ops, left_margin, top_y + block_height - 20, block_width, 20, fill=blue)
+    _add_rect(content_ops, left_margin + block_width + block_gap, top_y + block_height - 20, block_width, 20, fill=blue)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 14, "FACTURAR A", font="F2", size=10, color=(1, 1, 1))
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 14, "DETALLE", font="F2", size=10, color=(1, 1, 1))
+
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 34, invoice.customer.legal_name[:52], font="F2", size=10, color=dark_gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 52, f"ID: {invoice.customer.tax_id}", size=9, color=gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 70, f"Correo: {invoice.customer.email or 'No registrado'}", size=9, color=gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 88, f"Telefono: {invoice.customer.phone or 'No registrado'}", size=9, color=gray)
+
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 34, f"Condicion venta: {invoice.sale_condition}", size=9, color=gray)
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 52, f"Medio pago: {invoice.payment_method}", size=9, color=gray)
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 70, f"Regimen fiscal: {invoice.tax_regime}", size=9, color=gray)
+    if invoice.payment_method == Invoice.PAYMENT_INSTALLMENTS:
+        installments = f"{invoice.installment_count} cuotas cada {invoice.installment_interval_days} dias"
+        _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 88, installments, size=9, color=gray)
+
+    # Tabla de líneas
+    table_top = top_y - 30
+    row_height = 20
+    items = list(invoice.items.all())
+    item_count = len(items)
+    max_rows = min(max(item_count + 2, 8), 16)
+    table_width = page_width - left_margin - right_margin
+    desc_width = table_width - 110
+
+    _add_rect(content_ops, left_margin, table_top, table_width, row_height, fill=blue, stroke=blue)
+    _add_text(content_ops, left_margin + 8, table_top + 6, "DESCRIPCION", font="F2", size=10, color=(1, 1, 1))
+    _add_text(content_ops, left_margin + desc_width + 8, table_top + 6, "MONTO", font="F2", size=10, color=(1, 1, 1))
+
+    y = table_top - row_height
+    for idx in range(max_rows):
+        _add_rect(content_ops, left_margin, y, table_width, row_height, stroke=(0.75, 0.85, 0.95), line_width=0.7)
+        content_ops.append(f"{left_margin + desc_width} {y} m {left_margin + desc_width} {y + row_height} l S")
+        if idx < len(items):
+            item = items[idx]
+            description = f"{item.line_number}. {item.description}"[:78]
+            _add_text(content_ops, left_margin + 8, y + 6, description, size=9, color=gray)
+            _add_text(content_ops, left_margin + desc_width + 8, y + 6, str(item.total), font="F2", size=9, color=dark_gray)
+        y -= row_height
+
+    # Totales
+    totals_top = y - 8
+    label_x = left_margin + desc_width
+    value_x = label_x + 70
+    totals = [("SUBTOTAL", invoice.subtotal), ("IMPUESTO", invoice.tax_total), ("TOTAL", invoice.total)]
+    for idx, (label, value) in enumerate(totals):
+        row_y = totals_top - (idx * 20)
+        fill_color = light_blue if label != "TOTAL" else blue
+        text_color = gray if label != "TOTAL" else (1, 1, 1)
+        _add_rect(content_ops, label_x, row_y, table_width - desc_width, 20, fill=fill_color, stroke=(0.75, 0.85, 0.95))
+        _add_text(content_ops, label_x + 8, row_y + 6, label, font="F2", size=10, color=text_color)
+        _add_text(content_ops, value_x, row_y + 6, str(value), font="F2", size=10, color=text_color)
+
+    footer_y = max(totals_top - 46, 54)
+    _add_rect(content_ops, left_margin, footer_y + 20, content_width, 1.2, fill=blue)
+    _add_text(content_ops, left_margin, footer_y, "Gracias por su compra.", font="F2", size=13, color=blue)
+    _add_text(content_ops, left_margin, footer_y - 14, "Si tiene consultas sobre esta factura, contactenos por nuestros canales oficiales.", size=9, color=gray)
+
     stream = "\n".join(content_ops).encode("latin-1", errors="replace")
 
     objects = []
     objects.append(b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n")
     objects.append(b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n")
-    objects.append(b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n")
+    objects.append(
+        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >> endobj\n"
+    )
     objects.append(b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n")
-    objects.append(f"5 0 obj << /Length {len(stream)} >> stream\n".encode() + stream + b"\nendstream endobj\n")
+    objects.append(b"5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj\n")
+    objects.append(f"6 0 obj << /Length {len(stream)} >> stream\n".encode() + stream + b"\nendstream endobj\n")
 
     pdf = b"%PDF-1.4\n"
     offsets = []
@@ -139,19 +242,7 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):
         invoice = self.get_object()
-        lines = [
-            f"Factura: {invoice.invoice_number}",
-            f"Consecutivo: {invoice.consecutive_number}",
-            f"Cliente: {invoice.customer.legal_name} ({invoice.customer.tax_id})",
-            f"Fecha: {invoice.issue_date.strftime('%Y-%m-%d %H:%M')}",
-            f"Condicion venta: {invoice.sale_condition} | Medio pago: {invoice.payment_method}",
-            f"Regimen fiscal: {invoice.tax_regime}",
-        ]
-        if invoice.payment_method == Invoice.PAYMENT_INSTALLMENTS:
-            lines.append(f"Pago a plazos: {invoice.installment_count} cuotas cada {invoice.installment_interval_days} días")
-        lines.extend([f"{i.line_number}. {i.description} x {i.quantity} = {i.total}" for i in invoice.items.all()])
-        lines.extend([f"Subtotal: {invoice.subtotal}", f"Impuesto: {invoice.tax_total}", f"Total: {invoice.total}"])
-        pdf = generate_simple_pdf(lines)
+        pdf = generate_invoice_pdf(invoice)
         response = HttpResponse(pdf, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="factura-{invoice.invoice_number}.pdf"'
         return response
