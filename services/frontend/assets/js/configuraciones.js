@@ -12,9 +12,21 @@
   const createInvitationButton = document.getElementById('create-invitation');
   const invitationsList = document.getElementById('invitations-list');
   const teamFeedback = document.getElementById('team-feedback');
+  const settingsTabs = document.querySelectorAll('[data-settings-tab]');
+  const settingsPanels = document.querySelectorAll('[data-settings-panel]');
+  const availabilityCollaborator = document.getElementById('availability-collaborator');
+  const availabilityWeekday = document.getElementById('availability-weekday');
+  const availabilityStart = document.getElementById('availability-start');
+  const availabilityEnd = document.getElementById('availability-end');
+  const availabilityActive = document.getElementById('availability-active');
+  const saveAvailabilityRuleButton = document.getElementById('save-availability-rule');
+  const availabilityRulesList = document.getElementById('availability-rules-list');
+  const availabilityFeedback = document.getElementById('availability-feedback');
   const API_BASE = '/api';
   const INVITATIONS_STORAGE_KEY = 'cr360.config.invitations';
+  const AVAILABILITY_STORAGE_KEY = 'cr360.config.availability-rules';
   let rolesCache = [];
+  let collaboratorsCache = [];
 
   if (
     !usersList ||
@@ -26,7 +38,15 @@
     !inviteRoleSelect ||
     !createInvitationButton ||
     !invitationsList ||
-    !teamFeedback
+    !teamFeedback ||
+    !availabilityCollaborator ||
+    !availabilityWeekday ||
+    !availabilityStart ||
+    !availabilityEnd ||
+    !availabilityActive ||
+    !saveAvailabilityRuleButton ||
+    !availabilityRulesList ||
+    !availabilityFeedback
   ) {
     return;
   }
@@ -41,6 +61,15 @@
     operations: 'Operaciones',
     finance: 'Finanzas',
     notifications: 'Notificaciones',
+  };
+  const weekdayLabels = {
+    0: 'Domingo',
+    1: 'Lunes',
+    2: 'Martes',
+    3: 'Miércoles',
+    4: 'Jueves',
+    5: 'Viernes',
+    6: 'Sábado',
   };
 
   const showError = (message) => {
@@ -83,6 +112,29 @@
     if (window.appAlerts?.toast) {
       window.appAlerts.toast(message, isError ? 'error' : 'success');
     }
+  };
+  const setAvailabilityFeedback = (message, isError = false) => {
+    availabilityFeedback.textContent = message;
+    availabilityFeedback.style.color = isError ? '#b42318' : 'var(--color-muted)';
+    if (window.appAlerts?.toast) {
+      window.appAlerts.toast(message, isError ? 'error' : 'success');
+    }
+  };
+
+  const setupSubmenuTabs = () => {
+    if (!settingsTabs.length || !settingsPanels.length) return;
+
+    settingsTabs.forEach((tabButton) => {
+      tabButton.addEventListener('click', () => {
+        const targetPanel = tabButton.dataset.settingsTab;
+        settingsTabs.forEach((button) => {
+          button.classList.toggle('is-active', button === tabButton);
+        });
+        settingsPanels.forEach((panel) => {
+          panel.classList.toggle('is-active', panel.dataset.settingsPanel === targetPanel);
+        });
+      });
+    });
   };
 
   const orgRequest = async (path, options) => {
@@ -233,6 +285,17 @@
   const saveInvitations = (invitations) => {
     localStorage.setItem(INVITATIONS_STORAGE_KEY, JSON.stringify(invitations));
   };
+  const getStoredAvailabilityRules = () => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(AVAILABILITY_STORAGE_KEY) || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_error) {
+      return [];
+    }
+  };
+  const saveAvailabilityRules = (rules) => {
+    localStorage.setItem(AVAILABILITY_STORAGE_KEY, JSON.stringify(rules));
+  };
 
   const renderInvitations = () => {
     const invitations = getStoredInvitations();
@@ -279,6 +342,118 @@
     inviteEmailInput.value = '';
     setTeamFeedback(`Invitación registrada para ${email} con rol ${selectedRole.name}.`);
     renderInvitations();
+  };
+
+  const getCollaboratorLabel = (collaboratorId) => {
+    const collaborator = collaboratorsCache.find((item) => Number(item.id) === Number(collaboratorId));
+    return collaborator?.email || `Colaborador #${collaboratorId}`;
+  };
+
+  const renderCollaboratorsOptions = (collaborators) => {
+    if (!collaborators.length) {
+      availabilityCollaborator.innerHTML = '<option value="">Sin colaboradores</option>';
+      return;
+    }
+
+    availabilityCollaborator.innerHTML = collaborators
+      .map((collaborator) => `<option value="${collaborator.id}">${collaborator.email} · ${collaborator.role}</option>`)
+      .join('');
+  };
+
+  const renderAvailabilityRules = () => {
+    const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    const rules = getStoredAvailabilityRules().filter((rule) => Number(rule.organizationId) === activeOrganizationId);
+
+    if (!rules.length) {
+      availabilityRulesList.innerHTML = '<li>No hay horarios definidos para este negocio.</li>';
+      return;
+    }
+
+    availabilityRulesList.innerHTML = rules
+      .sort((left, right) => Number(left.weekday) - Number(right.weekday))
+      .map(
+        (rule) => `<li>
+          <strong>${getCollaboratorLabel(rule.collaboratorId)}</strong>
+          <span>${weekdayLabels[rule.weekday] || 'Día no definido'} · ${rule.start} a ${rule.end}</span>
+          <small>${rule.active ? 'Disponible para agenda' : 'Bloqueado para agenda'}</small>
+        </li>`,
+      )
+      .join('');
+  };
+
+  const saveAvailabilityRule = () => {
+    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    const collaboratorId = Number(availabilityCollaborator.value);
+    const weekday = Number(availabilityWeekday.value);
+    const start = availabilityStart.value;
+    const end = availabilityEnd.value;
+    const active = availabilityActive.checked;
+
+    if (!organizationId) {
+      setAvailabilityFeedback('Selecciona un negocio activo antes de configurar horarios.', true);
+      return;
+    }
+    if (!collaboratorId) {
+      setAvailabilityFeedback('Selecciona un colaborador para guardar la disponibilidad.', true);
+      return;
+    }
+    if (!start || !end || start >= end) {
+      setAvailabilityFeedback('Define una franja horaria válida (hora inicio menor a hora fin).', true);
+      return;
+    }
+
+    const currentRules = getStoredAvailabilityRules().filter(
+      (rule) =>
+        !(
+          Number(rule.organizationId) === organizationId &&
+          Number(rule.collaboratorId) === collaboratorId &&
+          Number(rule.weekday) === weekday
+        ),
+    );
+
+    currentRules.push({
+      id: Date.now(),
+      organizationId,
+      collaboratorId,
+      weekday,
+      start,
+      end,
+      active,
+      updatedAt: new Date().toISOString(),
+    });
+
+    saveAvailabilityRules(currentRules);
+    setAvailabilityFeedback(
+      `Horario guardado para ${getCollaboratorLabel(collaboratorId)} (${weekdayLabels[weekday]} ${start}-${end}).`,
+    );
+    renderAvailabilityRules();
+  };
+
+  const loadCollaborators = async () => {
+    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    if (!organizationId) {
+      collaboratorsCache = [];
+      renderCollaboratorsOptions([]);
+      renderAvailabilityRules();
+      setAvailabilityFeedback('Sin organización activa para cargar colaboradores.', true);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/agenda/agenda-events/collaborators/?organization_id=${organizationId}`);
+      if (!response.ok) {
+        throw new Error('No fue posible cargar colaboradores para disponibilidad.');
+      }
+      collaboratorsCache = await response.json();
+      renderCollaboratorsOptions(collaboratorsCache);
+      renderAvailabilityRules();
+      setAvailabilityFeedback(`Se cargaron ${collaboratorsCache.length} colaboradores para esta agenda.`);
+    } catch (error) {
+      collaboratorsCache = [];
+      renderCollaboratorsOptions([]);
+      renderAvailabilityRules();
+      setAvailabilityFeedback(error.message || 'Error al cargar colaboradores.', true);
+    }
   };
 
   const renderSettings = (settings) => {
@@ -344,6 +519,15 @@
 
   createOrganizationButton.addEventListener('click', createOrganization);
   createInvitationButton.addEventListener('click', createInvitation);
+  saveAvailabilityRuleButton.addEventListener('click', saveAvailabilityRule);
+  document.addEventListener('change', (event) => {
+    if (event.target?.id === 'organization-switcher') {
+      loadCollaborators();
+    }
+  });
+  setupSubmenuTabs();
   loadData();
   loadOrganizations();
+  loadCollaborators();
+  setTimeout(loadCollaborators, 1200);
 })();
