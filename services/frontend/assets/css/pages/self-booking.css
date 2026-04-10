@@ -1,0 +1,52 @@
+.self-book-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.self-book-card {
+  width: min(980px, 100%);
+  display: grid;
+  gap: 0.8rem;
+}
+
+.self-book-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+input,
+select {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(13, 22, 41, 0.9);
+  color: var(--txt);
+  padding: 0.65rem;
+}
+
+.availability-result {
+  margin: 0;
+  padding: 0.8rem;
+  border-radius: 10px;
+  background: rgba(13, 22, 41, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--muted);
+  min-height: 70px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 800px) {
+  .self-book-grid {
+    grid-template-columns: 1fr;
+  }
+}

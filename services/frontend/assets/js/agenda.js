@@ -15,9 +15,10 @@
   const formTitle = $('form-title');
   const cancelEditButton = $('cancel-edit');
 
-  const selfBookForm = $('self-book-form');
-  const availabilityResult = $('availability-result');
-  const checkAvailabilityButton = $('check-availability');
+  const selfBookLinkInput = $('self-book-link');
+  const openSelfBookLinkButton = $('open-self-book-link');
+  const copySelfBookLinkButton = $('copy-self-book-link');
+  const selfBookLinkFeedback = $('self-book-link-feedback');
 
   const fields = {
     id: $('event-id'),
@@ -35,15 +36,6 @@
     reminderMinutes: $('reminder-minutes'),
     allDay: $('all-day'),
     description: $('description'),
-  };
-
-  const selfBook = {
-    service: $('self-service'),
-    collaborator: $('self-collaborator'),
-    date: $('self-date'),
-    start: $('self-start'),
-    end: $('self-end'),
-    title: $('self-title'),
   };
 
   let events = [];
@@ -98,10 +90,6 @@
 
   function toIso(datetimeLocalValue) {
     return new Date(datetimeLocalValue).toISOString();
-  }
-
-  function combineDateAndTime(dateValue, timeValue) {
-    return new Date(`${dateValue}T${timeValue}`).toISOString();
   }
 
   function toDateTimeLocal(value) {
@@ -213,11 +201,9 @@
 
     populateSelect(fields.serviceId, services, 'Seleccione servicio', (item) => item.name);
     populateSelect(serviceFilter, services, 'Todos los servicios', (item) => item.name);
-    populateSelect(selfBook.service, services, 'Seleccione servicio', (item) => item.name);
 
     populateSelect(fields.collaboratorId, collaborators, 'Seleccione colaborador', (item) => item.email);
     populateSelect(collaboratorFilter, collaborators, 'Todos los colaboradores', (item) => item.email);
-    populateSelect(selfBook.collaborator, collaborators, 'Seleccione colaborador', (item) => item.email);
   }
 
   async function loadRelationOptions() {
@@ -278,6 +264,23 @@
     return payload;
   }
 
+  function buildSelfBookingLink() {
+    const organizationId = getOrganizationId();
+    const query = new URLSearchParams({ organization_id: String(organizationId) });
+    return `${window.location.origin}/self-booking.html?${query.toString()}`;
+  }
+
+  function renderSelfBookingLink() {
+    try {
+      const link = buildSelfBookingLink();
+      selfBookLinkInput.value = link;
+      selfBookLinkFeedback.textContent = 'Este link es único por organización y abre un portal exclusivo para agendar.';
+    } catch (error) {
+      selfBookLinkInput.value = '';
+      selfBookLinkFeedback.textContent = error.message;
+    }
+  }
+
   async function loadEvents() {
     try {
       const organizationId = getOrganizationId();
@@ -316,33 +319,6 @@
     formTitle.textContent = `Editar evento #${item.id}`;
   }
 
-  async function checkAvailability() {
-    try {
-      const organizationId = getOrganizationId();
-      if (!selfBook.date.value || !selfBook.collaborator.value) {
-        throw new Error('Selecciona fecha y colaborador para consultar disponibilidad.');
-      }
-
-      const params = new URLSearchParams({
-        organization_id: organizationId,
-        collaborator_id: selfBook.collaborator.value,
-        date: selfBook.date.value,
-      });
-
-      const result = await request(`${getApiBase()}/agenda-events/availability/?${params.toString()}`);
-      if (!result.occupied.length) {
-        availabilityResult.textContent = 'Disponible todo el día para ese colaborador.';
-        return;
-      }
-
-      availabilityResult.textContent = result.occupied
-        .map((item) => `${formatDate(item.starts_at)} - ${formatDate(item.ends_at)} | ${item.title}`)
-        .join('\n');
-    } catch (error) {
-      availabilityResult.textContent = `Error: ${error.message}`;
-    }
-  }
-
   eventForm.addEventListener('submit', async (event) => {
     event.preventDefault();
 
@@ -368,42 +344,6 @@
       await loadEvents();
     } catch (error) {
       setFeedback(`No se pudo guardar el evento: ${error.message}`, true);
-    }
-  });
-
-  selfBookForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-
-    try {
-      const organizationId = getOrganizationId();
-      const citaType = eventTypes.find((item) => item.code === 'cita') || eventTypes[0];
-      const startsAt = combineDateAndTime(selfBook.date.value, selfBook.start.value);
-      const endsAt = combineDateAndTime(selfBook.date.value, selfBook.end.value);
-      const payload = {
-        organization: organizationId,
-        event_type: citaType.id,
-        service: Number(selfBook.service.value),
-        collaborator: Number(selfBook.collaborator.value),
-        title: selfBook.title.value.trim(),
-        starts_at: startsAt,
-        ends_at: endsAt,
-        status: 'pending',
-        priority: 'medium',
-        reminder_minutes: 30,
-      };
-
-      validateFormPayload(payload);
-
-      await request(`${getApiBase()}/agenda-events/self-book/`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-
-      availabilityResult.textContent = 'Cita agendada correctamente por autoagendamiento.';
-      selfBookForm.reset();
-      await loadEvents();
-    } catch (error) {
-      availabilityResult.textContent = `No se pudo autoagendar: ${error.message}`;
     }
   });
 
@@ -453,12 +393,36 @@
   collaboratorFilter.addEventListener('change', loadEvents);
   dateFromFilter.addEventListener('change', loadEvents);
   dateToFilter.addEventListener('change', loadEvents);
-  checkAvailabilityButton.addEventListener('click', checkAvailability);
   loadButton.addEventListener('click', loadEvents);
+
+  openSelfBookLinkButton?.addEventListener('click', () => {
+    if (selfBookLinkInput.value) {
+      window.open(selfBookLinkInput.value, '_blank', 'noopener,noreferrer');
+    }
+  });
+
+  copySelfBookLinkButton?.addEventListener('click', async () => {
+    if (!selfBookLinkInput.value) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(selfBookLinkInput.value);
+      selfBookLinkFeedback.textContent = 'Link copiado al portapapeles.';
+    } catch (_error) {
+      selfBookLinkFeedback.textContent = 'No se pudo copiar automáticamente. Copia el link manualmente.';
+    }
+  });
+
+  document.addEventListener('change', (event) => {
+    if (event.target?.id === 'organization-switcher') {
+      renderSelfBookingLink();
+    }
+  });
 
   Promise.all([loadEventTypes(), loadServicesAndCollaborators(), loadRelationOptions()])
     .then(() => {
       resetForm();
+      renderSelfBookingLink();
       return loadEvents();
     })
     .catch((error) => setFeedback(`Error inicial: ${error.message}`, true));

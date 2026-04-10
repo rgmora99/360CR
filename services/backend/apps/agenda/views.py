@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from apps.agenda.models import AgendaEvent, AgendaEventType
 from apps.agenda.serializers import AgendaEventSerializer, AgendaEventTypeSerializer
+from apps.finance.models import Product
 from apps.tenants.access import OrganizationScopedViewMixin
 from apps.tenants.models import Membership, Organization
 
@@ -29,7 +30,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        if self.action in {"availability", "self_book"}:
+        if self.action in {"availability", "self_book", "self_book_context"}:
             return [AllowAny()]
         return [permission() for permission in self.permission_classes]
 
@@ -145,6 +146,42 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(status=AgendaEvent.STATUS_PENDING)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["get"], url_path="self-book-context")
+    def self_book_context(self, request):
+        organization_id = request.query_params.get("organization_id")
+        if not organization_id:
+            return Response({"detail": "organization_id es requerido"}, status=400)
+
+        try:
+            organization = Organization.objects.get(id=int(organization_id))
+        except (TypeError, ValueError, Organization.DoesNotExist):
+            return Response({"detail": "organization_id inválido"}, status=400)
+
+        services = list(
+            Product.objects.filter(organization=organization, product_type=Product.TYPE_SERVICE, is_active=True)
+            .values("id", "name")
+            .order_by("name")
+        )
+
+        collaborators = [
+            {"id": membership.user_id, "email": membership.user.email}
+            for membership in Membership.objects.select_related("user").filter(organization=organization).order_by("user__email")
+        ]
+
+        cita_type = AgendaEventType.objects.filter(code="cita").first() or AgendaEventType.objects.first()
+        if not cita_type:
+            return Response({"detail": "No hay tipos de evento configurados."}, status=400)
+
+        return Response(
+            {
+                "organization_id": organization.id,
+                "organization_name": organization.name,
+                "event_type_id": cita_type.id,
+                "services": services,
+                "collaborators": collaborators,
+            }
+        )
 
     def perform_create(self, serializer):
         self.validate_organization_payload(serializer.validated_data["organization"].id)
