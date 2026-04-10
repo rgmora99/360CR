@@ -2,14 +2,27 @@
   const $ = (id) => document.getElementById(id);
   const state = { products: [], organizations: [], suppliers: [] };
   const apiBase = () => '/api';
-  function orgId() {
-    const raw = ($('organization-id').value || window.AppSession?.getActiveOrganizationId?.() || '').toString().trim();
+
+  function resolveOrganizationId(rawValue) {
+    const raw = (rawValue || '').toString().trim();
     const numeric = Number(raw.replace(/[^\d]/g, ''));
-    if (!numeric || numeric < 1) {
-      throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
-    }
-    return numeric;
+    return numeric > 0 ? numeric : null;
   }
+
+  function orgIdForWrite() {
+    const activeOrganization = resolveOrganizationId(window.AppSession?.getActiveOrganizationId?.());
+    if (activeOrganization) return activeOrganization;
+
+    const filterOrganization = resolveOrganizationId($('organization-filter')?.value);
+    if (filterOrganization) return filterOrganization;
+
+    throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
+  }
+
+  function selectedOrganizationFilter() {
+    return resolveOrganizationId($('organization-filter')?.value);
+  }
+
   const logPrefix = '[Inventario API]';
 
   async function request(path, options) {
@@ -65,7 +78,9 @@
   }
 
   async function loadProducts() {
-    const data = await request(`/products/?organization_id=${orgId()}`);
+    const filterOrganization = selectedOrganizationFilter();
+    const query = filterOrganization ? `?organization_id=${filterOrganization}` : '';
+    const data = await request(`/products/${query}`);
     state.products = data;
     $('products-body').innerHTML =
       data
@@ -94,6 +109,22 @@
     $('physical-location').innerHTML = options;
   }
 
+  function renderOrganizationFilter() {
+    const current = selectedOrganizationFilter();
+    const options = ['<option value="">Todas las organizaciones</option>']
+      .concat(state.organizations.map((org) => `<option value="${org.id}">${org.name} (#${org.id})</option>`))
+      .join('');
+    $('organization-filter').innerHTML = options;
+
+    if (current && state.organizations.some((org) => org.id === current)) {
+      $('organization-filter').value = String(current);
+      return;
+    }
+
+    const activeOrganization = resolveOrganizationId(window.AppSession?.getActiveOrganizationId?.());
+    $('organization-filter').value = activeOrganization ? String(activeOrganization) : '';
+  }
+
   function renderSuppliers() {
     const options = ['<option value="">Sin proveedor</option>']
       .concat(state.suppliers.map((supplier) => `<option value="${supplier.id}">${supplier.legal_name}</option>`))
@@ -103,11 +134,12 @@
 
   async function loadOrganizations() {
     state.organizations = await request('/organizations/');
+    renderOrganizationFilter();
     renderLocations();
   }
 
   async function loadSuppliers() {
-    const organization = orgId();
+    const organization = orgIdForWrite();
     const suppliers = await request(`/suppliers/?organization_id=${organization}`);
     state.suppliers = suppliers.filter((item) => item.status === 'active');
     renderSuppliers();
@@ -119,7 +151,7 @@
       const id = $('product-id').value;
       const isService = $('product-type').value === 'service';
       const payload = {
-        organization: orgId(),
+        organization: orgIdForWrite(),
         name: $('product-name').value.trim(),
         description: $('description').value.trim(),
         physical_location: $('physical-location').value.trim(),
@@ -176,11 +208,9 @@
     }
   });
 
-  $('organization-id').value = window.AppSession?.getActiveOrganizationId?.() || '';
-  $('organization-id').addEventListener('change', async () => {
-    window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
+  $('organization-filter').addEventListener('change', async () => {
     try {
-      await Promise.all([loadProducts(), loadSuppliers()]);
+      await loadProducts();
     } catch (error) {
       feedback(error.message, true);
     }
