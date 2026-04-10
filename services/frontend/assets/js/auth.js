@@ -27,6 +27,15 @@
   }
 
   function parseApiError(payload, bodyText) {
+    if (!payload && /<html|<body|<title/i.test(bodyText || '')) {
+      return {
+        message: 'El servidor no está disponible en este momento (502). Intenta de nuevo en unos segundos.',
+        fieldErrors: {},
+        code: 'gateway_error',
+        extra: {},
+      };
+    }
+
     if (payload && typeof payload === 'object') {
       const fieldErrors = {};
 
