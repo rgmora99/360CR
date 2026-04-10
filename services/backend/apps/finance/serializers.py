@@ -1,16 +1,21 @@
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import IntegerField, Max
+from django.db.models.functions import Cast, Substr
 from rest_framework import serializers
 
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, InvoiceItem, Product
 from apps.suppliers.models import Supplier
-from apps.tenants.models import Membership
+from apps.tenants.models import Membership, Organization
 
 
 def money(value):
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+MAX_CREATE_RETRIES = 3
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -60,8 +65,21 @@ class ProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"supplier": "El proveedor debe pertenecer a la misma organización del producto."})
         return attrs
 
+    def _get_next_product_sequence(self, organization_id, product_type):
+        Organization.objects.select_for_update().filter(id=organization_id).first()
+        prefix = "SVC" if product_type == Product.TYPE_SERVICE else "PRD"
+        current_max = (
+            Product.objects.select_for_update()
+            .filter(organization_id=organization_id, sku__startswith=f"{prefix}-{organization_id:03d}-")
+            .annotate(sequence_number=Cast(Substr("sku", 9, 6), IntegerField()))
+            .aggregate(max_sequence=Max("sequence_number"))
+            .get("max_sequence")
+            or 0
+        )
+        return current_max + 1
+
     def _generate_sku(self, organization_id, product_type):
-        next_number = Product.objects.filter(organization_id=organization_id).count() + 1
+        next_number = self._get_next_product_sequence(organization_id, product_type)
         prefix = "SVC" if product_type == Product.TYPE_SERVICE else "PRD"
         for sequence in range(next_number, next_number + 10000):
             candidate = f"{prefix}-{organization_id:03d}-{sequence:06d}"
@@ -90,12 +108,26 @@ class ProductSerializer(serializers.ModelSerializer):
         return self._generate_sku(organization.id, product_type)
 
     def create(self, validated_data):
-        validated_data["sku"] = self._resolve_sku(validated_data)
-        return super().create(validated_data)
+        for attempt in range(MAX_CREATE_RETRIES):
+            try:
+                with transaction.atomic():
+                    validated_data["sku"] = self._resolve_sku(validated_data)
+                    return super().create(validated_data)
+            except IntegrityError:
+                if attempt == MAX_CREATE_RETRIES - 1:
+                    raise serializers.ValidationError({"sku": "No fue posible generar un SKU único. Intente nuevamente."})
+        raise serializers.ValidationError({"sku": "No fue posible generar un SKU único. Intente nuevamente."})
 
     def update(self, instance, validated_data):
-        validated_data["sku"] = self._resolve_sku(validated_data, instance=instance)
-        return super().update(instance, validated_data)
+        for attempt in range(MAX_CREATE_RETRIES):
+            try:
+                with transaction.atomic():
+                    validated_data["sku"] = self._resolve_sku(validated_data, instance=instance)
+                    return super().update(instance, validated_data)
+            except IntegrityError:
+                if attempt == MAX_CREATE_RETRIES - 1:
+                    raise serializers.ValidationError({"sku": "No fue posible generar un SKU único. Intente nuevamente."})
+        raise serializers.ValidationError({"sku": "No fue posible generar un SKU único. Intente nuevamente."})
 
 
 class InvoiceItemWriteSerializer(serializers.Serializer):
@@ -205,29 +237,52 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
         return attrs
 
+    def _get_next_invoice_sequence(self, organization_id):
+        Organization.objects.select_for_update().filter(id=organization_id).first()
+        current_max = (
+            Invoice.objects.select_for_update()
+            .filter(organization_id=organization_id, invoice_number__startswith=f"F-{organization_id:03d}-")
+            .annotate(sequence_number=Cast(Substr("invoice_number", 7, 8), IntegerField()))
+            .aggregate(max_sequence=Max("sequence_number"))
+            .get("max_sequence")
+            or 0
+        )
+        return current_max + 1
+
     @transaction.atomic
     def create(self, validated_data):
         organization_id = validated_data["organization"]
-        invoice_count = Invoice.objects.filter(organization_id=organization_id).count() + 1
-        invoice_number = f"F-{organization_id:03d}-{invoice_count:08d}"
-        consecutive_number = f"00100001{validated_data['document_type']}{invoice_count:010d}"
+        invoice = None
+        for attempt in range(MAX_CREATE_RETRIES):
+            try:
+                invoice_sequence = self._get_next_invoice_sequence(organization_id)
+                invoice_number = f"F-{organization_id:03d}-{invoice_sequence:08d}"
+                consecutive_number = f"00100001{validated_data['document_type']}{invoice_sequence:010d}"
 
-        invoice = Invoice.objects.create(
-            organization_id=organization_id,
-            customer_id=validated_data["customer"],
-            invoice_number=invoice_number,
-            document_type=validated_data["document_type"],
-            consecutive_number=consecutive_number,
-            sale_condition=validated_data["sale_condition"],
-            payment_method=validated_data["payment_method"],
-            tax_regime=validated_data["tax_regime"],
-            installment_count=validated_data.get("installment_count", 1),
-            installment_interval_days=validated_data.get("installment_interval_days", 30),
-            currency=validated_data["currency"],
-            exchange_rate=validated_data["exchange_rate"],
-            notes=validated_data.get("notes", ""),
-            status=Invoice.STATUS_ISSUED,
-        )
+                invoice = Invoice.objects.create(
+                    organization_id=organization_id,
+                    customer_id=validated_data["customer"],
+                    invoice_number=invoice_number,
+                    document_type=validated_data["document_type"],
+                    consecutive_number=consecutive_number,
+                    sale_condition=validated_data["sale_condition"],
+                    payment_method=validated_data["payment_method"],
+                    tax_regime=validated_data["tax_regime"],
+                    installment_count=validated_data.get("installment_count", 1),
+                    installment_interval_days=validated_data.get("installment_interval_days", 30),
+                    currency=validated_data["currency"],
+                    exchange_rate=validated_data["exchange_rate"],
+                    notes=validated_data.get("notes", ""),
+                    status=Invoice.STATUS_ISSUED,
+                )
+                break
+            except IntegrityError:
+                if attempt == MAX_CREATE_RETRIES - 1:
+                    raise serializers.ValidationError(
+                        {"invoice_number": "No fue posible generar un número de factura único. Intente nuevamente."}
+                    )
+        if invoice is None:
+            raise serializers.ValidationError({"invoice_number": "No fue posible generar un número de factura único. Intente nuevamente."})
 
         subtotal = Decimal("0.00")
         discount_total = Decimal("0.00")
