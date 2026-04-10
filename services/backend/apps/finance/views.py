@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, Product
 from apps.finance.serializers import InvoiceCreateSerializer, InvoiceSerializer, ProductSerializer
+from apps.loyalty.models import LoyaltyMember
 from apps.tenants.access import OrganizationScopedViewMixin
 
 
@@ -96,7 +97,43 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         if term:
             queryset = queryset.filter(legal_name__icontains=term) | queryset.filter(tax_id__icontains=term)
 
-        data = [{"id": c.id, "legal_name": c.legal_name, "tax_id": c.tax_id, "email": c.email, "phone": c.phone} for c in queryset[:10]]
+        customers = list(queryset[:10])
+        customer_ids = [customer.id for customer in customers]
+        members = (
+            LoyaltyMember.objects.select_related("program")
+            .filter(
+                customer_id__in=customer_ids,
+                program__organization_id=organization_id_int,
+                status=LoyaltyMember.STATUS_ACTIVE,
+                program__is_active=True,
+            )
+            .order_by("id")
+        )
+        members_by_customer = {}
+        for member in members:
+            members_by_customer.setdefault(member.customer_id, member)
+
+        data = []
+        for customer in customers:
+            member = members_by_customer.get(customer.id)
+            data.append(
+                {
+                    "id": customer.id,
+                    "legal_name": customer.legal_name,
+                    "tax_id": customer.tax_id,
+                    "email": customer.email,
+                    "phone": customer.phone,
+                    "loyalty": (
+                        {
+                            "member_id": member.id,
+                            "program_name": member.program.name,
+                            "available_points": member.available_points,
+                        }
+                        if member
+                        else None
+                    ),
+                }
+            )
         return Response(data)
 
     @action(detail=True, methods=["get"], url_path="pdf")

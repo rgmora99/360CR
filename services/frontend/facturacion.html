@@ -31,9 +31,19 @@
           </section>
 
           <section class="card filters">
-            <label>Organización<input id="organization-id" type="number" min="1" value="1" /></label>
-            <label>Buscar cliente<input id="customer-search" placeholder="Nombre o cédula" /></label>
-            <button class="btn btn-secondary" id="search-customer" type="button">Autocompletar</button>
+            <div class="filters-grid">
+              <label>Organización
+                <select id="organization-id" required></select>
+              </label>
+              <label>Buscar cliente
+                <input id="customer-search" placeholder="Nombre, cédula o correo" minlength="2" maxlength="120" list="customer-suggestions" autocomplete="off" />
+                <datalist id="customer-suggestions"></datalist>
+              </label>
+              <div class="filters-actions">
+                <button class="btn btn-secondary" id="search-customer" type="button">Buscar</button>
+                <button class="btn btn-secondary" id="clear-filters" type="button">Limpiar</button>
+              </div>
+            </div>
           </section>
 
           <section class="grid single-column">
@@ -65,11 +75,11 @@
                   </label>
                   <label>Moneda<input id="currency" value="CRC" maxlength="3" /></label>
                 </div>
-                <label>Notas<textarea id="notes" rows="3"></textarea></label>
+                <label>Notas<textarea id="notes" rows="3" maxlength="500" placeholder="Detalle interno de la factura (máx. 500 caracteres)"></textarea></label>
 
                 <div class="line-add">
                   <select id="line-product"></select>
-                  <input id="line-qty" type="number" min="0.001" step="0.001" value="1" />
+                  <input id="line-qty" type="number" min="0.001" max="999999" step="0.001" value="1" />
                   <input id="line-discount" type="number" min="0" max="100" step="0.01" value="0" />
                   <button class="btn btn-secondary" type="button" id="add-line">Agregar línea</button>
                 </div>
