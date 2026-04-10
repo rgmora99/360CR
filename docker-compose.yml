@@ -31,7 +31,8 @@ services:
 
   frontend:
     build:
-      context: ./services/frontend
+      context: .
+      dockerfile: services/frontend/Dockerfile
     container_name: cr360-frontend
     restart: unless-stopped
     ports:

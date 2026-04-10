@@ -18,7 +18,13 @@
     loaded: false,
     loadingPromise: null,
     byCedula: new Map(),
+    loadedSource: null,
   };
+
+  function log(level, message, payload) {
+    const fn = console[level] || console.log;
+    fn(`[Padrón] ${message}`, payload || '');
+  }
 
   function normalizeCedula(value) {
     return String(value || '').replace(/\D/g, '');
@@ -173,16 +179,21 @@
       let lastError = null;
 
       const uniqueSources = [...new Set(PADRON_SOURCES)];
+      log('info', 'Iniciando carga del padrón.', { sources: uniqueSources });
       for (const source of uniqueSources) {
         try {
+          log('info', `Intentando cargar fuente: ${source}`);
           const text = await fetchSource(source);
           parsed = parsePadron(text);
           if (parsed.size) {
-            console.info(`[Padrón] Cargado desde ${source} con ${parsed.size} registros.`);
+            state.loadedSource = source;
+            log('info', `Cargado desde ${source} con ${parsed.size} registros.`);
             break;
           }
+          log('warn', `La fuente ${source} fue leída pero no produjo registros válidos.`);
         } catch (error) {
           lastError = error;
+          log('warn', `Falló la fuente ${source}.`, error?.message || error);
         }
       }
 
@@ -190,7 +201,7 @@
       state.loaded = true;
 
       if (!parsed.size && lastError) {
-        console.warn('[Padrón] No se pudo cargar el padrón electoral.', lastError.message);
+        log('warn', 'No se pudo cargar el padrón electoral.', lastError.message);
       }
 
       return state.byCedula;
@@ -207,7 +218,22 @@
 
   async function resolveByCedula(cedula) {
     const data = await ensureLoaded();
-    return data.get(normalizeCedula(cedula)) || null;
+    const normalizedCedula = normalizeCedula(cedula);
+    const match = data.get(normalizedCedula) || null;
+
+    if (!match) {
+      const sampleKeys = Array.from(data.keys()).slice(0, 5);
+      log('warn', `No se encontró cédula ${normalizedCedula}.`, {
+        loaded: state.loaded,
+        loadedSource: state.loadedSource,
+        records: data.size,
+        sampleKeys,
+      });
+      return null;
+    }
+
+    log('info', `Cédula ${normalizedCedula} encontrada.`, { fullName: match.fullName, loadedSource: state.loadedSource });
+    return match;
   }
 
   window.CedulaPadron = {
