@@ -1,8 +1,10 @@
 (function initCedulaPadron() {
   const PADRON_SOURCES = [
-    '/services/docs/PADRON_COMPLETO.txt',
     '/docs/PADRON_COMPLETO.txt',
     '/docs/padron_completo.txt',
+    '/docs/padron-electoral.txt',
+    '/docs/padron-electoral.csv',
+    '/docs/padron-electoral.tsv',
     '/PADRON_COMPLETO.txt',
     '/padron_completo.txt'
   ];
@@ -161,7 +163,7 @@
   }
 
   async function fetchSource(path) {
-    const response = await fetch(path, { credentials: 'include' });
+    const response = await fetch(path, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`No se encontró ${path}`);
     }
@@ -208,7 +210,10 @@
       state.loaded = true;
 
       if (!parsed.size && lastError) {
-        log('warn', 'No se pudo cargar el padrón electoral.', lastError.message);
+        log('warn', 'No se pudo cargar el padrón electoral.', {
+          error: lastError.message,
+          hint: 'Copia el archivo PADRON_COMPLETO.txt (o padron-electoral.txt/csv/tsv) dentro de services/frontend/docs/ y reconstruye el contenedor frontend.',
+        });
       }
 
       return state.byCedula;
