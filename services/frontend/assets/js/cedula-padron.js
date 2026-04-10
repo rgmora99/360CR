@@ -28,6 +28,21 @@
     return String(value || '').replace(/\D/g, '');
   }
 
+
+  function cleanFullName(value) {
+    const raw = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!raw) return '';
+
+    const tokens = raw.split(' ');
+    const letterTokens = tokens.filter((token) => /[a-záéíóúñ]/i.test(token) && !/\d/.test(token));
+
+    if (!letterTokens.length) {
+      return raw;
+    }
+
+    return letterTokens.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
   function normalizeName(value) {
     return String(value || '')
       .normalize('NFD')
@@ -38,10 +53,11 @@
   }
 
   function buildRecord(cedula, fullName) {
+    const cleanName = cleanFullName(fullName);
     return {
       cedula,
-      fullName,
-      normalizedName: normalizeName(fullName),
+      fullName: cleanName,
+      normalizedName: normalizeName(cleanName),
     };
   }
 

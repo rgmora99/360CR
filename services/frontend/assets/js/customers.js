@@ -512,7 +512,14 @@
     syncCustomerNameFromPadron().catch(() => null);
   });
   fields.taxId.addEventListener('input', () => {
+    const normalizedTaxId = window.CedulaPadron?.normalizeCedula(fields.taxId.value) || fields.taxId.value.replace(/\D/g, '');
+
     if (padronTypingTimer) clearTimeout(padronTypingTimer);
+
+    if (!normalizedTaxId && isPhysicalCustomer()) {
+      fields.legalName.value = '';
+      return;
+    }
     padronTypingTimer = setTimeout(() => {
       syncCustomerNameFromPadron().catch(() => null);
     }, 250);
