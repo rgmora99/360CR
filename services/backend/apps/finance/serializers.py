@@ -217,6 +217,10 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
+        organization = Organization.objects.filter(id=attrs["organization"]).first()
+        if not organization:
+            raise serializers.ValidationError("La organización seleccionada no existe.")
+
         if request and request.user.is_authenticated:
             has_access = Membership.objects.filter(user=request.user, organization_id=attrs["organization"]).exists()
             if not has_access:
@@ -240,18 +244,22 @@ class InvoiceCreateSerializer(serializers.Serializer):
         else:
             attrs["installment_count"] = 1
 
-        consecutive_base = f"00100001{attrs['document_type']}"
+        consecutive_base = f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}{attrs['document_type']}"
         if len(consecutive_base) != 10:
             raise serializers.ValidationError("Error interno generando consecutivo base.")
 
         return attrs
 
-    def _get_next_invoice_sequence(self, organization_id):
-        Organization.objects.select_for_update().filter(id=organization_id).first()
+    def _get_next_invoice_sequence(self, organization_id, document_type):
+        organization = Organization.objects.select_for_update().filter(id=organization_id).first()
+        if not organization:
+            raise serializers.ValidationError("La organización seleccionada no existe.")
+
+        consecutive_prefix = f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}{document_type}"
         current_max = (
             Invoice.objects.select_for_update()
-            .filter(organization_id=organization_id, invoice_number__startswith=f"F-{organization_id:03d}-")
-            .annotate(sequence_number=Cast(Substr("invoice_number", 7, 8), IntegerField()))
+            .filter(consecutive_number__startswith=consecutive_prefix)
+            .annotate(sequence_number=Cast(Substr("consecutive_number", 11, 10), IntegerField()))
             .aggregate(max_sequence=Max("sequence_number"))
             .get("max_sequence")
             or 0
@@ -264,9 +272,13 @@ class InvoiceCreateSerializer(serializers.Serializer):
         invoice = None
         for attempt in range(MAX_CREATE_RETRIES):
             try:
-                invoice_sequence = self._get_next_invoice_sequence(organization_id)
-                invoice_number = f"F-{organization_id:03d}-{invoice_sequence:08d}"
-                consecutive_number = f"00100001{validated_data['document_type']}{invoice_sequence:010d}"
+                organization = Organization.objects.get(id=organization_id)
+                invoice_sequence = self._get_next_invoice_sequence(organization_id, validated_data["document_type"])
+                consecutive_number = (
+                    f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}"
+                    f"{validated_data['document_type']}{invoice_sequence:010d}"
+                )
+                invoice_number = f"F-{consecutive_number}"
 
                 invoice = Invoice.objects.create(
                     organization_id=organization_id,

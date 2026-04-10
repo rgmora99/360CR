@@ -11,6 +11,8 @@
   const organizationsList = document.getElementById('organizations-list');
   const orgNameInput = document.getElementById('org-name');
   const orgParentSelect = document.getElementById('org-parent');
+  const orgBranchCodeInput = document.getElementById('org-branch-code');
+  const orgTerminalCodeInput = document.getElementById('org-terminal-code');
   const createOrganizationButton = document.getElementById('create-organization');
   const orgFeedback = document.getElementById('org-feedback');
   const newRoleNameInput = document.getElementById('new-role-name');
@@ -54,7 +56,10 @@
     !rolesGroups ||
     !systemSettingsGroups ||
     !organizationsList ||
+    !orgNameInput ||
     !orgParentSelect ||
+    !orgBranchCodeInput ||
+    !orgTerminalCodeInput ||
     !newRoleNameInput ||
     !newRoleCodeInput ||
     !newRolePersonaSelect ||
@@ -212,6 +217,7 @@
         (organization) => `<li>
           <strong>${organization.name}</strong>
           <span>ID #${organization.id}${organization.parent_organization ? ` · Sucursal de #${organization.parent_organization}` : ' · Organización raíz'}</span>
+          <small>Hacienda: sucursal ${organization.hacienda_branch_code || '001'} · terminal ${organization.hacienda_terminal_code || '00001'}</small>
         </li>`,
       )
       .join('');
@@ -230,8 +236,18 @@
 
   const createOrganization = async () => {
     const name = orgNameInput.value.trim();
+    const branchCode = orgBranchCodeInput.value.trim();
+    const terminalCode = orgTerminalCodeInput.value.trim();
     if (!name) {
       setOrgFeedback('Debe indicar un nombre para crear la organización.', true);
+      return;
+    }
+    if (!/^\d{3}$/.test(branchCode)) {
+      setOrgFeedback('La sucursal de Hacienda debe tener exactamente 3 dígitos.', true);
+      return;
+    }
+    if (!/^\d{5}$/.test(terminalCode)) {
+      setOrgFeedback('La terminal/caja de Hacienda debe tener exactamente 5 dígitos.', true);
       return;
     }
 
@@ -239,10 +255,17 @@
       const parentOrganization = orgParentSelect.value ? Number(orgParentSelect.value) : null;
       const created = await orgRequest('/organizations/', {
         method: 'POST',
-        body: JSON.stringify({ name, parent_organization: parentOrganization }),
+        body: JSON.stringify({
+          name,
+          parent_organization: parentOrganization,
+          hacienda_branch_code: branchCode,
+          hacienda_terminal_code: terminalCode,
+        }),
       });
       orgNameInput.value = '';
       orgParentSelect.value = '';
+      orgBranchCodeInput.value = '001';
+      orgTerminalCodeInput.value = '00001';
       setOrgFeedback(`Organización creada: ${created.name} (#${created.id}).`);
       await loadOrganizations();
     } catch (error) {

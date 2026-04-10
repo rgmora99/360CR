@@ -146,6 +146,14 @@
                     <option value="">Sin padre (organización raíz)</option>
                   </select>
                 </label>
+                <label>
+                  Sucursal Hacienda (3 dígitos)
+                  <input id="org-branch-code" type="text" inputmode="numeric" pattern="\d{3}" maxlength="3" value="001" />
+                </label>
+                <label>
+                  Terminal/Caja Hacienda (5 dígitos)
+                  <input id="org-terminal-code" type="text" inputmode="numeric" pattern="\d{5}" maxlength="5" value="00001" />
+                </label>
                 <button id="create-organization" class="btn btn-primary" type="button">Crear organización</button>
               </div>
               <p id="org-feedback" class="section-help">Sin datos cargados.</p>
