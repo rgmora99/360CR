@@ -1,6 +1,7 @@
 (function initCompras() {
   const $ = (id) => document.getElementById(id);
   const state = { lines: [], purchases: [] };
+  const padronTimers = {};
 
   function orgId() {
     const id = Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
@@ -31,9 +32,14 @@
 
     const taxId = $(taxInputId).value.trim();
     if (!taxId) return;
+    const normalizedTaxId = window.CedulaPadron.normalizeCedula(taxId);
+    if (normalizedTaxId.length < 9) return;
 
     const record = await window.CedulaPadron.resolveByCedula(taxId);
-    if (!record) return;
+    if (!record) {
+      setFeedback(`La cédula de ${actorLabel} (${taxId}) no existe en el padrón electoral.`, true);
+      return;
+    }
 
     const nameInput = $(nameInputId);
     if (!nameInput.value.trim()) {
@@ -154,6 +160,18 @@
   renderLines();
   $('supplier-tax-id').addEventListener('blur', () => syncNameFromPadron('supplier-tax-id', 'supplier-name', 'proveedor').catch(() => null));
   $('buyer-tax-id').addEventListener('blur', () => syncNameFromPadron('buyer-tax-id', 'buyer-name', 'comprador').catch(() => null));
+  $('supplier-tax-id').addEventListener('input', () => {
+    if (padronTimers.supplier) clearTimeout(padronTimers.supplier);
+    padronTimers.supplier = setTimeout(() => {
+      syncNameFromPadron('supplier-tax-id', 'supplier-name', 'proveedor').catch(() => null);
+    }, 250);
+  });
+  $('buyer-tax-id').addEventListener('input', () => {
+    if (padronTimers.buyer) clearTimeout(padronTimers.buyer);
+    padronTimers.buyer = setTimeout(() => {
+      syncNameFromPadron('buyer-tax-id', 'buyer-name', 'comprador').catch(() => null);
+    }, 250);
+  });
   $('issue-date').valueAsDate = new Date();
   $('tax-year').value = String(new Date().getUTCFullYear());
   loadPurchases().catch((error) => setFeedback(error.message, true));

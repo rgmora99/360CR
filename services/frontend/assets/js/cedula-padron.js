@@ -1,5 +1,18 @@
 (function initCedulaPadron() {
-  const PADRON_SOURCES = ['/docs/padron-electoral.txt', '/docs/padron-electoral.csv', '/docs/padron-electoral.tsv'];
+  const PADRON_SOURCES = [
+    '/services/docs/PADRON_COMPLETO.txt',
+    '/docs/PADRON_COMPLETO.txt',
+    '/docs/padron_completo.txt',
+    '/docs/PADRON_ELECTORAL.TXT',
+    '/docs/PADRON_ELECTORAL.txt',
+    '/docs/padron-electoral.txt',
+    '/docs/padron_electoral.txt',
+    '/PADRON_ELECTORAL.TXT',
+    '/padron-electoral.txt',
+    '/padron_electoral.txt',
+    '/docs/padron-electoral.csv',
+    '/docs/padron-electoral.tsv',
+  ];
 
   const state = {
     loaded: false,
@@ -37,7 +50,11 @@
     return /^\d{9}$/.test(normalizeCedula(value));
   }
 
-  function parseDelimitedRecord(line) {
+  function hasLetters(value) {
+    return /[a-záéíóúñ]/i.test(String(value || ''));
+  }
+
+  function parseDelimitedRecord(line, columnIndexes = {}) {
     if (!/[,\t;|]/.test(line)) {
       return null;
     }
@@ -45,18 +62,22 @@
     const cols = splitLine(line);
     if (!cols.length) return null;
 
-    const cedula = normalizeCedula(cols[0]);
+    const rawCedula = columnIndexes.cedula >= 0 ? cols[columnIndexes.cedula] : cols[0];
+    const cedula = normalizeCedula(rawCedula);
     if (!looksLikeCedula(cedula)) {
       return null;
     }
 
-    if (cols.length < 2) return null;
-
     let fullName = '';
-    if (cols.length >= 4) {
+    if (columnIndexes.fullName >= 0 && cols[columnIndexes.fullName]) {
+      fullName = cols[columnIndexes.fullName].trim();
+    } else if (cols.length >= 4 && hasLetters(cols[1]) && hasLetters(cols[2])) {
       fullName = [cols[1], cols[2], cols[3]].filter(Boolean).join(' ').trim();
     } else {
-      fullName = cols.slice(1).join(' ').trim();
+      const nameCols = cols
+        .filter((value, idx) => idx !== (columnIndexes.cedula >= 0 ? columnIndexes.cedula : 0))
+        .filter((value) => hasLetters(value));
+      fullName = nameCols.join(' ').trim();
     }
 
     if (!fullName) return null;
@@ -103,17 +124,18 @@
     const records = hasHeader ? lines.slice(1) : lines;
 
     const cedulaIdx = hasHeader
-      ? Math.max(headers.indexOf('cedula'), headers.indexOf('cédula'), headers.indexOf('identificacion'), headers.indexOf('identificación'))
+      ? headers.findIndex((header) => ['cedula', 'cédula', 'identificacion', 'identificación', 'documento'].includes(header))
       : 0;
 
     const fullNameIdx = hasHeader
-      ? Math.max(headers.indexOf('nombre completo'), headers.indexOf('nombre_completo'), headers.indexOf('full_name'), headers.indexOf('nombre'))
-      : 1;
+      ? headers.findIndex((header) => ['nombre completo', 'nombre_completo', 'full_name', 'nombre', 'nombre y apellidos'].includes(header))
+      : -1;
 
     const map = new Map();
+    const columnIndexes = { cedula: cedulaIdx, fullName: fullNameIdx };
 
     records.forEach((line) => {
-      const parsedDelimited = parseDelimitedRecord(line);
+      const parsedDelimited = parseDelimitedRecord(line, columnIndexes);
       const parsedFixedWidth = parseFixedWidthRecord(line);
       const parsed = parsedDelimited || parsedFixedWidth;
 
@@ -121,15 +143,6 @@
 
       const cedula = parsed.cedula;
       let fullName = parsed.fullName;
-
-      if (parsedDelimited) {
-        const cols = splitLine(line);
-        if (fullNameIdx >= 0 && cols[fullNameIdx]) {
-          fullName = cols[fullNameIdx];
-        } else if (cols.length > 1) {
-          fullName = cols.slice(1).join(' ').trim();
-        }
-      }
 
       if (!fullName || !looksLikeCedula(cedula)) return;
 
@@ -159,11 +172,13 @@
       let parsed = new Map();
       let lastError = null;
 
-      for (const source of PADRON_SOURCES) {
+      const uniqueSources = [...new Set(PADRON_SOURCES)];
+      for (const source of uniqueSources) {
         try {
           const text = await fetchSource(source);
           parsed = parsePadron(text);
           if (parsed.size) {
+            console.info(`[Padrón] Cargado desde ${source} con ${parsed.size} registros.`);
             break;
           }
         } catch (error) {
