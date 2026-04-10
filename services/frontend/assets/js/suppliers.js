@@ -29,6 +29,7 @@
   let suppliers = [];
   let supplierTypes = [];
   let suppliersLoaded = false;
+  let padronTypingTimer = null;
 
   function getApiBase() {
     const value = '/api';
@@ -84,9 +85,12 @@
     if (!taxId) {
       return;
     }
+    const normalizedTaxId = window.CedulaPadron.normalizeCedula(taxId);
+    if (normalizedTaxId.length < 9) return;
 
     const record = await window.CedulaPadron.resolveByCedula(taxId);
     if (!record) {
+      setFeedback(`La cédula ${taxId} no existe en el padrón electoral.`, true);
       return;
     }
 
@@ -348,6 +352,12 @@
   });
   fields.taxId.addEventListener('blur', () => {
     syncSupplierNameFromPadron().catch(() => null);
+  });
+  fields.taxId.addEventListener('input', () => {
+    if (padronTypingTimer) clearTimeout(padronTypingTimer);
+    padronTypingTimer = setTimeout(() => {
+      syncSupplierNameFromPadron().catch(() => null);
+    }, 250);
   });
   searchInput.addEventListener('input', renderTable);
 

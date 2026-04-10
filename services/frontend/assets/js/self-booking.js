@@ -28,6 +28,7 @@
   let eventTypeId = null;
   let selectedCustomer = null;
   let servicesById = new Map();
+  let padronTypingTimer = null;
 
   function getApiBase() {
     return '/api';
@@ -182,9 +183,12 @@
     if (!taxId) {
       return;
     }
+    const normalizedTaxId = window.CedulaPadron.normalizeCedula(taxId);
+    if (normalizedTaxId.length < 9) return;
 
     const record = await window.CedulaPadron.resolveByCedula(taxId);
     if (!record) {
+      availabilityResult.textContent = `La cédula ${taxId} no existe en el padrón electoral.`;
       return;
     }
 
@@ -297,6 +301,12 @@
 
   selfBook.taxId.addEventListener('input', () => {
     selectedCustomer = null;
+    if (padronTypingTimer) clearTimeout(padronTypingTimer);
+    padronTypingTimer = setTimeout(() => {
+      resolveCustomerByTaxId()
+        .then(syncCustomerFromPadron)
+        .catch(() => null);
+    }, 250);
   });
   selfBook.service.addEventListener('change', calculateEndTime);
   selfBook.start.addEventListener('input', calculateEndTime);
