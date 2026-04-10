@@ -170,6 +170,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     items = InvoiceItemSerializer(many=True, read_only=True)
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
     loyalty_awarded_points = serializers.IntegerField(read_only=True, default=0)
+    loyalty_redeemed_points = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = Invoice
@@ -198,6 +199,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "notes",
             "items",
             "loyalty_awarded_points",
+            "loyalty_redeemed_points",
         ]
 
 
@@ -213,6 +215,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
     currency = serializers.RegexField(r"^[A-Z]{3}$", default="CRC")
     exchange_rate = serializers.DecimalField(max_digits=10, decimal_places=4, default=Decimal("1.0000"))
     notes = serializers.CharField(required=False, allow_blank=True)
+    use_loyalty_points = serializers.BooleanField(required=False, default=False)
     items = InvoiceItemWriteSerializer(many=True)
 
     def validate(self, attrs):
@@ -361,12 +364,65 @@ class InvoiceCreateSerializer(serializers.Serializer):
         invoice.tax_total = money(tax_total)
         invoice.total = money(subtotal - discount_total + tax_total)
         invoice.save(update_fields=["subtotal", "discount_total", "tax_total", "total"])
-        invoice.loyalty_awarded_points = self._accrue_loyalty_points(
-            organization_id=organization_id,
-            customer_id=validated_data["customer"],
-            invoice=invoice,
+
+        redeemed_points = 0
+        if validated_data.get("use_loyalty_points"):
+            redeemed_points = self._redeem_loyalty_points_for_invoice(
+                organization_id=organization_id,
+                customer_id=validated_data["customer"],
+                invoice=invoice,
+            )
+
+        invoice.loyalty_redeemed_points = redeemed_points
+        invoice.loyalty_awarded_points = (
+            0
+            if redeemed_points > 0
+            else self._accrue_loyalty_points(
+                organization_id=organization_id,
+                customer_id=validated_data["customer"],
+                invoice=invoice,
+            )
         )
         return invoice
+
+    def _redeem_loyalty_points_for_invoice(self, organization_id, customer_id, invoice):
+        member = (
+            LoyaltyMember.objects.select_for_update()
+            .select_related("program")
+            .filter(
+                program__organization_id=organization_id,
+                customer_id=customer_id,
+                status=LoyaltyMember.STATUS_ACTIVE,
+                program__is_active=True,
+            )
+            .order_by("id")
+            .first()
+        )
+        if not member:
+            raise serializers.ValidationError("El cliente no tiene membresía activa para pagar con puntos.")
+
+        points_to_use = int(invoice.total.to_integral_value(rounding=ROUND_HALF_UP))
+        if points_to_use <= 0:
+            raise serializers.ValidationError("La factura debe tener un monto mayor a 0 para usar puntos.")
+
+        if member.available_points < points_to_use:
+            raise serializers.ValidationError(
+                f"El cliente tiene {member.available_points} puntos disponibles y requiere {points_to_use} para cubrir la factura."
+            )
+
+        LoyaltyPointEntry.objects.create(
+            member=member,
+            program=member.program,
+            entry_type=LoyaltyPointEntry.TYPE_REDEEM,
+            points=-points_to_use,
+            source_reference=invoice.invoice_number,
+            source_metadata={"invoice_id": invoice.id, "invoice_total": str(invoice.total), "payment_with_points": True},
+            event_at=timezone.now(),
+        )
+        member.available_points -= points_to_use
+        member.last_activity_at = timezone.now()
+        member.save(update_fields=["available_points", "last_activity_at", "updated_at"])
+        return points_to_use
 
     def _accrue_loyalty_points(self, organization_id, customer_id, invoice):
         member = (

@@ -153,6 +153,14 @@
     return numeric;
   }
 
+  function formatDecimalForInput(value) {
+    if (value === null || value === undefined || value === '') return '';
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value);
+    if (Number.isInteger(numeric)) return String(numeric);
+    return numeric.toString();
+  }
+
   async function request(path, options) {
     const response = await fetch(`${getApiBase()}${path}`, {
       credentials: 'include',
@@ -312,9 +320,9 @@
     }
 
     dom.ruleId.value = String(rule.id);
-    dom.rulePointsPerCurrency.value = rule.points_per_currency_unit || '';
+    dom.rulePointsPerCurrency.value = formatDecimalForInput(rule.points_per_currency_unit);
     dom.ruleExpireDays.value = rule.points_expire_in_days ?? '';
-    dom.ruleMinPurchase.value = rule.minimum_purchase_amount || '0';
+    dom.ruleMinPurchase.value = formatDecimalForInput(rule.minimum_purchase_amount || '0');
     dom.ruleActive.value = String(rule.is_active);
   }
 
