@@ -355,7 +355,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
     def _accrue_loyalty_points(self, organization_id, customer_id, invoice):
         member = (
             LoyaltyMember.objects.select_for_update()
-            .select_related("program", "tier")
+            .select_related("program")
             .filter(
                 program__organization_id=organization_id,
                 customer_id=customer_id,
