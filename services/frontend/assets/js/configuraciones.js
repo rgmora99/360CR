@@ -13,10 +13,17 @@
   const orgParentSelect = document.getElementById('org-parent');
   const createOrganizationButton = document.getElementById('create-organization');
   const orgFeedback = document.getElementById('org-feedback');
-  const inviteEmailInput = document.getElementById('invite-email');
-  const inviteRoleSelect = document.getElementById('invite-role');
-  const createInvitationButton = document.getElementById('create-invitation');
-  const invitationsList = document.getElementById('invitations-list');
+  const newRoleNameInput = document.getElementById('new-role-name');
+  const newRoleCodeInput = document.getElementById('new-role-code');
+  const newRolePersonaSelect = document.getElementById('new-role-persona');
+  const newRolePermissionsInput = document.getElementById('new-role-permissions');
+  const newRoleDescriptionInput = document.getElementById('new-role-description');
+  const newRoleScenariosInput = document.getElementById('new-role-scenarios');
+  const createRoleButton = document.getElementById('create-role');
+  const assignRoleUserSelect = document.getElementById('assign-role-user');
+  const assignRoleRoleSelect = document.getElementById('assign-role-role');
+  const assignRoleButton = document.getElementById('assign-role');
+  const roleAssignmentsList = document.getElementById('role-assignments-list');
   const teamFeedback = document.getElementById('team-feedback');
   const settingsTabs = document.querySelectorAll('[data-settings-tab]');
   const settingsPanels = document.querySelectorAll('[data-settings-panel]');
@@ -27,9 +34,9 @@
   const availabilityActive = document.getElementById('availability-active');
   const saveAvailabilityRuleButton = document.getElementById('save-availability-rule');
   const availabilityRulesList = document.getElementById('availability-rules-list');
+  const availabilityViewCollaborator = document.getElementById('availability-view-collaborator');
   const availabilityFeedback = document.getElementById('availability-feedback');
   const API_BASE = '/api';
-  const INVITATIONS_STORAGE_KEY = 'cr360.config.invitations';
   const AVAILABILITY_STORAGE_KEY = 'cr360.config.availability-rules';
   const USER_ROLE_FALLBACK = 'colaborador';
   let rolesCache = [];
@@ -48,10 +55,17 @@
     !systemSettingsGroups ||
     !organizationsList ||
     !orgParentSelect ||
-    !inviteEmailInput ||
-    !inviteRoleSelect ||
-    !createInvitationButton ||
-    !invitationsList ||
+    !newRoleNameInput ||
+    !newRoleCodeInput ||
+    !newRolePersonaSelect ||
+    !newRolePermissionsInput ||
+    !newRoleDescriptionInput ||
+    !newRoleScenariosInput ||
+    !createRoleButton ||
+    !assignRoleUserSelect ||
+    !assignRoleRoleSelect ||
+    !assignRoleButton ||
+    !roleAssignmentsList ||
     !teamFeedback ||
     !availabilityCollaborator ||
     !availabilityWeekday ||
@@ -60,6 +74,7 @@
     !availabilityActive ||
     !saveAvailabilityRuleButton ||
     !availabilityRulesList ||
+    !availabilityViewCollaborator ||
     !availabilityFeedback
   ) {
     return;
@@ -340,27 +355,15 @@
 
   const renderRoleOptions = (roles) => {
     if (!roles.length) {
-      inviteRoleSelect.innerHTML = '<option value="">Sin roles disponibles</option>';
+      assignRoleRoleSelect.innerHTML = '<option value="">Sin roles disponibles</option>';
       return;
     }
 
-    inviteRoleSelect.innerHTML = roles
+    assignRoleRoleSelect.innerHTML = roles
       .map((role) => `<option value="${role.id}">${role.name}</option>`)
       .join('');
   };
 
-  const getStoredInvitations = () => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(INVITATIONS_STORAGE_KEY) || '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
-    }
-  };
-
-  const saveInvitations = (invitations) => {
-    localStorage.setItem(INVITATIONS_STORAGE_KEY, JSON.stringify(invitations));
-  };
   const getStoredAvailabilityRules = () => {
     try {
       const parsed = JSON.parse(localStorage.getItem(AVAILABILITY_STORAGE_KEY) || '[]');
@@ -373,51 +376,121 @@
     localStorage.setItem(AVAILABILITY_STORAGE_KEY, JSON.stringify(rules));
   };
 
-  const renderInvitations = () => {
-    const invitations = getStoredInvitations();
-    if (!invitations.length) {
-      invitationsList.innerHTML = '<li>Sin invitaciones pendientes.</li>';
+  const renderUsersOptions = (users) => {
+    if (!users.length) {
+      assignRoleUserSelect.innerHTML = '<option value="">Sin usuarios activos</option>';
       return;
     }
-
-    invitationsList.innerHTML = invitations
-      .map(
-        (invitation) => `<li>
-          <strong>${invitation.email}</strong>
-          <span>Rol: ${invitation.roleName}</span>
-          <small>Creada: ${new Date(invitation.createdAt).toLocaleString('es-CR')}</small>
-        </li>`,
-      )
+    assignRoleUserSelect.innerHTML = users
+      .map((user) => `<option value="${user.id}">${user.email || user.username}</option>`)
       .join('');
   };
 
-  const createInvitation = () => {
-    const email = inviteEmailInput.value.trim().toLowerCase();
-    const roleId = Number(inviteRoleSelect.value);
-    const selectedRole = rolesCache.find((role) => role.id === roleId);
+  const renderRoleAssignments = async () => {
+    try {
+      const response = await fetch('/api/config/user-role-assignments/', { credentials: 'include' });
+      if (!response.ok) throw new Error('No fue posible cargar asociaciones de roles.');
+      const assignments = await response.json();
+      if (!assignments.length) {
+        roleAssignmentsList.innerHTML = '<li>Sin asociaciones de roles registradas.</li>';
+        return;
+      }
 
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setTeamFeedback('Ingresa un correo válido para crear la invitación.', true);
+      roleAssignmentsList.innerHTML = assignments
+        .map((assignment) => {
+          const assignedUser = usersCache.find((user) => Number(user.id) === Number(assignment.user));
+          return `<li>
+            <strong>${assignment.role_detail?.name || 'Rol'}</strong>
+            <span>${assignedUser?.email || assignedUser?.username || `Usuario #${assignment.user}`}${assignment.organization ? ` · Organización #${assignment.organization}` : ''}</span>
+            <small>${assignment.is_active ? 'Asociación activa' : 'Asociación inactiva'}</small>
+          </li>`;
+        })
+        .join('');
+    } catch (error) {
+      roleAssignmentsList.innerHTML = `<li>${error.message || 'No se pudo cargar asociaciones.'}</li>`;
+    }
+  };
+
+  const createRole = async () => {
+    const name = newRoleNameInput.value.trim();
+    const code = newRoleCodeInput.value.trim().toLowerCase().replace(/\s+/g, '_');
+    const persona = newRolePersonaSelect.value;
+    const description = newRoleDescriptionInput.value.trim();
+    const typicalScenarios = newRoleScenariosInput.value.trim();
+    const defaultPermissions = newRolePermissionsInput.value
+      .split(',')
+      .map((permission) => permission.trim())
+      .filter(Boolean);
+
+    if (!name || !code || !description || !typicalScenarios) {
+      setTeamFeedback('Completa nombre, código, descripción y escenarios para crear el rol.', true);
       return;
     }
 
-    if (!selectedRole) {
-      setTeamFeedback('Selecciona un rol para la invitación.', true);
+    try {
+      const response = await fetch('/api/config/roles/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name,
+          code,
+          persona,
+          description,
+          typical_scenarios: typicalScenarios,
+          default_permissions: defaultPermissions,
+          is_system_default: false,
+        }),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'No fue posible crear el rol.');
+      }
+      setTeamFeedback(`Rol ${name} creado correctamente.`);
+      newRoleNameInput.value = '';
+      newRoleCodeInput.value = '';
+      newRolePermissionsInput.value = '';
+      newRoleDescriptionInput.value = '';
+      newRoleScenariosInput.value = '';
+      await loadData();
+    } catch (error) {
+      setTeamFeedback(error.message || 'Error al crear rol.', true);
+    }
+  };
+
+  const assignRole = async () => {
+    const userId = Number(assignRoleUserSelect.value);
+    const roleId = Number(assignRoleRoleSelect.value);
+    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+
+    if (!userId || !roleId) {
+      setTeamFeedback('Selecciona usuario y rol para asociarlos.', true);
       return;
     }
 
-    const invitations = getStoredInvitations();
-    invitations.unshift({
-      id: Date.now(),
-      email,
-      roleId: selectedRole.id,
-      roleName: selectedRole.name,
-      createdAt: new Date().toISOString(),
-    });
-    saveInvitations(invitations);
-    inviteEmailInput.value = '';
-    setTeamFeedback(`Invitación registrada para ${email} con rol ${selectedRole.name}.`);
-    renderInvitations();
+    try {
+      const response = await fetch('/api/config/user-role-assignments/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          user: userId,
+          role: roleId,
+          organization: organizationId || null,
+          is_active: true,
+        }),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'No fue posible asociar el rol.');
+      }
+      const selectedUser = usersCache.find((user) => Number(user.id) === userId);
+      const selectedRole = rolesCache.find((role) => Number(role.id) === roleId);
+      setTeamFeedback(`Rol ${selectedRole?.name || roleId} asociado a ${selectedUser?.email || selectedUser?.username}.`);
+      renderRoleAssignments();
+    } catch (error) {
+      setTeamFeedback(error.message || 'Error al asociar rol.', true);
+    }
   };
 
   const getCollaboratorLabel = (collaboratorId) => {
@@ -428,12 +501,17 @@
   const renderCollaboratorsOptions = (collaborators) => {
     if (!collaborators.length) {
       availabilityCollaborator.innerHTML = '<option value="">Sin colaboradores</option>';
+      availabilityViewCollaborator.innerHTML = '<option value="">Sin colaboradores</option>';
       return;
     }
 
+    const collaboratorOptions = collaborators
+      .map((collaborator) => `<option value="${collaborator.id}">${collaborator.email} · ${collaborator.role}</option>`)
+      .join('');
     availabilityCollaborator.innerHTML = collaborators
       .map((collaborator) => `<option value="${collaborator.id}">${collaborator.email} · ${collaborator.role}</option>`)
       .join('');
+    availabilityViewCollaborator.innerHTML = `<option value="">Todos los colaboradores</option>${collaboratorOptions}`;
   };
 
   const fallbackCollaboratorsFromUsers = () => {
@@ -451,20 +529,41 @@
     const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
     const rules = getStoredAvailabilityRules().filter((rule) => Number(rule.organizationId) === activeOrganizationId);
 
-    if (!rules.length) {
+    const collaboratorFilter = Number(availabilityViewCollaborator.value);
+    const filteredRules = collaboratorFilter
+      ? rules.filter((rule) => Number(rule.collaboratorId) === collaboratorFilter)
+      : rules;
+
+    if (!filteredRules.length) {
       availabilityRulesList.innerHTML = '<li>No hay horarios definidos para este negocio.</li>';
       return;
     }
 
-    availabilityRulesList.innerHTML = rules
-      .sort((left, right) => Number(left.weekday) - Number(right.weekday))
-      .map(
-        (rule) => `<li>
-          <strong>${getCollaboratorLabel(rule.collaboratorId)}</strong>
-          <span>${weekdayLabels[rule.weekday] || 'Día no definido'} · ${rule.start} a ${rule.end}</span>
-          <small>${rule.active ? 'Disponible para agenda' : 'Bloqueado para agenda'}</small>
-        </li>`,
-      )
+    const groupedRules = filteredRules.reduce((acc, rule) => {
+      const key = String(rule.collaboratorId);
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(rule);
+      return acc;
+    }, {});
+
+    availabilityRulesList.innerHTML = Object.entries(groupedRules)
+      .sort(([a], [b]) => getCollaboratorLabel(a).localeCompare(getCollaboratorLabel(b), 'es'))
+      .map(([collaboratorId, collaboratorRules]) => {
+        const rows = collaboratorRules
+          .sort((left, right) => Number(left.weekday) - Number(right.weekday))
+          .map(
+            (rule) => `<div class="availability-row">
+              <span>${weekdayLabels[rule.weekday] || 'Día no definido'}</span>
+              <span>${rule.start} - ${rule.end}</span>
+              <small>${rule.active ? 'Disponible' : 'Bloqueado'}</small>
+            </div>`,
+          )
+          .join('');
+        return `<li>
+          <strong>${getCollaboratorLabel(collaboratorId)}</strong>
+          <div class="availability-user-grid">${rows}</div>
+        </li>`;
+      })
       .join('');
   };
 
@@ -605,9 +704,10 @@
       usersCache = users;
       rolesCache = roles;
       renderUsers(users);
+      renderUsersOptions(users.filter((user) => user.is_active));
       renderRoles(roles);
       renderRoleOptions(roles);
-      renderInvitations();
+      renderRoleAssignments();
       renderSettings(systemSettings);
       if (!collaboratorsCache.length) {
         loadCollaborators();
@@ -618,9 +718,11 @@
   };
 
   createOrganizationButton.addEventListener('click', createOrganization);
-  createInvitationButton.addEventListener('click', createInvitation);
+  createRoleButton.addEventListener('click', createRole);
+  assignRoleButton.addEventListener('click', assignRole);
   createCollaboratorUserButton.addEventListener('click', createCollaboratorUser);
   saveAvailabilityRuleButton.addEventListener('click', saveAvailabilityRule);
+  availabilityViewCollaborator.addEventListener('change', renderAvailabilityRules);
   document.addEventListener('change', (event) => {
     if (event.target?.id === 'organization-switcher') {
       loadCollaborators();

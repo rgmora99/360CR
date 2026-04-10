@@ -69,21 +69,56 @@
               </article>
 
               <article class="card">
-                <h2>Autogestión del equipo</h2>
-                <p class="section-help">Invita usuarios y delega roles sin depender del equipo técnico.</p>
+                <h2>Gestión de roles por usuario</h2>
+                <p class="section-help">Crea roles personalizados y asígnalos de inmediato a colaboradores activos.</p>
                 <div class="org-tools team-tools">
                   <label>
-                    Correo del usuario
-                    <input id="invite-email" type="email" placeholder="usuario@negocio.com" />
+                    Nombre del rol
+                    <input id="new-role-name" type="text" placeholder="Ej: Supervisor de Agenda" />
                   </label>
                   <label>
-                    Rol inicial
-                    <select id="invite-role"></select>
+                    Código del rol
+                    <input id="new-role-code" type="text" placeholder="supervisor_agenda" />
                   </label>
-                  <button id="create-invitation" class="btn btn-primary" type="button">Crear invitación</button>
+                  <label>
+                    Persona
+                    <select id="new-role-persona">
+                      <option value="business_manager">Jefatura / Dirección</option>
+                      <option value="cross_functional">Uso transversal</option>
+                      <option value="it_admin">Administrador de TI</option>
+                    </select>
+                  </label>
+                  <label>
+                    Permisos (separados por coma)
+                    <input id="new-role-permissions" type="text" placeholder="agenda.view, agenda.manage" />
+                  </label>
+                  <label>
+                    Descripción
+                    <textarea id="new-role-description" rows="2" placeholder="Describe alcance y responsabilidad"></textarea>
+                  </label>
+                  <label>
+                    Escenarios típicos
+                    <textarea
+                      id="new-role-scenarios"
+                      rows="2"
+                      placeholder="Apertura de horarios, supervisión de agenda..."
+                    ></textarea>
+                  </label>
+                  <button id="create-role" class="btn btn-primary" type="button">Crear rol personalizado</button>
+                </div>
+                <div class="org-tools team-tools">
+                  <label>
+                    Usuario
+                    <select id="assign-role-user"></select>
+                  </label>
+                  <label>
+                    Rol a asociar
+                    <select id="assign-role-role"></select>
+                  </label>
+                  <button id="assign-role" class="btn btn-primary" type="button">Asociar rol al usuario</button>
                 </div>
                 <p id="team-feedback" class="section-help">Sin acciones recientes.</p>
-                <ul id="invitations-list" class="settings-list"></ul>
+                <ul id="role-assignments-list" class="settings-list"></ul>
               </article>
             </div>
           </section>
@@ -160,6 +195,12 @@
               <article class="card">
                 <h2>Disponibilidad configurada</h2>
                 <p class="section-help">Resumen operativo para validar franjas activas antes de abrir cupos.</p>
+                <div class="org-tools">
+                  <label>
+                    Ver horarios por usuario
+                    <select id="availability-view-collaborator"></select>
+                  </label>
+                </div>
                 <ul id="availability-rules-list" class="settings-list"></ul>
               </article>
             </div>
