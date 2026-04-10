@@ -1,5 +1,6 @@
 (function initConfiguracionesModule() {
   const usersList = document.getElementById('users-list');
+  const collaboratorsSummary = document.getElementById('collaborators-summary');
   const rolesGroups = document.getElementById('roles-groups');
   const systemSettingsGroups = document.getElementById('system-settings-groups');
   const organizationsList = document.getElementById('organizations-list');
@@ -13,8 +14,6 @@
   const invitationsList = document.getElementById('invitations-list');
   const teamFeedback = document.getElementById('team-feedback');
   const API_BASE = '/api';
-  const INVITATIONS_STORAGE_KEY = 'cr360.config.invitations';
-  let rolesCache = [];
 
   if (
     !usersList ||
@@ -26,7 +25,8 @@
     !inviteRoleSelect ||
     !createInvitationButton ||
     !invitationsList ||
-    !teamFeedback
+    !teamFeedback ||
+    !collaboratorsSummary
   ) {
     return;
   }
@@ -48,8 +48,15 @@
       window.showErrorAlert(message);
       return;
     }
-    // eslint-disable-next-line no-alert
     alert(message);
+  };
+
+  const getActiveOrganizationId = () => {
+    const id = Number(window.AppSession?.getActiveOrganizationId?.());
+    if (!id) {
+      throw new Error('Debes seleccionar una organización activa para gestionar colaboradores.');
+    }
+    return id;
   };
 
   const normalizeApiBase = (rawBase) => {
@@ -157,25 +164,80 @@
       orgParentSelect.value = '';
       setOrgFeedback(`Organización creada: ${created.name} (#${created.id}).`);
       await loadOrganizations();
+      await loadCollaborators();
     } catch (error) {
       setOrgFeedback(error.message || 'No fue posible crear la organización.', true);
     }
   };
 
-  const renderUsers = (users) => {
-    if (!users.length) {
-      usersList.innerHTML = '<li>Sin usuarios registrados por ahora.</li>';
+  const renderCollaborators = (summary) => {
+    const max = summary.max_collaborators;
+    const slotsText = max === null ? 'Ilimitados' : `${summary.current_collaborators}/${max}`;
+    collaboratorsSummary.textContent = `Plan: ${summary.plan}. Colaboradores asociados: ${slotsText}.`;
+
+    if (!summary.collaborators.length) {
+      usersList.innerHTML = '<li>Sin colaboradores asociados en esta organización.</li>';
       return;
     }
 
-    usersList.innerHTML = users
+    usersList.innerHTML = summary.collaborators
       .map(
-        (user) => `<li>
-          <strong>${user.email || user.username}</strong>
-          <span>${user.is_active ? 'Activo' : 'Inactivo'} · ${user.is_staff ? 'Staff' : 'Operativo'}</span>
+        (collaborator) => `<li>
+          <strong>${collaborator.email}</strong>
+          <span>Rol: ${collaborator.role}</span>
         </li>`,
       )
       .join('');
+
+    if (max !== null && summary.current_collaborators >= max) {
+      setTeamFeedback(`Límite alcanzado: el plan ${summary.plan} permite máximo ${max} colaboradores.`, true);
+    }
+  };
+
+  const loadCollaborators = async () => {
+    try {
+      const organizationId = getActiveOrganizationId();
+      const summary = await orgRequest(`/config/organization-collaborators/?organization_id=${organizationId}`);
+      renderCollaborators(summary);
+      invitationsList.innerHTML = summary.collaborators
+        .map((collaborator) => `<li><strong>${collaborator.email}</strong><span>Asociado con rol ${collaborator.role}</span></li>`)
+        .join('');
+      if (!summary.collaborators.length) {
+        invitationsList.innerHTML = '<li>Sin colaboradores asociados.</li>';
+      }
+    } catch (error) {
+      collaboratorsSummary.textContent = 'No fue posible cargar colaboradores.';
+      usersList.innerHTML = '<li>Error al consultar colaboradores.</li>';
+      invitationsList.innerHTML = '<li>Sin datos de colaboradores.</li>';
+      setTeamFeedback(error.message || 'No fue posible cargar colaboradores.', true);
+    }
+  };
+
+  const createInvitation = async () => {
+    const email = inviteEmailInput.value.trim().toLowerCase();
+    const role = inviteRoleSelect.value;
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setTeamFeedback('Ingresa un correo válido para asociar un colaborador.', true);
+      return;
+    }
+
+    try {
+      const organizationId = getActiveOrganizationId();
+      const summary = await orgRequest('/config/organization-collaborators/', {
+        method: 'POST',
+        body: JSON.stringify({ organization_id: organizationId, email, role }),
+      });
+
+      inviteEmailInput.value = '';
+      renderCollaborators(summary);
+      invitationsList.innerHTML = summary.collaborators
+        .map((collaborator) => `<li><strong>${collaborator.email}</strong><span>Asociado con rol ${collaborator.role}</span></li>`)
+        .join('');
+      setTeamFeedback(`Colaborador asociado: ${email}.`);
+    } catch (error) {
+      setTeamFeedback(error.message || 'No fue posible asociar el colaborador.', true);
+    }
   };
 
   const renderRoles = (roles) => {
@@ -208,77 +270,6 @@
         </section>`,
       )
       .join('');
-  };
-
-  const renderRoleOptions = (roles) => {
-    if (!roles.length) {
-      inviteRoleSelect.innerHTML = '<option value="">Sin roles disponibles</option>';
-      return;
-    }
-
-    inviteRoleSelect.innerHTML = roles
-      .map((role) => `<option value="${role.id}">${role.name}</option>`)
-      .join('');
-  };
-
-  const getStoredInvitations = () => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(INVITATIONS_STORAGE_KEY) || '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      return [];
-    }
-  };
-
-  const saveInvitations = (invitations) => {
-    localStorage.setItem(INVITATIONS_STORAGE_KEY, JSON.stringify(invitations));
-  };
-
-  const renderInvitations = () => {
-    const invitations = getStoredInvitations();
-    if (!invitations.length) {
-      invitationsList.innerHTML = '<li>Sin invitaciones pendientes.</li>';
-      return;
-    }
-
-    invitationsList.innerHTML = invitations
-      .map(
-        (invitation) => `<li>
-          <strong>${invitation.email}</strong>
-          <span>Rol: ${invitation.roleName}</span>
-          <small>Creada: ${new Date(invitation.createdAt).toLocaleString('es-CR')}</small>
-        </li>`,
-      )
-      .join('');
-  };
-
-  const createInvitation = () => {
-    const email = inviteEmailInput.value.trim().toLowerCase();
-    const roleId = Number(inviteRoleSelect.value);
-    const selectedRole = rolesCache.find((role) => role.id === roleId);
-
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setTeamFeedback('Ingresa un correo válido para crear la invitación.', true);
-      return;
-    }
-
-    if (!selectedRole) {
-      setTeamFeedback('Selecciona un rol para la invitación.', true);
-      return;
-    }
-
-    const invitations = getStoredInvitations();
-    invitations.unshift({
-      id: Date.now(),
-      email,
-      roleId: selectedRole.id,
-      roleName: selectedRole.name,
-      createdAt: new Date().toISOString(),
-    });
-    saveInvitations(invitations);
-    inviteEmailInput.value = '';
-    setTeamFeedback(`Invitación registrada para ${email} con rol ${selectedRole.name}.`);
-    renderInvitations();
   };
 
   const renderSettings = (settings) => {
@@ -320,23 +311,16 @@
 
   const loadData = async () => {
     try {
-      const [usersRes, rolesRes, settingsRes] = await Promise.all([
-        fetch('/api/config/users/'),
-        fetch('/api/config/roles/'),
-        fetch('/api/config/system-settings/'),
-      ]);
+      const [rolesRes, settingsRes] = await Promise.all([fetch('/api/config/roles/'), fetch('/api/config/system-settings/')]);
 
-      if (!usersRes.ok || !rolesRes.ok || !settingsRes.ok) {
+      if (!rolesRes.ok || !settingsRes.ok) {
         throw new Error('No fue posible cargar el módulo de configuraciones.');
       }
 
-      const [users, roles, systemSettings] = await Promise.all([usersRes.json(), rolesRes.json(), settingsRes.json()]);
-      rolesCache = roles;
-      renderUsers(users);
+      const [roles, systemSettings] = await Promise.all([rolesRes.json(), settingsRes.json()]);
       renderRoles(roles);
-      renderRoleOptions(roles);
-      renderInvitations();
       renderSettings(systemSettings);
+      await loadCollaborators();
     } catch (error) {
       showError(error.message || 'Error inesperado al cargar configuraciones.');
     }
