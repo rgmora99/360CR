@@ -246,12 +246,12 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
         return attrs
 
-    def _get_next_invoice_sequence(self, organization_id):
-        Organization.objects.select_for_update().filter(id=organization_id).first()
+    def _get_next_invoice_sequence(self, document_type):
+        Organization.objects.select_for_update().first()
         current_max = (
             Invoice.objects.select_for_update()
-            .filter(organization_id=organization_id, invoice_number__startswith=f"F-{organization_id:03d}-")
-            .annotate(sequence_number=Cast(Substr("invoice_number", 7, 8), IntegerField()))
+            .filter(document_type=document_type)
+            .annotate(sequence_number=Cast(Substr("consecutive_number", 11, 10), IntegerField()))
             .aggregate(max_sequence=Max("sequence_number"))
             .get("max_sequence")
             or 0
@@ -264,9 +264,9 @@ class InvoiceCreateSerializer(serializers.Serializer):
         invoice = None
         for attempt in range(MAX_CREATE_RETRIES):
             try:
-                invoice_sequence = self._get_next_invoice_sequence(organization_id)
-                invoice_number = f"F-{organization_id:03d}-{invoice_sequence:08d}"
+                invoice_sequence = self._get_next_invoice_sequence(validated_data["document_type"])
                 consecutive_number = f"00100001{validated_data['document_type']}{invoice_sequence:010d}"
+                invoice_number = f"F-{validated_data['document_type']}-{invoice_sequence:010d}"
 
                 invoice = Invoice.objects.create(
                     organization_id=organization_id,
