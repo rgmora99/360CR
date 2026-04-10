@@ -72,9 +72,30 @@
   min-width: 0;
 }
 
-.org-tools select {
+.org-tools select,
+.org-tools textarea,
+.org-tools input {
   width: 100%;
   min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(145, 167, 235, 0.35);
+  background: rgba(8, 17, 33, 0.95);
+  color: var(--color-text);
+  padding: 0.52rem 0.62rem;
+  font: inherit;
+}
+
+.org-tools textarea {
+  resize: vertical;
+  min-height: 68px;
+}
+
+.org-tools input:focus,
+.org-tools select:focus,
+.org-tools textarea:focus {
+  outline: none;
+  border-color: rgba(167, 188, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(122, 159, 255, 0.2);
 }
 
 .team-tools {
@@ -125,6 +146,27 @@
 
 .settings-list small {
   color: var(--color-muted);
+}
+
+.availability-user-grid {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.availability-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1fr);
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.availability-row span {
+  color: var(--color-muted);
+}
+
+.availability-row small {
+  text-align: right;
 }
 
 .role-group + .role-group {
