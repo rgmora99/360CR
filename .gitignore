@@ -3,3 +3,4 @@ __pycache__/
 .env
 services/docs/PADRON_COMPLETO.txt
 
+services/frontend/docs/PADRON_COMPLETO.txt
