@@ -1,3 +1,6 @@
+import re
+import unicodedata
+
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.utils.text import slugify
@@ -6,6 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
+from apps.core.models import PadronRecord
 from apps.tenants.models import Membership, Organization
 
 
@@ -126,3 +130,28 @@ class SessionView(APIView):
         ]
         active_id = next((org["id"] for org in organizations if org["parent_organization"] is None), organizations[0]["id"] if organizations else None)
         return Response({"user": {"id": request.user.id, "email": request.user.email}, "organizations": organizations, "active_organization_id": active_id})
+
+
+class PadronLookupView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        raw_cedula = request.query_params.get("cedula", "")
+        cedula = re.sub(r"\D", "", raw_cedula or "")
+        if len(cedula) != 9:
+            return Response({"detail": "La cédula debe tener 9 dígitos.", "found": False}, status=400)
+
+        record = PadronRecord.objects.filter(cedula=cedula).only("cedula", "full_name", "normalized_name").first()
+        if not record:
+            return Response({"detail": "La cédula no existe en el padrón electoral.", "found": False}, status=404)
+
+        normalized_name = record.normalized_name or unicodedata.normalize("NFD", record.full_name).encode("ascii", "ignore").decode("ascii").lower()
+        return Response(
+            {
+                "found": True,
+                "cedula": record.cedula,
+                "full_name": record.full_name,
+                "normalized_name": normalized_name,
+            },
+            status=200,
+        )

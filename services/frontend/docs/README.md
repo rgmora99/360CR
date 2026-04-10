@@ -40,3 +40,15 @@ cedula,nombre_completo
 ## Importante para despliegue
 
 `PADRON_COMPLETO.txt` está en `.gitignore`, así que **no se versiona**. Debes copiarlo manualmente en `services/frontend/docs/` en cada entorno antes de reconstruir el contenedor de frontend.
+
+## Modo recomendado (rápido): padrón indexado en BD
+
+Ahora el frontend consulta primero `GET /api/padron/lookup/?cedula=...`, que usa un índice por cédula en base de datos.  
+Para cargar datos en BD:
+
+```bash
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py import_padron --file /ruta/PADRON_COMPLETO.txt --truncate
+```
+
+Si el API no tiene datos cargados, el frontend usa el fallback local por archivo en `/docs/*`.
