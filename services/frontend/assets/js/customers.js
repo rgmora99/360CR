@@ -32,6 +32,7 @@
   let customerTypes = [];
   let organizations = [];
   let customersLoaded = false;
+  let padronTypingTimer = null;
   const SESSION_KEY = 'cr360.session';
 
   function getActiveOrganizationFromSession() {
@@ -144,9 +145,12 @@
     if (!taxId) {
       return;
     }
+    const normalizedTaxId = window.CedulaPadron.normalizeCedula(taxId);
+    if (normalizedTaxId.length < 9) return;
 
     const record = await window.CedulaPadron.resolveByCedula(taxId);
     if (!record) {
+      setFeedback(`La cédula ${taxId} no existe en el padrón electoral.`, true);
       return;
     }
 
@@ -460,6 +464,12 @@
   });
   fields.taxId.addEventListener('blur', () => {
     syncCustomerNameFromPadron().catch(() => null);
+  });
+  fields.taxId.addEventListener('input', () => {
+    if (padronTypingTimer) clearTimeout(padronTypingTimer);
+    padronTypingTimer = setTimeout(() => {
+      syncCustomerNameFromPadron().catch(() => null);
+    }, 250);
   });
   searchInput.addEventListener('input', renderTable);
   organizationIdInput.addEventListener('change', loadCustomers);

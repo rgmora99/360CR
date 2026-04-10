@@ -1,6 +1,8 @@
 (function initCedulaPadron() {
   const PADRON_SOURCES = [
     '/services/docs/PADRON_COMPLETO.txt',
+    '/docs/PADRON_COMPLETO.txt',
+    '/docs/padron_completo.txt',
     '/docs/PADRON_ELECTORAL.TXT',
     '/docs/PADRON_ELECTORAL.txt',
     '/docs/padron-electoral.txt',
@@ -48,6 +50,10 @@
     return /^\d{9}$/.test(normalizeCedula(value));
   }
 
+  function hasLetters(value) {
+    return /[a-záéíóúñ]/i.test(String(value || ''));
+  }
+
   function parseDelimitedRecord(line, columnIndexes = {}) {
     if (!/[,\t;|]/.test(line)) {
       return null;
@@ -65,10 +71,12 @@
     let fullName = '';
     if (columnIndexes.fullName >= 0 && cols[columnIndexes.fullName]) {
       fullName = cols[columnIndexes.fullName].trim();
-    } else if (cols.length >= 4) {
+    } else if (cols.length >= 4 && hasLetters(cols[1]) && hasLetters(cols[2])) {
       fullName = [cols[1], cols[2], cols[3]].filter(Boolean).join(' ').trim();
     } else {
-      const nameCols = cols.filter((_value, idx) => idx !== (columnIndexes.cedula >= 0 ? columnIndexes.cedula : 0));
+      const nameCols = cols
+        .filter((value, idx) => idx !== (columnIndexes.cedula >= 0 ? columnIndexes.cedula : 0))
+        .filter((value) => hasLetters(value));
       fullName = nameCols.join(' ').trim();
     }
 
