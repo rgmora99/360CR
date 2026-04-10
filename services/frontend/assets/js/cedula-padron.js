@@ -1,8 +1,11 @@
 (function initCedulaPadron() {
+  const PADRON_API_URL = '/api/padron/lookup/';
   const PADRON_SOURCES = [
-    '/services/docs/PADRON_COMPLETO.txt',
     '/docs/PADRON_COMPLETO.txt',
     '/docs/padron_completo.txt',
+    '/docs/padron-electoral.txt',
+    '/docs/padron-electoral.csv',
+    '/docs/padron-electoral.tsv',
     '/PADRON_COMPLETO.txt',
     '/padron_completo.txt'
   ];
@@ -12,6 +15,8 @@
     loadingPromise: null,
     byCedula: new Map(),
     loadedSource: null,
+    apiEnabled: true,
+    apiCache: new Map(),
   };
 
   function log(level, message, payload) {
@@ -30,6 +35,14 @@
       .replace(/\s+/g, ' ')
       .trim()
       .toLowerCase();
+  }
+
+  function buildRecord(cedula, fullName) {
+    return {
+      cedula,
+      fullName,
+      normalizedName: normalizeName(fullName),
+    };
   }
 
   function splitLine(line) {
@@ -145,11 +158,7 @@
 
       if (!fullName || !looksLikeCedula(cedula)) return;
 
-      map.set(cedula, {
-        cedula,
-        fullName,
-        normalizedName: normalizeName(fullName),
-      });
+      map.set(cedula, buildRecord(cedula, fullName));
     });
 
     return map;
@@ -161,7 +170,7 @@
   }
 
   async function fetchSource(path) {
-    const response = await fetch(path, { credentials: 'include' });
+    const response = await fetch(path, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`No se encontró ${path}`);
     }
@@ -208,7 +217,10 @@
       state.loaded = true;
 
       if (!parsed.size && lastError) {
-        log('warn', 'No se pudo cargar el padrón electoral.', lastError.message);
+        log('warn', 'No se pudo cargar el padrón electoral.', {
+          error: lastError.message,
+          hint: 'Copia el archivo PADRON_COMPLETO.txt (o padron-electoral.txt/csv/tsv) dentro de services/frontend/docs/ y reconstruye el contenedor frontend.',
+        });
       }
 
       return state.byCedula;
@@ -223,9 +235,56 @@
     return normalizedInput === record.normalizedName;
   }
 
+  async function resolveByCedulaApi(cedula) {
+    if (!state.apiEnabled) return null;
+
+    if (state.apiCache.has(cedula)) {
+      return state.apiCache.get(cedula);
+    }
+
+    const url = `${PADRON_API_URL}?cedula=${encodeURIComponent(cedula)}`;
+    const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
+
+    if (response.status === 404) {
+      state.apiCache.set(cedula, null);
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Error consultando padrón por API (${response.status}).`);
+    }
+
+    const payload = await response.json();
+    const fullName = payload?.full_name || payload?.fullName || '';
+    if (!fullName) {
+      state.apiCache.set(cedula, null);
+      return null;
+    }
+
+    const record = buildRecord(cedula, fullName);
+    state.apiCache.set(cedula, record);
+    return record;
+  }
+
   async function resolveByCedula(cedula) {
-    const data = await ensureLoaded();
     const normalizedCedula = normalizeCedula(cedula);
+    if (!looksLikeCedula(normalizedCedula)) return null;
+
+    try {
+      const apiMatch = await resolveByCedulaApi(normalizedCedula);
+      if (apiMatch) {
+        log('info', `Cédula ${normalizedCedula} encontrada por API.`, { fullName: apiMatch.fullName, loadedSource: PADRON_API_URL });
+        return apiMatch;
+      }
+      if (state.apiCache.has(normalizedCedula) && state.apiCache.get(normalizedCedula) === null) {
+        return null;
+      }
+    } catch (error) {
+      state.apiEnabled = false;
+      log('warn', 'API de padrón no disponible, usando fallback local.', error?.message || error);
+    }
+
+    const data = await ensureLoaded();
     const match = data.get(normalizedCedula) || null;
 
     if (!match) {
