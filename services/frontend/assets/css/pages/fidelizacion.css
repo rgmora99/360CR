@@ -1,54 +1,104 @@
-.page-wrap {
+.loyalty-content {
   display: grid;
   gap: 1rem;
-  margin-top: 1rem;
 }
 
-.module-header h1 {
-  margin: 0.7rem 0;
-}
-
-.filters {
+.loyalty-filters {
   display: grid;
-  grid-template-columns: 240px 240px auto 1fr;
-  gap: 0.8rem;
+  grid-template-columns: minmax(0, 240px) minmax(0, 240px) auto 1fr;
+  gap: 0.75rem;
   align-items: end;
+}
+
+.loyalty-filters label,
+.form-grid label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--color-muted);
+  font-size: 0.9rem;
 }
 
 .feedback {
   margin: 0;
   text-align: right;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 
-label {
+.loyalty-submenu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  padding: 0.55rem;
+  background: rgba(7, 15, 30, 0.65);
+  border: 1px solid rgba(120, 143, 214, 0.22);
+}
+
+.submenu-tab {
+  border: 1px solid rgba(131, 149, 219, 0.35);
+  background: rgba(10, 22, 44, 0.65);
+  color: var(--color-muted);
+  border-radius: 999px;
+  padding: 0.45rem 1rem;
+  font: inherit;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.submenu-tab.is-active {
+  background: linear-gradient(135deg, rgba(124, 162, 255, 0.95), rgba(112, 138, 255, 0.9));
+  border-color: rgba(157, 180, 255, 0.8);
+  color: #0b1a38;
+  font-weight: 700;
+}
+
+.loyalty-panel {
+  display: none;
+}
+
+.loyalty-panel.is-active {
+  display: block;
+}
+
+.loyalty-grid {
   display: grid;
-  gap: 0.35rem;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-input,
-select,
-textarea {
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(13, 22, 41, 0.9);
-  color: var(--txt);
-  padding: 0.65rem;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1rem;
+  align-items: start;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid textarea,
+.loyalty-filters input,
+.loyalty-filters select {
+  width: 100%;
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(145, 167, 235, 0.35);
+  background: rgba(8, 17, 33, 0.95);
+  color: var(--color-text);
+  padding: 0.52rem 0.62rem;
+  font: inherit;
+}
+
+.form-grid textarea {
+  resize: vertical;
+  min-height: 68px;
+}
+
+.form-grid input[readonly] {
+  opacity: 0.85;
+}
+
+.section-help {
+  margin: 0 0 0.85rem;
+  color: var(--color-muted);
 }
 
 .full-width {
@@ -88,22 +138,18 @@ td .btn {
 }
 
 @media (max-width: 1200px) {
-  .filters {
-    grid-template-columns: repeat(2, 1fr);
+  .loyalty-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .feedback {
     text-align: left;
     grid-column: 1 / -1;
   }
-
-  .grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 800px) {
-  .filters,
+  .loyalty-filters,
   .form-grid {
     grid-template-columns: 1fr;
   }
