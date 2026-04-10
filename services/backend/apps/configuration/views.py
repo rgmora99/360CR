@@ -24,10 +24,24 @@ PLAN_COLLABORATOR_LIMITS = {
 }
 
 
-class ConfigurationUserViewSet(viewsets.ModelViewSet):
+class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("id")
     serializer_class = ConfigurationUserSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        allowed_ids = self.get_allowed_organization_ids()
+        return (
+            User.objects.filter(membership__organization_id__in=allowed_ids)
+            .distinct()
+            .order_by("id")
+        )
+
+    def perform_create(self, serializer):
+        organization = serializer.validated_data.get("resolved_organization")
+        if organization:
+            self.validate_organization_payload(organization.id)
+        serializer.save()
 
 
 class RoleCatalogViewSet(viewsets.ModelViewSet):

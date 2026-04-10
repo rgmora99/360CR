@@ -1,5 +1,11 @@
 (function initConfiguracionesModule() {
   const usersList = document.getElementById('users-list');
+  const newUserEmailInput = document.getElementById('new-user-email');
+  const newUserRoleSelect = document.getElementById('new-user-role');
+  const newUserFirstNameInput = document.getElementById('new-user-first-name');
+  const newUserLastNameInput = document.getElementById('new-user-last-name');
+  const createCollaboratorUserButton = document.getElementById('create-collaborator-user');
+  const userFeedback = document.getElementById('user-feedback');
   const rolesGroups = document.getElementById('roles-groups');
   const systemSettingsGroups = document.getElementById('system-settings-groups');
   const organizationsList = document.getElementById('organizations-list');
@@ -30,6 +36,12 @@
 
   if (
     !usersList ||
+    !newUserEmailInput ||
+    !newUserRoleSelect ||
+    !newUserFirstNameInput ||
+    !newUserLastNameInput ||
+    !createCollaboratorUserButton ||
+    !userFeedback ||
     !rolesGroups ||
     !systemSettingsGroups ||
     !organizationsList ||
@@ -101,6 +113,13 @@
   const setOrgFeedback = (message, isError = false) => {
     orgFeedback.textContent = message;
     orgFeedback.style.color = isError ? '#b42318' : 'var(--color-muted)';
+    if (window.appAlerts?.toast) {
+      window.appAlerts.toast(message, isError ? 'error' : 'success');
+    }
+  };
+  const setUserFeedback = (message, isError = false) => {
+    userFeedback.textContent = message;
+    userFeedback.style.color = isError ? '#b42318' : 'var(--color-muted)';
     if (window.appAlerts?.toast) {
       window.appAlerts.toast(message, isError ? 'error' : 'success');
     }
@@ -225,9 +244,64 @@
         (user) => `<li>
           <strong>${user.email || user.username}</strong>
           <span>${user.is_active ? 'Activo' : 'Inactivo'} · ${user.is_staff ? 'Staff' : 'Operativo'}</span>
+          <small>${user.requires_password_setup ? 'Pendiente: debe crear contraseña al primer ingreso.' : 'Acceso con contraseña configurada.'}</small>
         </li>`,
       )
       .join('');
+  };
+
+  const createCollaboratorUser = async () => {
+    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    const email = newUserEmailInput.value.trim().toLowerCase();
+    const membershipRole = newUserRoleSelect.value;
+    const firstName = newUserFirstNameInput.value.trim();
+    const lastName = newUserLastNameInput.value.trim();
+
+    if (!organizationId) {
+      setUserFeedback('Debes seleccionar un negocio activo para crear usuarios.', true);
+      return;
+    }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setUserFeedback('Ingresa un correo válido para el colaborador.', true);
+      return;
+    }
+
+    try {
+      await fetch('/api/config/users/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email,
+          username: email,
+          first_name: firstName,
+          last_name: lastName,
+          organization_id: organizationId,
+          membership_role: membershipRole,
+        }),
+      }).then(async (response) => {
+        if (!response.ok) {
+          const raw = await response.text();
+          let message = raw;
+          try {
+            const parsed = JSON.parse(raw);
+            message = parsed.detail || Object.values(parsed || {}).flat().join(' ');
+          } catch (_error) {
+            message = raw;
+          }
+          throw new Error(message || 'No fue posible crear el usuario colaborador.');
+        }
+      });
+
+      setUserFeedback(`Usuario ${email} creado. Al iniciar sesión deberá definir su contraseña.`);
+      newUserEmailInput.value = '';
+      newUserFirstNameInput.value = '';
+      newUserLastNameInput.value = '';
+      await loadData();
+      await loadCollaborators();
+    } catch (error) {
+      setUserFeedback(error.message || 'Error al crear usuario colaborador.', true);
+    }
   };
 
   const renderRoles = (roles) => {
@@ -519,6 +593,7 @@
 
   createOrganizationButton.addEventListener('click', createOrganization);
   createInvitationButton.addEventListener('click', createInvitation);
+  createCollaboratorUserButton.addEventListener('click', createCollaboratorUser);
   saveAvailabilityRuleButton.addEventListener('click', saveAvailabilityRule);
   document.addEventListener('change', (event) => {
     if (event.target?.id === 'organization-switcher') {

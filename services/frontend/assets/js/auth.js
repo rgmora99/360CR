@@ -45,7 +45,7 @@
       });
 
       if (typeof payload.detail === 'string' && payload.detail.trim()) {
-        return { message: payload.detail, fieldErrors };
+        return { message: payload.detail, fieldErrors, code: payload.code || '', extra: payload };
       }
 
       if (Object.keys(fieldErrors).length > 0) {
@@ -53,7 +53,7 @@
       }
     }
 
-    return { message: bodyText || 'No se pudo completar la solicitud.', fieldErrors: {} };
+    return { message: bodyText || 'No se pudo completar la solicitud.', fieldErrors: {}, code: '', extra: payload || {} };
   }
 
   async function request(path, options) {
@@ -75,6 +75,8 @@
       const apiError = parseApiError(payload, bodyText);
       const error = new Error(apiError.message);
       error.fieldErrors = apiError.fieldErrors;
+      error.code = apiError.code;
+      error.extra = apiError.extra;
       throw error;
     }
 
@@ -185,6 +187,58 @@
         storeSession(sessionData);
         window.location.href = '/dashboard.html';
       } catch (error) {
+        if (error.code === 'password_setup_required') {
+          const result = await window.Swal.fire({
+            title: 'Crea tu contraseña',
+            html:
+              '<p style="margin-bottom:8px;">Tu cuenta fue creada por un administrador. Debes definir una contraseña para ingresar.</p>' +
+              '<input id="setup-password" class="swal2-input" type="password" placeholder="Nueva contraseña (mínimo 8)">' +
+              '<input id="setup-password-confirm" class="swal2-input" type="password" placeholder="Confirmar contraseña">',
+            confirmButtonText: 'Guardar contraseña',
+            showCancelButton: true,
+            focusConfirm: false,
+            preConfirm: () => {
+              const first = document.getElementById('setup-password')?.value || '';
+              const second = document.getElementById('setup-password-confirm')?.value || '';
+              if (first.length < 8) {
+                window.Swal.showValidationMessage('La contraseña debe tener al menos 8 caracteres.');
+                return false;
+              }
+              if (first !== second) {
+                window.Swal.showValidationMessage('Las contraseñas no coinciden.');
+                return false;
+              }
+              return first;
+            },
+          });
+
+          if (result.isConfirmed && result.value) {
+            try {
+              await request('/auth/activate-password/', {
+                method: 'POST',
+                body: JSON.stringify({ email: payload.email, new_password: result.value }),
+              });
+
+              const sessionData = await request('/auth/login/', {
+                method: 'POST',
+                body: JSON.stringify({ email: payload.email, password: result.value }),
+              });
+              storeSession(sessionData);
+              window.location.href = '/dashboard.html';
+              return;
+            } catch (setupError) {
+              if (window.appAlerts?.notify) {
+                await window.appAlerts.notify(
+                  setupError.message || 'No se pudo configurar la contraseña.',
+                  'error',
+                  'Configuración incompleta',
+                );
+              }
+              return;
+            }
+          }
+        }
+
         setServerFieldErrors(loginForm, error.fieldErrors);
         if (window.appAlerts?.notify) {
           await window.appAlerts.notify(error.message, 'error', 'No se pudo iniciar sesión');

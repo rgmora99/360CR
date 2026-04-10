@@ -40,7 +40,31 @@
             <div class="settings-grid">
               <article class="card">
                 <h2>Usuarios del sistema</h2>
-                <p class="section-help">Cuentas activas para operación, soporte y liderazgo.</p>
+                <p class="section-help">Crea colaboradores con correo (sin contraseña inicial) y asócialos a la organización padre automáticamente.</p>
+                <div class="org-tools team-tools">
+                  <label>
+                    Correo del colaborador
+                    <input id="new-user-email" type="email" placeholder="colaborador@negocio.com" />
+                  </label>
+                  <label>
+                    Rol en organización
+                    <select id="new-user-role">
+                      <option value="viewer">Operativo (viewer)</option>
+                      <option value="admin">Administrador (admin)</option>
+                      <option value="owner">Propietario (owner)</option>
+                    </select>
+                  </label>
+                  <label>
+                    Nombre
+                    <input id="new-user-first-name" type="text" placeholder="Nombre" />
+                  </label>
+                  <label>
+                    Apellido
+                    <input id="new-user-last-name" type="text" placeholder="Apellido" />
+                  </label>
+                  <button id="create-collaborator-user" class="btn btn-primary" type="button">Crear usuario colaborador</button>
+                </div>
+                <p id="user-feedback" class="section-help">Sin acciones recientes.</p>
                 <ul id="users-list" class="settings-list"></ul>
               </article>
 
