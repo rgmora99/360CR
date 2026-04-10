@@ -140,7 +140,10 @@ class Invoice(models.Model):
 
     class Meta:
         ordering = ["-id"]
-        constraints = [models.UniqueConstraint(fields=["organization", "invoice_number"], name="uq_invoice_org_number")]
+        constraints = [
+            models.UniqueConstraint(fields=["invoice_number"], name="uq_invoice_number"),
+            models.UniqueConstraint(fields=["consecutive_number"], name="uq_invoice_consecutive_number"),
+        ]
 
 
 class InvoiceItem(models.Model):
