@@ -24,6 +24,30 @@
     $('feedback').style.color = isError ? '#ff7d7d' : 'var(--muted)';
   }
 
+  async function syncNameFromPadron(taxInputId, nameInputId, actorLabel) {
+    if (!window.CedulaPadron) {
+      return;
+    }
+
+    const taxId = $(taxInputId).value.trim();
+    if (!taxId) return;
+
+    const record = await window.CedulaPadron.resolveByCedula(taxId);
+    if (!record) return;
+
+    const nameInput = $(nameInputId);
+    if (!nameInput.value.trim()) {
+      nameInput.value = record.fullName;
+      setFeedback(`Nombre de ${actorLabel} autocompletado desde padrón.`);
+      return;
+    }
+
+    const isSameName = window.CedulaPadron.compareName(nameInput.value, record);
+    if (isSameName === false) {
+      setFeedback(`La cédula de ${actorLabel} corresponde a "${record.fullName}". Verifica el nombre digitado.`, true);
+    }
+  }
+
   function renderOrganizations() {
     const organizations = window.AppSession?.getOrganizations?.() || [];
     const activeId = Number(window.AppSession?.getActiveOrganizationId?.());
@@ -72,6 +96,8 @@
   $('purchase-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
+      await syncNameFromPadron('supplier-tax-id', 'supplier-name', 'proveedor');
+      await syncNameFromPadron('buyer-tax-id', 'buyer-name', 'comprador');
       if (!state.lines.length) return setFeedback('Debe agregar al menos una línea de compra.', true);
       const numericKey = $('numeric-key').value.trim();
       if (!/^\d{50}$/.test(numericKey)) return setFeedback('La clave numérica debe tener exactamente 50 dígitos.', true);
@@ -126,6 +152,8 @@
 
   renderOrganizations();
   renderLines();
+  $('supplier-tax-id').addEventListener('blur', () => syncNameFromPadron('supplier-tax-id', 'supplier-name', 'proveedor').catch(() => null));
+  $('buyer-tax-id').addEventListener('blur', () => syncNameFromPadron('buyer-tax-id', 'buyer-name', 'comprador').catch(() => null));
   $('issue-date').valueAsDate = new Date();
   $('tax-year').value = String(new Date().getUTCFullYear());
   loadPurchases().catch((error) => setFeedback(error.message, true));

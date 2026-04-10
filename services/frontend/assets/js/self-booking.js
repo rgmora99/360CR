@@ -173,6 +173,33 @@
     availabilityResult.textContent = `Cliente identificado: ${selectedCustomer.legal_name}.`;
   }
 
+  async function syncCustomerFromPadron() {
+    if (!window.CedulaPadron) {
+      return;
+    }
+
+    const taxId = selfBook.taxId.value.trim();
+    if (!taxId) {
+      return;
+    }
+
+    const record = await window.CedulaPadron.resolveByCedula(taxId);
+    if (!record) {
+      return;
+    }
+
+    if (!selfBook.legalName.value.trim()) {
+      selfBook.legalName.value = record.fullName;
+      availabilityResult.textContent = `Nombre autocompletado desde padrón: ${record.fullName}.`;
+      return;
+    }
+
+    const isSameName = window.CedulaPadron.compareName(selfBook.legalName.value, record);
+    if (isSameName === false) {
+      availabilityResult.textContent = `La cédula corresponde a "${record.fullName}". Verifica el nombre ingresado.`;
+    }
+  }
+
   async function ensureCustomer() {
     if (selectedCustomer?.id) {
       return selectedCustomer;
@@ -261,9 +288,11 @@
   });
 
   selfBook.taxId.addEventListener('blur', () => {
-    resolveCustomerByTaxId().catch((error) => {
-      availabilityResult.textContent = `No se pudo validar la cédula: ${normalizeErrorMessage(error)}`;
-    });
+    resolveCustomerByTaxId()
+      .then(syncCustomerFromPadron)
+      .catch((error) => {
+        availabilityResult.textContent = `No se pudo validar la cédula: ${normalizeErrorMessage(error)}`;
+      });
   });
 
   selfBook.taxId.addEventListener('input', () => {

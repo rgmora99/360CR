@@ -131,6 +131,37 @@
     tradeNameWrapper.style.display = isLegal ? 'grid' : 'none';
   }
 
+  function isPhysicalCustomer() {
+    return getTypeCode(fields.type.value) === 'fisico';
+  }
+
+  async function syncCustomerNameFromPadron() {
+    if (!window.CedulaPadron || !isPhysicalCustomer()) {
+      return;
+    }
+
+    const taxId = fields.taxId.value.trim();
+    if (!taxId) {
+      return;
+    }
+
+    const record = await window.CedulaPadron.resolveByCedula(taxId);
+    if (!record) {
+      return;
+    }
+
+    if (!fields.legalName.value.trim()) {
+      fields.legalName.value = record.fullName;
+      setFeedback(`Nombre autocompletado desde padrón para la cédula ${taxId}.`);
+      return;
+    }
+
+    const isSameName = window.CedulaPadron.compareName(fields.legalName.value, record);
+    if (isSameName === false) {
+      setFeedback(`La cédula ${taxId} corresponde a "${record.fullName}". Verifica el nombre ingresado.`, true);
+    }
+  }
+
   async function request(url, options) {
     const method = options?.method || 'GET';
     logInfo(`Request ${method} ${url}`);
@@ -355,6 +386,7 @@
     event.preventDefault();
 
     try {
+      await syncCustomerNameFromPadron();
       const id = fields.id.value;
       const payload = buildPayload();
       const isEdit = Boolean(id);
@@ -422,7 +454,13 @@
     }
   });
 
-  fields.type.addEventListener('change', () => syncFormLabelsFromType(fields.type.value));
+  fields.type.addEventListener('change', () => {
+    syncFormLabelsFromType(fields.type.value);
+    syncCustomerNameFromPadron().catch(() => null);
+  });
+  fields.taxId.addEventListener('blur', () => {
+    syncCustomerNameFromPadron().catch(() => null);
+  });
   searchInput.addEventListener('input', renderTable);
   organizationIdInput.addEventListener('change', loadCustomers);
 
