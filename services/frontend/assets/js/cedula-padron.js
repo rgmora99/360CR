@@ -2,7 +2,9 @@
   const PADRON_SOURCES = [
     '/services/docs/PADRON_COMPLETO.txt',
     '/docs/PADRON_COMPLETO.txt',
-    '/docs/padron_completo.txt'
+    '/docs/padron_completo.txt',
+    '/PADRON_COMPLETO.txt',
+    '/padron_completo.txt'
   ];
 
   const state = {
@@ -153,12 +155,23 @@
     return map;
   }
 
+  function looksLikeHtmlDocument(rawText) {
+    const text = String(rawText || '').trim().toLowerCase();
+    return text.startsWith('<!doctype html') || text.startsWith('<html');
+  }
+
   async function fetchSource(path) {
     const response = await fetch(path, { credentials: 'include' });
     if (!response.ok) {
       throw new Error(`No se encontró ${path}`);
     }
-    return response.text();
+    const text = await response.text();
+
+    if (looksLikeHtmlDocument(text)) {
+      throw new Error(`La ruta ${path} devolvió HTML (probablemente index.html), no el TXT del padrón.`);
+    }
+
+    return text;
   }
 
   async function ensureLoaded() {
@@ -181,7 +194,10 @@
             log('info', `Cargado desde ${source} con ${parsed.size} registros.`);
             break;
           }
-          log('warn', `La fuente ${source} fue leída pero no produjo registros válidos.`);
+          log('warn', `La fuente ${source} fue leída pero no produjo registros válidos.`, {
+            hint: 'Verifica que el TXT tenga cédula + nombre por línea y que no sea un documento informativo.',
+            preview: text.slice(0, 120),
+          });
         } catch (error) {
           lastError = error;
           log('warn', `Falló la fuente ${source}.`, error?.message || error);
