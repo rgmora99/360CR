@@ -33,6 +33,13 @@ class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSe
         serializer.save()
 
 
+# Compatibilidad retroactiva:
+# algunas versiones del contenedor importan OrganizationCollaboratorView desde urls.py.
+# Mantener este alias evita fallos de importación sin romper la API actual.
+class OrganizationCollaboratorView(ConfigurationUserViewSet):
+    pass
+
+
 class RoleCatalogViewSet(viewsets.ModelViewSet):
     queryset = RoleCatalog.objects.all()
     serializer_class = RoleCatalogSerializer
