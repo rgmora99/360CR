@@ -31,7 +31,9 @@
   const API_BASE = '/api';
   const INVITATIONS_STORAGE_KEY = 'cr360.config.invitations';
   const AVAILABILITY_STORAGE_KEY = 'cr360.config.availability-rules';
+  const USER_ROLE_FALLBACK = 'colaborador';
   let rolesCache = [];
+  let usersCache = [];
   let collaboratorsCache = [];
 
   if (
@@ -434,6 +436,17 @@
       .join('');
   };
 
+  const fallbackCollaboratorsFromUsers = () => {
+    if (!usersCache.length) return [];
+    return usersCache
+      .filter((user) => user.is_active)
+      .map((user) => ({
+        id: user.id,
+        email: user.email || user.username || `usuario-${user.id}`,
+        role: USER_ROLE_FALLBACK,
+      }));
+  };
+
   const renderAvailabilityRules = () => {
     const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
     const rules = getStoredAvailabilityRules().filter((rule) => Number(rule.organizationId) === activeOrganizationId);
@@ -514,18 +527,27 @@
     }
 
     try {
-      const response = await fetch(`/api/agenda/agenda-events/collaborators/?organization_id=${organizationId}`);
+      const response = await fetch(`/api/agenda-events/collaborators/?organization_id=${organizationId}`, {
+        credentials: 'include',
+      });
       if (!response.ok) {
         throw new Error('No fue posible cargar colaboradores para disponibilidad.');
       }
       collaboratorsCache = await response.json();
+      if (!collaboratorsCache.length) {
+        collaboratorsCache = fallbackCollaboratorsFromUsers();
+      }
       renderCollaboratorsOptions(collaboratorsCache);
       renderAvailabilityRules();
       setAvailabilityFeedback(`Se cargaron ${collaboratorsCache.length} colaboradores para esta agenda.`);
     } catch (error) {
-      collaboratorsCache = [];
-      renderCollaboratorsOptions([]);
+      collaboratorsCache = fallbackCollaboratorsFromUsers();
+      renderCollaboratorsOptions(collaboratorsCache);
       renderAvailabilityRules();
+      if (collaboratorsCache.length) {
+        setAvailabilityFeedback('No fue posible consultar agenda; se muestran usuarios activos como respaldo.', true);
+        return;
+      }
       setAvailabilityFeedback(error.message || 'Error al cargar colaboradores.', true);
     }
   };
@@ -580,12 +602,16 @@
       }
 
       const [users, roles, systemSettings] = await Promise.all([usersRes.json(), rolesRes.json(), settingsRes.json()]);
+      usersCache = users;
       rolesCache = roles;
       renderUsers(users);
       renderRoles(roles);
       renderRoleOptions(roles);
       renderInvitations();
       renderSettings(systemSettings);
+      if (!collaboratorsCache.length) {
+        loadCollaborators();
+      }
     } catch (error) {
       showError(error.message || 'Error inesperado al cargar configuraciones.');
     }
