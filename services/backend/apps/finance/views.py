@@ -8,16 +8,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.customers.models import Customer
-from apps.finance.models import Invoice, Product, Purchase, TaxQuarterReport
-from apps.finance.serializers import (
-    InvoiceCreateSerializer,
-    InvoiceSerializer,
-    ProductSerializer,
-    PurchaseCreateSerializer,
-    PurchaseSerializer,
-    TaxQuarterReportCalculateSerializer,
-    TaxQuarterReportSerializer,
-)
+from apps.finance.models import Invoice, Product
+from apps.finance.serializers import InvoiceCreateSerializer, InvoiceSerializer, ProductSerializer
 from apps.loyalty.models import LoyaltyMember
 from apps.tenants.access import OrganizationScopedViewMixin
 
@@ -43,24 +35,33 @@ def _add_rect(content_ops, x, y, width, height, fill=None, stroke=None, line_wid
 
 def generate_invoice_pdf(invoice):
     blue = (0.11, 0.47, 0.78)
-    light_blue = (0.9, 0.95, 1)
+    light_blue = (0.93, 0.96, 1)
     gray = (0.35, 0.35, 0.35)
+    dark_gray = (0.2, 0.2, 0.2)
     page_width = 612
     page_height = 792
     left_margin = 40
     right_margin = 40
+    content_width = page_width - left_margin - right_margin
     content_ops = []
 
     # Encabezado
-    _add_text(content_ops, left_margin, page_height - 52, "FACTURA ELECTRONICA", font="F2", size=24, color=blue)
-    _add_text(content_ops, left_margin, page_height - 72, "360CR", font="F2", size=12, color=gray)
-    _add_text(content_ops, page_width - 220, page_height - 52, f"N. FACTURA: {invoice.invoice_number}", font="F2", size=11, color=gray)
-    _add_text(content_ops, page_width - 220, page_height - 68, f"CONSECUTIVO: {invoice.consecutive_number}", size=10, color=gray)
-    _add_text(content_ops, page_width - 220, page_height - 84, f"FECHA: {invoice.issue_date.strftime('%Y-%m-%d %H:%M')}", size=10, color=gray)
+    _add_text(content_ops, left_margin, page_height - 58, "FACTURA ELECTRONICA", font="F2", size=18, color=blue)
+    _add_text(content_ops, left_margin, page_height - 78, "360CR", font="F2", size=11, color=gray)
+    _add_rect(content_ops, left_margin, page_height - 92, content_width, 1.4, fill=blue)
+
+    header_box_w = 220
+    header_box_h = 56
+    header_box_x = page_width - right_margin - header_box_w
+    header_box_y = page_height - 104
+    _add_rect(content_ops, header_box_x, header_box_y, header_box_w, header_box_h, fill=light_blue, stroke=blue)
+    _add_text(content_ops, header_box_x + 10, header_box_y + 38, f"N. FACTURA: {invoice.invoice_number}", font="F2", size=10, color=dark_gray)
+    _add_text(content_ops, header_box_x + 10, header_box_y + 24, f"CONSECUTIVO: {invoice.consecutive_number}", size=9, color=gray)
+    _add_text(content_ops, header_box_x + 10, header_box_y + 10, f"FECHA: {invoice.issue_date.strftime('%Y-%m-%d %H:%M')}", size=9, color=gray)
 
     # Bloques de información
-    top_y = page_height - 140
-    block_height = 95
+    top_y = page_height - 220
+    block_height = 105
     block_gap = 20
     block_width = (page_width - left_margin - right_margin - block_gap) / 2
 
@@ -71,22 +72,24 @@ def generate_invoice_pdf(invoice):
     _add_text(content_ops, left_margin + 8, top_y + block_height - 14, "FACTURAR A", font="F2", size=10, color=(1, 1, 1))
     _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 14, "DETALLE", font="F2", size=10, color=(1, 1, 1))
 
-    _add_text(content_ops, left_margin + 8, top_y + block_height - 34, invoice.customer.legal_name[:52], font="F2", size=10, color=gray)
-    _add_text(content_ops, left_margin + 8, top_y + block_height - 49, f"ID: {invoice.customer.tax_id}", size=9, color=gray)
-    _add_text(content_ops, left_margin + 8, top_y + block_height - 64, f"Correo: {invoice.customer.email or 'No registrado'}", size=9, color=gray)
-    _add_text(content_ops, left_margin + 8, top_y + block_height - 79, f"Telefono: {invoice.customer.phone or 'No registrado'}", size=9, color=gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 34, invoice.customer.legal_name[:52], font="F2", size=10, color=dark_gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 52, f"ID: {invoice.customer.tax_id}", size=9, color=gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 70, f"Correo: {invoice.customer.email or 'No registrado'}", size=9, color=gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 88, f"Telefono: {invoice.customer.phone or 'No registrado'}", size=9, color=gray)
 
     _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 34, f"Condicion venta: {invoice.sale_condition}", size=9, color=gray)
-    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 49, f"Medio pago: {invoice.payment_method}", size=9, color=gray)
-    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 64, f"Regimen fiscal: {invoice.tax_regime}", size=9, color=gray)
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 52, f"Medio pago: {invoice.payment_method}", size=9, color=gray)
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 70, f"Regimen fiscal: {invoice.tax_regime}", size=9, color=gray)
     if invoice.payment_method == Invoice.PAYMENT_INSTALLMENTS:
         installments = f"{invoice.installment_count} cuotas cada {invoice.installment_interval_days} dias"
-        _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 79, installments, size=9, color=gray)
+        _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 88, installments, size=9, color=gray)
 
     # Tabla de líneas
-    table_top = top_y - 20
+    table_top = top_y - 30
     row_height = 20
-    max_rows = 12
+    items = list(invoice.items.all())
+    item_count = len(items)
+    max_rows = min(max(item_count + 2, 8), 16)
     table_width = page_width - left_margin - right_margin
     desc_width = table_width - 110
 
@@ -95,7 +98,6 @@ def generate_invoice_pdf(invoice):
     _add_text(content_ops, left_margin + desc_width + 8, table_top + 6, "MONTO", font="F2", size=10, color=(1, 1, 1))
 
     y = table_top - row_height
-    items = list(invoice.items.all())
     for idx in range(max_rows):
         _add_rect(content_ops, left_margin, y, table_width, row_height, stroke=(0.75, 0.85, 0.95), line_width=0.7)
         content_ops.append(f"{left_margin + desc_width} {y} m {left_margin + desc_width} {y + row_height} l S")
@@ -103,11 +105,11 @@ def generate_invoice_pdf(invoice):
             item = items[idx]
             description = f"{item.line_number}. {item.description}"[:78]
             _add_text(content_ops, left_margin + 8, y + 6, description, size=9, color=gray)
-            _add_text(content_ops, left_margin + desc_width + 8, y + 6, str(item.total), size=9, color=gray)
+            _add_text(content_ops, left_margin + desc_width + 8, y + 6, str(item.total), font="F2", size=9, color=dark_gray)
         y -= row_height
 
     # Totales
-    totals_top = y - 6
+    totals_top = y - 8
     label_x = left_margin + desc_width
     value_x = label_x + 70
     totals = [("SUBTOTAL", invoice.subtotal), ("IMPUESTO", invoice.tax_total), ("TOTAL", invoice.total)]
@@ -119,8 +121,10 @@ def generate_invoice_pdf(invoice):
         _add_text(content_ops, label_x + 8, row_y + 6, label, font="F2", size=10, color=text_color)
         _add_text(content_ops, value_x, row_y + 6, str(value), font="F2", size=10, color=text_color)
 
-    _add_text(content_ops, left_margin, 64, "Gracias por su compra.", font="F2", size=14, color=blue)
-    _add_text(content_ops, left_margin, 48, "Si tiene consultas sobre esta factura, contactenos por nuestros canales oficiales.", size=9, color=gray)
+    footer_y = max(totals_top - 46, 54)
+    _add_rect(content_ops, left_margin, footer_y + 20, content_width, 1.2, fill=blue)
+    _add_text(content_ops, left_margin, footer_y, "Gracias por su compra.", font="F2", size=13, color=blue)
+    _add_text(content_ops, left_margin, footer_y - 14, "Si tiene consultas sobre esta factura, contactenos por nuestros canales oficiales.", size=9, color=gray)
 
     stream = "\n".join(content_ops).encode("latin-1", errors="replace")
 
@@ -259,34 +263,3 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         invoice.email_sent_at = timezone.now()
         invoice.save(update_fields=["email_sent_at"])
         return Response({"detail": "Correo enviado."})
-
-
-class PurchaseViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
-    serializer_class = PurchaseSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        queryset = Purchase.objects.prefetch_related("items")
-        return self.scope_queryset(queryset)
-
-    def create(self, request, *args, **kwargs):
-        serializer = PurchaseCreateSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        purchase = serializer.save()
-        return Response(PurchaseSerializer(purchase).data, status=status.HTTP_201_CREATED)
-
-
-class TaxQuarterReportViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
-    serializer_class = TaxQuarterReportSerializer
-    permission_classes = [IsAuthenticated]
-    http_method_names = ["get", "post", "head", "options"]
-
-    def get_queryset(self):
-        queryset = TaxQuarterReport.objects.all()
-        return self.scope_queryset(queryset)
-
-    def create(self, request, *args, **kwargs):
-        serializer = TaxQuarterReportCalculateSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        report = serializer.save()
-        return Response(TaxQuarterReportSerializer(report).data, status=status.HTTP_201_CREATED)
