@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
 from apps.agenda.models import AgendaEvent, AgendaEventType
+from apps.finance.models import Product
+from apps.tenants.models import Membership
 
 
 class AgendaEventTypeSerializer(serializers.ModelSerializer):
@@ -10,12 +12,19 @@ class AgendaEventTypeSerializer(serializers.ModelSerializer):
 
 
 class AgendaEventSerializer(serializers.ModelSerializer):
+    collaborator_email = serializers.CharField(source="collaborator.email", read_only=True)
+    service_name = serializers.CharField(source="service.name", read_only=True)
+
     class Meta:
         model = AgendaEvent
         fields = [
             "id",
             "organization",
             "event_type",
+            "service",
+            "service_name",
+            "collaborator",
+            "collaborator_email",
             "customer",
             "supplier",
             "title",
@@ -34,8 +43,21 @@ class AgendaEventSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         starts_at = attrs.get("starts_at", getattr(self.instance, "starts_at", None))
         ends_at = attrs.get("ends_at", getattr(self.instance, "ends_at", None))
+        organization = attrs.get("organization", getattr(self.instance, "organization", None))
+        service = attrs.get("service", getattr(self.instance, "service", None))
+        collaborator = attrs.get("collaborator", getattr(self.instance, "collaborator", None))
 
         if starts_at and ends_at and ends_at <= starts_at:
             raise serializers.ValidationError({"ends_at": "La fecha de fin debe ser mayor a la fecha de inicio."})
+
+        if service and organization:
+            if service.organization_id != organization.id:
+                raise serializers.ValidationError({"service": "El servicio debe pertenecer a la misma organización del evento."})
+            if service.product_type != Product.TYPE_SERVICE:
+                raise serializers.ValidationError({"service": "Solo se pueden asignar servicios en este campo."})
+
+        if collaborator and organization:
+            if not Membership.objects.filter(user_id=collaborator.id, organization_id=organization.id).exists():
+                raise serializers.ValidationError({"collaborator": "El colaborador no pertenece a la organización seleccionada."})
 
         return attrs

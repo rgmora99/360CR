@@ -10,7 +10,7 @@
 
 .filters {
   display: grid;
-  grid-template-columns: 1.3fr 200px auto;
+  grid-template-columns: repeat(6, minmax(120px, 1fr)) auto;
   gap: 0.8rem;
   align-items: end;
 }
@@ -39,7 +39,8 @@ textarea {
   gap: 1rem;
 }
 
-.form-grid {
+.form-grid,
+.self-book-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 0.75rem;
@@ -84,9 +85,25 @@ td .btn {
   margin-right: 0.35rem;
 }
 
-@media (max-width: 1200px) {
+.self-book-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.availability-result {
+  margin: 0;
+  padding: 0.8rem;
+  border-radius: 10px;
+  background: rgba(13, 22, 41, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--muted);
+  min-height: 70px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1400px) {
   .filters {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .grid {
@@ -96,7 +113,8 @@ td .btn {
 
 @media (max-width: 800px) {
   .filters,
-  .form-grid {
+  .form-grid,
+  .self-book-grid {
     grid-template-columns: 1fr;
   }
 }
