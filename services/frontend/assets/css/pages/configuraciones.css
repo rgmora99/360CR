@@ -3,6 +3,39 @@
   gap: 1.25rem;
 }
 
+.settings-submenu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  padding: 0.75rem;
+}
+
+.submenu-tab {
+  border: 1px solid var(--color-border);
+  background: rgba(14, 30, 60, 0.4);
+  color: var(--color-muted);
+  border-radius: 999px;
+  padding: 0.5rem 0.95rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.submenu-tab.is-active {
+  background: linear-gradient(135deg, rgba(125, 150, 255, 0.95), rgba(86, 187, 255, 0.9));
+  border-color: rgba(157, 180, 255, 0.8);
+  color: #03142f;
+  font-weight: 700;
+}
+
+.settings-panel {
+  display: none;
+  gap: 1rem;
+}
+
+.settings-panel.is-active {
+  display: grid;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -41,6 +74,13 @@
 
 .team-tools .btn {
   grid-column: 1 / -1;
+}
+
+.checkbox-field {
+  grid-column: 1 / -1;
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem !important;
 }
 
 .section-help {
