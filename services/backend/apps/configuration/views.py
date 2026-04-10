@@ -1,6 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 
 from apps.configuration.models import RoleCatalog, SystemSetting, UserPreference, UserRoleAssignment
 from apps.configuration.serializers import (
@@ -13,10 +14,37 @@ from apps.configuration.serializers import (
 from apps.tenants.access import OrganizationScopedViewMixin
 
 
-class ConfigurationUserViewSet(viewsets.ModelViewSet):
+class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("id")
     serializer_class = ConfigurationUserSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        allowed_ids = self.get_allowed_organization_ids()
+        return (
+            User.objects.filter(membership__organization_id__in=allowed_ids)
+            .distinct()
+            .order_by("id")
+        )
+
+    def perform_create(self, serializer):
+        organization = serializer.validated_data.get("resolved_organization")
+        if organization:
+            self.validate_organization_payload(organization.id)
+        serializer.save()
+
+
+# Compatibilidad retroactiva:
+# algunas versiones del contenedor importan OrganizationCollaboratorView desde urls.py.
+# Mantener este alias evita fallos de importación sin romper la API actual.
+class OrganizationCollaboratorView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return ConfigurationUserViewSet.as_view({"get": "list"})(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return ConfigurationUserViewSet.as_view({"post": "create"})(request, *args, **kwargs)
 
 
 class RoleCatalogViewSet(viewsets.ModelViewSet):

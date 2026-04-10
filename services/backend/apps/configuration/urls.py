@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from apps.configuration.views import (
     ConfigurationUserViewSet,
+    OrganizationCollaboratorView,
     RoleCatalogViewSet,
     SystemSettingViewSet,
     UserPreferenceViewSet,
@@ -17,5 +18,6 @@ router.register(r"config/user-preferences", UserPreferenceViewSet, basename="con
 router.register(r"config/user-role-assignments", UserRoleAssignmentViewSet, basename="config-user-role-assignment")
 
 urlpatterns = [
+    path("config/organization-collaborators/", OrganizationCollaboratorView.as_view(), name="config-organization-collaborators"),
     path("", include(router.urls)),
 ]

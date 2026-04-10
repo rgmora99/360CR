@@ -2,12 +2,75 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from apps.configuration.models import RoleCatalog, SystemSetting, UserPreference, UserRoleAssignment
+from apps.tenants.models import Membership, Organization
 
 
 class ConfigurationUserSerializer(serializers.ModelSerializer):
+    organization_id = serializers.IntegerField(write_only=True, required=False)
+    membership_role = serializers.ChoiceField(choices=Membership.ROLE_CHOICES, write_only=True, required=False)
+    requires_password_setup = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = User
-        fields = ["id", "username", "email", "first_name", "last_name", "is_active", "is_staff"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "is_active",
+            "is_staff",
+            "requires_password_setup",
+            "organization_id",
+            "membership_role",
+        ]
+
+    def get_requires_password_setup(self, obj):
+        return not obj.has_usable_password()
+
+    def validate_email(self, value):
+        normalized = (value or "").strip().lower()
+        if not normalized:
+            raise serializers.ValidationError("El correo es requerido.")
+        return normalized
+
+    def validate(self, attrs):
+        if self.instance:
+            return attrs
+
+        organization_id = attrs.pop("organization_id", None)
+        if not organization_id:
+            raise serializers.ValidationError({"organization_id": "Debe indicar la organización activa."})
+
+        try:
+            organization = Organization.objects.get(id=int(organization_id))
+        except (TypeError, ValueError, Organization.DoesNotExist):
+            raise serializers.ValidationError({"organization_id": "Organización inválida."}) from None
+
+        root_org = organization
+        while root_org.parent_organization_id:
+            root_org = root_org.parent_organization
+
+        attrs["resolved_organization"] = root_org
+        attrs["membership_role"] = attrs.get("membership_role") or Membership.ROLE_VIEWER
+        return attrs
+
+    def create(self, validated_data):
+        organization = validated_data.pop("resolved_organization")
+        role = validated_data.pop("membership_role")
+        email = validated_data.get("email", "").strip().lower()
+        validated_data["email"] = email
+        validated_data["username"] = validated_data.get("username") or email
+
+        user = User(**validated_data)
+        user.set_unusable_password()
+        user.save()
+        Membership.objects.get_or_create(
+            user=user,
+            organization=organization,
+            defaults={"role": role},
+        )
+        return user
 
 
 class RoleCatalogSerializer(serializers.ModelSerializer):
