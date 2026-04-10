@@ -52,6 +52,17 @@ class LoginView(APIView):
     def post(self, request):
         email = (request.data.get("email") or "").strip().lower()
         password = request.data.get("password") or ""
+        existing_user = User.objects.filter(username=email).first()
+        if existing_user and not existing_user.has_usable_password():
+            return Response(
+                {
+                    "detail": "Tu cuenta aún no tiene contraseña. Debes crearla para ingresar.",
+                    "code": "password_setup_required",
+                    "email": existing_user.email,
+                },
+                status=428,
+            )
+
         user = authenticate(request, username=email, password=password)
         if not user:
             return Response({"detail": "Credenciales inválidas."}, status=400)
@@ -68,6 +79,28 @@ class LoginView(APIView):
         ]
         active_id = next((org["id"] for org in organizations if org["parent_organization"] is None), organizations[0]["id"] if organizations else None)
         return Response({"user": {"id": user.id, "email": user.email}, "organizations": organizations, "active_organization_id": active_id})
+
+
+class ActivatePasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = (request.data.get("email") or "").strip().lower()
+        new_password = request.data.get("new_password") or ""
+
+        if not email or len(new_password) < 8:
+            return Response({"detail": "Debes enviar correo y una contraseña de al menos 8 caracteres."}, status=400)
+
+        user = User.objects.filter(username=email).first()
+        if not user:
+            return Response({"detail": "No existe una cuenta para ese correo."}, status=404)
+
+        if user.has_usable_password():
+            return Response({"detail": "La cuenta ya tiene contraseña configurada."}, status=400)
+
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+        return Response({"detail": "Contraseña creada correctamente. Ya puedes iniciar sesión."}, status=200)
 
 
 class LogoutView(APIView):
