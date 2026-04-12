@@ -187,6 +187,9 @@ class Purchase(models.Model):
     invoice_number = models.CharField(max_length=40)
     numeric_key = models.CharField(max_length=50)
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    tax_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    source = models.CharField(max_length=20, default="manual")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -227,3 +230,61 @@ class TaxQuarterReport(models.Model):
     class Meta:
         ordering = ["-year", "-quarter", "-id"]
         constraints = [models.UniqueConstraint(fields=["organization", "year", "quarter"], name="uq_tax_quarter_org")]
+
+
+class PurchaseInboxInvoice(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_IN_PROCESS = "in_process"
+    STATUS_REGISTERED = "registered"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pendiente"),
+        (STATUS_IN_PROCESS, "En registro"),
+        (STATUS_REGISTERED, "Registrada"),
+        (STATUS_REJECTED, "Rechazada"),
+    ]
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="purchase_inbox")
+    supplier_name = models.CharField(max_length=200)
+    supplier_tax_id = models.CharField(max_length=50)
+    buyer_name = models.CharField(max_length=200, blank=True)
+    buyer_tax_id = models.CharField(max_length=50, blank=True)
+    issue_date = models.DateField()
+    invoice_number = models.CharField(max_length=40)
+    numeric_key = models.CharField(max_length=50)
+    subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    tax_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    source = models.CharField(max_length=20, default="email")
+    payload = models.JSONField(default=dict, blank=True)
+    purchase = models.OneToOneField(Purchase, on_delete=models.SET_NULL, null=True, blank=True, related_name="inbox_invoice")
+    received_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-issue_date", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["organization", "numeric_key"],
+                name="uq_purchase_inbox_org_numeric_key",
+            )
+        ]
+
+
+class TaxReport(models.Model):
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    year = models.PositiveIntegerField()
+    quarter = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(4)])
+    economic_activity = models.CharField(max_length=120)
+    rts_factor = models.DecimalField(max_digits=8, decimal_places=4, validators=[MinValueValidator(Decimal("0.0001"))])
+    purchases_subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    purchases_tax = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    purchases_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    estimated_tax = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    due_date = models.DateField()
+    declaration_form = models.CharField(max_length=20, default="D-105")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-year", "-quarter", "-id"]

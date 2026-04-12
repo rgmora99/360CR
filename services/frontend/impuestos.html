@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Impuestos RTS | 360CR</title>
+  <link rel="stylesheet" href="/assets/css/base.css" /><link rel="stylesheet" href="/assets/css/components.css" /><link rel="stylesheet" href="/assets/css/pages/dashboard.css" /><link rel="stylesheet" href="/assets/css/pages/customers.css" /></head>
+  <body><div class="dashboard-layout"><aside id="shared-sidebar"></aside><section class="main-panel"><header id="shared-topbar"></header><div class="page-wrap">
+    <section class="module-header card"><h1>Módulo de Impuestos RTS</h1><p class="subtitle">Cálculo trimestral separado de compras.</p></section>
+    <section class="grid single-column">
+      <article class="card"><h2>Cálculo automático de impuestos RTS</h2>
+        <form id="tax-form" class="customer-form"><div class="form-grid">
+          <label>Organización<select id="organization-id" required></select></label>
+          <label>Año<input id="tax-year" type="number" min="2000" max="2500" required /></label>
+          <label>Trimestre<select id="tax-quarter" required><option value="1">Q1 (Ene-Mar)</option><option value="2">Q2 (Abr-Jun)</option><option value="3">Q3 (Jul-Sep)</option><option value="4">Q4 (Oct-Dic)</option></select></label>
+          <label>Actividad económica<input id="economic-activity" required maxlength="120" /></label>
+          <label>Factor RTS<input id="rts-factor" type="number" min="0.0001" step="0.0001" required /></label>
+        </div><div class="actions"><button class="btn btn-primary" type="submit">Calcular D-105</button></div></form>
+        <div id="tax-output" class="subtitle"></div>
+      </article>
+      <article class="card"><h2>Reportes generados</h2><div class="table-wrap"><table><thead><tr><th>Periodo</th><th>Subtotal</th><th>IVA</th><th>Total compras</th><th>Impuesto estimado</th><th>Vence</th></tr></thead><tbody id="tax-body"></tbody></table></div><p id="feedback" class="subtitle"></p></article>
+    </section></div></section></div>
+    <script src="/assets/js/navigation.js"></script>
+    <script>window.renderSharedNavigation({ activeModule: 'impuestos' });</script>
+    <script src="/assets/js/impuestos.js"></script>
+  </body>
+</html>

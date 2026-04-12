@@ -3,13 +3,14 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
-from apps.configuration.models import RoleCatalog, SystemSetting, UserPreference, UserRoleAssignment
+from apps.configuration.models import OrganizationEmailInbox, RoleCatalog, SystemSetting, UserPreference, UserRoleAssignment
 from apps.configuration.serializers import (
     ConfigurationUserSerializer,
     RoleCatalogSerializer,
     SystemSettingSerializer,
     UserPreferenceSerializer,
     UserRoleAssignmentSerializer,
+    OrganizationEmailInboxSerializer,
 )
 from apps.tenants.access import OrganizationScopedViewMixin
 
@@ -78,3 +79,24 @@ class UserRoleAssignmentViewSet(OrganizationScopedViewMixin, viewsets.ModelViewS
         if organization:
             self.validate_organization_payload(organization.id)
         serializer.save(assigned_by=self.request.user)
+
+
+class OrganizationEmailInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
+    serializer_class = OrganizationEmailInboxSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = OrganizationEmailInbox.objects.all()
+        return self.scope_queryset(queryset)
+
+    def perform_create(self, serializer):
+        organization = serializer.validated_data.get("organization")
+        if organization:
+            self.validate_organization_payload(organization.id)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        organization = serializer.validated_data.get("organization") or serializer.instance.organization
+        if organization:
+            self.validate_organization_payload(organization.id)
+        serializer.save()

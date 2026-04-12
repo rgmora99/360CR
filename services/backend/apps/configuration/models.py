@@ -93,3 +93,33 @@ class UserRoleAssignment(models.Model):
     def __str__(self) -> str:
         scope = self.organization_id if self.organization_id else "global"
         return f"{self.user_id}:{self.role.code}:{scope}"
+
+
+class OrganizationEmailInbox(models.Model):
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="email_inboxes")
+    label = models.CharField(max_length=80, default="Principal")
+    email = models.EmailField()
+    username = models.CharField(max_length=120)
+    password = models.CharField(max_length=200)
+    imap_host = models.CharField(max_length=120, default="imap.gmail.com")
+    imap_port = models.PositiveIntegerField(default=993)
+    imap_ssl = models.BooleanField(default=True)
+    folder = models.CharField(max_length=80, default="INBOX")
+    is_primary = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["organization_id", "-is_primary", "label", "email"]
+        constraints = [
+            models.UniqueConstraint(fields=["organization", "email"], name="uq_org_email_inbox"),
+            models.UniqueConstraint(
+                fields=["organization"],
+                condition=models.Q(is_primary=True),
+                name="uq_org_primary_email_inbox",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.organization_id}:{self.email}"

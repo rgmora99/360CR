@@ -33,6 +33,7 @@
             <button class="submenu-tab" type="button" data-settings-tab="roles">Roles</button>
             <button class="submenu-tab" type="button" data-settings-tab="organizaciones">Organizaciones</button>
             <button class="submenu-tab" type="button" data-settings-tab="disponibilidad">Disponibilidad</button>
+            <button class="submenu-tab" type="button" data-settings-tab="correo">Correo facturas</button>
             <button class="submenu-tab" type="button" data-settings-tab="sistema">Sistema</button>
           </nav>
 
@@ -212,6 +213,55 @@
                 <ul id="availability-rules-list" class="settings-list"></ul>
               </article>
             </div>
+          </section>
+
+
+          <section class="settings-panel" data-settings-panel="correo">
+            <article class="card">
+              <h2>Configuración de correos para facturas electrónicas</h2>
+              <p class="section-help">Puedes registrar varios correos IMAP por organización, marcando uno como principal y otro(s) secundarios.</p>
+              <div class="org-tools team-tools">
+                <label>Organización
+                  <select id="email-org"></select>
+                </label>
+                <label>Etiqueta
+                  <input id="email-label" type="text" placeholder="Principal / Secundario" />
+                </label>
+                <label>Correo
+                  <input id="email-address" type="email" placeholder="facturas@empresa.com" />
+                </label>
+                <label>Usuario IMAP
+                  <input id="email-username" type="text" placeholder="Usuario" />
+                </label>
+                <label>Contraseña IMAP
+                  <input id="email-password" type="password" placeholder="Contraseña" />
+                </label>
+                <label>Host IMAP
+                  <input id="email-imap-host" type="text" value="imap.gmail.com" />
+                </label>
+                <label>Puerto IMAP
+                  <input id="email-imap-port" type="number" min="1" value="993" />
+                </label>
+                <label>Carpeta
+                  <input id="email-folder" type="text" value="INBOX" />
+                </label>
+                <label class="checkbox-field">
+                  <input id="email-imap-ssl" type="checkbox" checked />
+                  IMAP SSL
+                </label>
+                <label class="checkbox-field">
+                  <input id="email-is-primary" type="checkbox" />
+                  Correo principal
+                </label>
+                <label class="checkbox-field">
+                  <input id="email-is-active" type="checkbox" checked />
+                  Activo
+                </label>
+                <button id="save-email-inbox" class="btn btn-primary" type="button">Guardar correo</button>
+              </div>
+              <p id="email-feedback" class="section-help">Sin configuraciones recientes.</p>
+              <ul id="email-inboxes-list" class="settings-list"></ul>
+            </article>
           </section>
 
           <section class="settings-panel" data-settings-panel="sistema">

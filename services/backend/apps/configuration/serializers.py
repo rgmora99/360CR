@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from apps.configuration.models import RoleCatalog, SystemSetting, UserPreference, UserRoleAssignment
+from apps.configuration.models import OrganizationEmailInbox, RoleCatalog, SystemSetting, UserPreference, UserRoleAssignment
 from apps.tenants.models import Membership, Organization
 
 
@@ -125,3 +125,36 @@ class UserRoleAssignmentSerializer(serializers.ModelSerializer):
             "assigned_at",
         ]
         read_only_fields = ["assigned_by", "assigned_at"]
+
+
+class OrganizationEmailInboxSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrganizationEmailInbox
+        fields = [
+            "id",
+            "organization",
+            "label",
+            "email",
+            "username",
+            "password",
+            "imap_host",
+            "imap_port",
+            "imap_ssl",
+            "folder",
+            "is_primary",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        organization = attrs.get("organization") or getattr(self.instance, "organization", None)
+        is_primary = attrs.get("is_primary", getattr(self.instance, "is_primary", False))
+        if organization and is_primary:
+            queryset = OrganizationEmailInbox.objects.filter(organization=organization, is_primary=True)
+            if self.instance:
+                queryset = queryset.exclude(id=self.instance.id)
+            if queryset.exists():
+                raise serializers.ValidationError({"is_primary": "Ya existe un correo principal para esta organización."})
+        return attrs
