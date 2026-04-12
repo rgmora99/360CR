@@ -33,8 +33,22 @@ class CustomerSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {
             "code": {"required": False, "allow_blank": True},
+            "email": {"required": True, "allow_blank": False},
+            "phone": {"required": True, "allow_blank": False},
         }
         validators = []
+
+    def validate_email(self, value):
+        cleaned = (value or "").strip()
+        if not cleaned:
+            raise serializers.ValidationError("El correo es obligatorio.")
+        return cleaned
+
+    def validate_phone(self, value):
+        cleaned = (value or "").strip()
+        if not cleaned:
+            raise serializers.ValidationError("El teléfono es obligatorio.")
+        return cleaned
 
     def create(self, validated_data):
         if not validated_data.get("code"):
