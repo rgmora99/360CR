@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Compras e Impuestos RTS | 360CR</title>
+    <title>Compras | 360CR</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
@@ -20,8 +20,8 @@
         <div class="page-wrap">
           <section class="module-header card">
             <div>
-              <h1>Módulo de Compras e Impuesto RTS</h1>
-              <p class="subtitle">Registra compras y calcula automáticamente el impuesto trimestral para la declaración D-105.</p>
+              <h1>Módulo de Compras</h1>
+              <p class="subtitle">Registra compras y separa sus impuestos para el cálculo tributario.</p>
             </div>
           </section>
 
@@ -38,6 +38,7 @@
                   <label>Fecha de emisión<input id="issue-date" type="date" required /></label>
                   <label>Número de factura<input id="invoice-number" required maxlength="40" /></label>
                   <label>Clave numérica (50 dígitos)<input id="numeric-key" required pattern="\d{50}" maxlength="50" /></label>
+                  <label>Impuesto total (IVA)<input id="tax-total" type="number" min="0" step="0.01" value="0" /></label>
                 </div>
 
                 <div class="line-add">
@@ -53,29 +54,8 @@
             </article>
 
             <article class="card">
-              <h2>Cálculo automático de impuestos RTS</h2>
-              <form id="tax-form" class="customer-form">
-                <div class="form-grid">
-                  <label>Año<input id="tax-year" type="number" min="2000" max="2500" required /></label>
-                  <label>Trimestre
-                    <select id="tax-quarter" required>
-                      <option value="1">Q1 (Ene-Mar)</option>
-                      <option value="2">Q2 (Abr-Jun)</option>
-                      <option value="3">Q3 (Jul-Sep)</option>
-                      <option value="4">Q4 (Oct-Dic)</option>
-                    </select>
-                  </label>
-                  <label>Actividad económica<input id="economic-activity" required maxlength="120" /></label>
-                  <label>Factor RTS<input id="rts-factor" type="number" min="0.0001" step="0.0001" required /></label>
-                </div>
-                <div class="actions"><button class="btn btn-primary" type="submit">Calcular D-105</button></div>
-              </form>
-              <div id="tax-output" class="subtitle"></div>
-            </article>
-
-            <article class="card">
               <h2>Compras registradas</h2>
-              <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Subtotal</th></tr></thead><tbody id="purchases-body"></tbody></table></div>
+              <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Subtotal</th><th>Impuesto</th><th>Total</th></tr></thead><tbody id="purchases-body"></tbody></table></div>
               <p id="feedback" class="subtitle">Sin datos.</p>
             </article>
           </section>
@@ -85,7 +65,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="/assets/js/alerts.js"></script>
     <script src="/assets/js/navigation.js"></script>
-    <script>window.renderSharedNavigation({ activeModule: 'compras-impuestos' });</script>
+    <script>window.renderSharedNavigation({ activeModule: 'compras' });</script>
     <script src="/assets/js/cedula-padron.js"></script>
     <script src="/assets/js/compras.js"></script>
   </body>

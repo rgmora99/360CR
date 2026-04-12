@@ -74,7 +74,7 @@
   async function loadPurchases() {
     const purchases = await request(`/purchases/?organization_id=${orgId()}`);
     state.purchases = purchases;
-    $('purchases-body').innerHTML = purchases.map((item) => `<tr><td>${item.issue_date}</td><td>${item.supplier_name}</td><td>${item.invoice_number}</td><td>₡${item.subtotal}</td></tr>`).join('') || '<tr><td colspan="4">Sin compras registradas.</td></tr>';
+    $('purchases-body').innerHTML = purchases.map((item) => `<tr><td>${item.issue_date}</td><td>${item.supplier_name}</td><td>${item.invoice_number}</td><td>₡${item.subtotal}</td><td>₡${item.tax_total}</td><td>₡${item.total}</td></tr>`).join('') || '<tr><td colspan="6">Sin compras registradas.</td></tr>';
     setFeedback(`Mostrando ${purchases.length} compra(s).`);
   }
 
@@ -116,6 +116,7 @@
         issue_date: $('issue-date').value,
         invoice_number: $('invoice-number').value.trim(),
         numeric_key: numericKey,
+        tax_total: Number($('tax-total').value || 0),
         items: state.lines,
       };
       await request('/purchases/', { method: 'POST', body: JSON.stringify(payload) });
@@ -126,26 +127,6 @@
       $('issue-date').valueAsDate = new Date();
       await loadPurchases();
       setFeedback('Compra registrada correctamente.');
-    } catch (error) {
-      setFeedback(error.message, true);
-    }
-  });
-
-  $('tax-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try {
-      const payload = {
-        organization: orgId(),
-        year: Number($('tax-year').value),
-        quarter: Number($('tax-quarter').value),
-        economic_activity: $('economic-activity').value.trim(),
-        rts_factor: Number($('rts-factor').value),
-      };
-      const report = await request('/tax-reports/', { method: 'POST', body: JSON.stringify(payload) });
-      $('tax-output').innerHTML = `Compras trimestre: <strong>₡${report.purchases_total}</strong><br/>` +
-        `Impuesto estimado (factor ${report.rts_factor}): <strong>₡${report.estimated_tax}</strong><br/>` +
-        `Declaración: Formulario ${report.declaration_form} · Fecha límite: ${report.due_date}`;
-      setFeedback('Cálculo RTS generado automáticamente.');
     } catch (error) {
       setFeedback(error.message, true);
     }
@@ -173,6 +154,5 @@
     }, 250);
   });
   $('issue-date').valueAsDate = new Date();
-  $('tax-year').value = String(new Date().getUTCFullYear());
   loadPurchases().catch((error) => setFeedback(error.message, true));
 })();

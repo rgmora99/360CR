@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.mail import send_mail
 from django.http import HttpResponse
@@ -8,8 +10,16 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.customers.models import Customer
-from apps.finance.models import Invoice, Product
-from apps.finance.serializers import InvoiceCreateSerializer, InvoiceSerializer, ProductSerializer
+from apps.finance.models import Invoice, Product, Purchase, PurchaseInboxInvoice, TaxReport
+from apps.finance.serializers import (
+    InvoiceCreateSerializer,
+    InvoiceSerializer,
+    ProductSerializer,
+    PurchaseCreateSerializer,
+    PurchaseInboxSerializer,
+    PurchaseSerializer,
+    TaxReportSerializer,
+)
 from apps.loyalty.models import LoyaltyMember
 from apps.tenants.access import OrganizationScopedViewMixin
 
@@ -265,18 +275,117 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         return Response({"detail": "Correo enviado."})
 
 
-class PurchaseViewSet(OrganizationScopedViewMixin, viewsets.ViewSet):
+class PurchaseViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
-    def create(self, request):
-        serializer = InvoiceCreateSerializer(data=request.data, context={"request": request})
+    def get_queryset(self):
+        queryset = Purchase.objects.prefetch_related("items")
+        return self.scope_queryset(queryset)
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return PurchaseCreateSerializer
+        return PurchaseSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = PurchaseCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        invoice = serializer.save()
-        return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
+        purchase = serializer.save()
+        return Response(PurchaseSerializer(purchase).data, status=status.HTTP_201_CREATED)
 
 
-class TaxQuarterReportViewSet(viewsets.ViewSet):
+class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
+    serializer_class = PurchaseInboxSerializer
 
-    def list(self, request):
-        return Response({"detail": "Reporte trimestral no implementado en esta versión."}, status=status.HTTP_501_NOT_IMPLEMENTED)
+    def get_queryset(self):
+        queryset = PurchaseInboxInvoice.objects.select_related("purchase")
+        queryset = self.scope_queryset(queryset)
+        status_filter = self.request.query_params.get("status")
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        return queryset
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None):
+        inbox = self.get_object()
+        if inbox.status == PurchaseInboxInvoice.STATUS_REGISTERED:
+            return Response({"detail": "La factura ya fue registrada."}, status=400)
+
+        payload = {
+            "organization": inbox.organization_id,
+            "supplier_name": inbox.supplier_name,
+            "supplier_tax_id": inbox.supplier_tax_id,
+            "buyer_name": inbox.buyer_name or "",
+            "buyer_tax_id": inbox.buyer_tax_id or "",
+            "issue_date": inbox.issue_date,
+            "invoice_number": inbox.invoice_number,
+            "numeric_key": inbox.numeric_key,
+            "tax_total": inbox.tax_total,
+            "source": "inbox",
+            "items": inbox.payload.get("items") or [{"description": "Factura electrónica", "unit_price": inbox.subtotal, "quantity": "1.000"}],
+        }
+        serializer = PurchaseCreateSerializer(data=payload, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        purchase = serializer.save()
+        inbox.status = PurchaseInboxInvoice.STATUS_REGISTERED
+        inbox.purchase = purchase
+        inbox.processed_at = timezone.now()
+        inbox.save(update_fields=["status", "purchase", "processed_at"])
+        return Response(PurchaseInboxSerializer(inbox).data)
+
+    @action(detail=True, methods=["post"], url_path="reject")
+    def reject(self, request, pk=None):
+        inbox = self.get_object()
+        inbox.status = PurchaseInboxInvoice.STATUS_REJECTED
+        inbox.processed_at = timezone.now()
+        inbox.save(update_fields=["status", "processed_at"])
+        return Response(PurchaseInboxSerializer(inbox).data)
+
+
+class TaxQuarterReportViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TaxReportSerializer
+
+    def get_queryset(self):
+        queryset = TaxReport.objects.all()
+        return self.scope_queryset(queryset)
+
+    def create(self, request, *args, **kwargs):
+        organization_id = request.data.get("organization")
+        self.validate_organization_payload(organization_id)
+
+        year = int(request.data.get("year"))
+        quarter = int(request.data.get("quarter"))
+        start_month = (quarter - 1) * 3 + 1
+        end_month = start_month + 2
+
+        purchases = Purchase.objects.filter(
+            organization_id=organization_id,
+            issue_date__year=year,
+            issue_date__month__gte=start_month,
+            issue_date__month__lte=end_month,
+        )
+        subtotal = sum((p.subtotal for p in purchases), start=Decimal("0.00"))
+        taxes = sum((p.tax_total for p in purchases), start=Decimal("0.00"))
+        total = sum((p.total for p in purchases), start=Decimal("0.00"))
+
+        rts_factor = Decimal(str(request.data.get("rts_factor")))
+        estimated_tax = (subtotal * rts_factor).quantize(Decimal("0.01"))
+        due_month = end_month + 1 if end_month < 12 else 1
+        due_year = year if due_month != 1 else year + 1
+
+        report = TaxReport.objects.create(
+            organization_id=organization_id,
+            year=year,
+            quarter=quarter,
+            economic_activity=request.data.get("economic_activity"),
+            rts_factor=rts_factor,
+            purchases_subtotal=subtotal,
+            purchases_tax=taxes,
+            purchases_total=total,
+            estimated_tax=estimated_tax,
+            due_date=timezone.datetime(due_year, due_month, 15).date(),
+            declaration_form="D-105",
+        )
+        return Response(TaxReportSerializer(report).data, status=status.HTTP_201_CREATED)
