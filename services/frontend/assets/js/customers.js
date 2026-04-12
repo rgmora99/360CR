@@ -111,6 +111,29 @@
     }
   }
 
+  function toFriendlyFieldName(field) {
+    const labels = {
+      email: 'Correo',
+      phone: 'Teléfono',
+    };
+    return labels[field] || field;
+  }
+
+  function formatApiError(payload) {
+    if (!payload) return '';
+    if (typeof payload === 'string') return payload;
+    if (payload.detail) return payload.detail;
+
+    const entries = Object.entries(payload)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([field, value]) => {
+        const messages = Array.isArray(value) ? value.join(', ') : String(value);
+        return `${toFriendlyFieldName(field)}: ${messages}`;
+      });
+
+    return entries.join(' | ');
+  }
+
   function nextCustomerCode() {
     const numbers = customers
       .map((item) => Number(String(item.code || '').replace(/\D/g, '')))
@@ -235,7 +258,7 @@
         let detail = bodyText;
         try {
           const parsed = JSON.parse(bodyText);
-          detail = parsed?.detail || bodyText;
+          detail = formatApiError(parsed) || bodyText;
         } catch (_error) {
           detail = bodyText;
         }
