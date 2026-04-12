@@ -31,8 +31,22 @@ class SupplierSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {
             "code": {"required": False, "allow_blank": True},
-            "email": {"required": True, "allow_blank": False},
-            "phone": {"required": True, "allow_blank": False},
+            "email": {
+                "required": True,
+                "allow_blank": False,
+                "error_messages": {
+                    "required": "El correo es obligatorio.",
+                    "blank": "El correo es obligatorio.",
+                },
+            },
+            "phone": {
+                "required": True,
+                "allow_blank": False,
+                "error_messages": {
+                    "required": "El teléfono es obligatorio.",
+                    "blank": "El teléfono es obligatorio.",
+                },
+            },
         }
 
     def validate_email(self, value):

@@ -52,6 +52,29 @@
     }
   }
 
+  function toFriendlyFieldName(field) {
+    const labels = {
+      email: 'Correo',
+      phone: 'Teléfono',
+    };
+    return labels[field] || field;
+  }
+
+  function formatApiError(payload) {
+    if (!payload) return '';
+    if (typeof payload === 'string') return payload;
+    if (payload.detail) return payload.detail;
+
+    const entries = Object.entries(payload)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([field, value]) => {
+        const messages = Array.isArray(value) ? value.join(', ') : String(value);
+        return `${toFriendlyFieldName(field)}: ${messages}`;
+      });
+
+    return entries.join(' | ');
+  }
+
   function nextSupplierCode() {
     const numbers = suppliers
       .map((item) => Number(String(item.code || '').replace(/\D/g, '')))
@@ -118,7 +141,14 @@
 
     if (!response.ok) {
       if (contentType.includes('application/json')) {
-        throw new Error(bodyText || 'Error inesperado del servidor.');
+        let detail = bodyText;
+        try {
+          const parsed = JSON.parse(bodyText);
+          detail = formatApiError(parsed) || bodyText;
+        } catch (_error) {
+          detail = bodyText;
+        }
+        throw new Error(detail || 'Error inesperado del servidor.');
       }
 
       if (bodyText.startsWith('<!doctype html') || bodyText.startsWith('<html')) {
