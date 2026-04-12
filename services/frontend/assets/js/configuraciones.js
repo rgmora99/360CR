@@ -38,6 +38,20 @@
   const availabilityRulesList = document.getElementById('availability-rules-list');
   const availabilityViewCollaborator = document.getElementById('availability-view-collaborator');
   const availabilityFeedback = document.getElementById('availability-feedback');
+  const emailOrgSelect = document.getElementById('email-org');
+  const emailLabelInput = document.getElementById('email-label');
+  const emailAddressInput = document.getElementById('email-address');
+  const emailUsernameInput = document.getElementById('email-username');
+  const emailPasswordInput = document.getElementById('email-password');
+  const emailImapHostInput = document.getElementById('email-imap-host');
+  const emailImapPortInput = document.getElementById('email-imap-port');
+  const emailFolderInput = document.getElementById('email-folder');
+  const emailImapSslInput = document.getElementById('email-imap-ssl');
+  const emailIsPrimaryInput = document.getElementById('email-is-primary');
+  const emailIsActiveInput = document.getElementById('email-is-active');
+  const saveEmailInboxButton = document.getElementById('save-email-inbox');
+  const emailInboxesList = document.getElementById('email-inboxes-list');
+  const emailFeedback = document.getElementById('email-feedback');
   const API_BASE = '/api';
   const AVAILABILITY_STORAGE_KEY = 'cr360.config.availability-rules';
   const USER_ROLE_FALLBACK = 'colaborador';
@@ -80,7 +94,21 @@
     !saveAvailabilityRuleButton ||
     !availabilityRulesList ||
     !availabilityViewCollaborator ||
-    !availabilityFeedback
+    !availabilityFeedback ||
+    !emailOrgSelect ||
+    !emailLabelInput ||
+    !emailAddressInput ||
+    !emailUsernameInput ||
+    !emailPasswordInput ||
+    !emailImapHostInput ||
+    !emailImapPortInput ||
+    !emailFolderInput ||
+    !emailImapSslInput ||
+    !emailIsPrimaryInput ||
+    !emailIsActiveInput ||
+    !saveEmailInboxButton ||
+    !emailInboxesList ||
+    !emailFeedback
   ) {
     return;
   }
@@ -162,6 +190,14 @@
     }
   };
 
+  const setEmailFeedback = (message, isError = false) => {
+    emailFeedback.textContent = message;
+    emailFeedback.style.color = isError ? '#b42318' : 'var(--color-muted)';
+    if (window.appAlerts?.toast) {
+      window.appAlerts.toast(message, isError ? 'error' : 'success');
+    }
+  };
+
   const setupSubmenuTabs = () => {
     if (!settingsTabs.length || !settingsPanels.length) return;
 
@@ -223,10 +259,85 @@
       .join('');
   };
 
+
+
+  const renderEmailOrganizations = (organizations) => {
+    const options = organizations.map((organization) => `<option value="${organization.id}">${organization.name}</option>`).join('');
+    emailOrgSelect.innerHTML = options || '<option value="">Sin organizaciones</option>';
+    const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    if (activeOrganizationId) {
+      emailOrgSelect.value = String(activeOrganizationId);
+    }
+  };
+
+  const renderEmailInboxes = (inboxes) => {
+    if (!inboxes.length) {
+      emailInboxesList.innerHTML = '<li>Sin correos configurados.</li>';
+      return;
+    }
+    emailInboxesList.innerHTML = inboxes
+      .map((inbox) => `<li><strong>${inbox.label}</strong> · ${inbox.email} ${inbox.is_primary ? '· Principal' : '· Secundario'} · ${inbox.is_active ? 'Activo' : 'Inactivo'}<small>${inbox.imap_host}:${inbox.imap_port} · Carpeta ${inbox.folder}</small></li>`)
+      .join('');
+  };
+
+  const loadEmailInboxes = async () => {
+    const organizationId = Number(emailOrgSelect.value || window.AppSession?.getActiveOrganizationId?.());
+    if (!organizationId) {
+      renderEmailInboxes([]);
+      setEmailFeedback('Selecciona una organización para cargar correos.', true);
+      return;
+    }
+    try {
+      const inboxes = await orgRequest(`/config/email-inboxes/?organization_id=${organizationId}`);
+      renderEmailInboxes(inboxes);
+      setEmailFeedback(`Se cargaron ${inboxes.length} correo(s).`);
+    } catch (error) {
+      renderEmailInboxes([]);
+      setEmailFeedback(error.message || 'No fue posible cargar correos.', true);
+    }
+  };
+
+  const createEmailInbox = async () => {
+    const organizationId = Number(emailOrgSelect.value || window.AppSession?.getActiveOrganizationId?.());
+    if (!organizationId) return setEmailFeedback('Selecciona una organización válida.', true);
+    const email = emailAddressInput.value.trim().toLowerCase();
+    if (!email) return setEmailFeedback('El correo es requerido.', true);
+
+    try {
+      await orgRequest('/config/email-inboxes/', {
+        method: 'POST',
+        body: JSON.stringify({
+          organization: organizationId,
+          label: emailLabelInput.value.trim() || (emailIsPrimaryInput.checked ? 'Principal' : 'Secundario'),
+          email,
+          username: emailUsernameInput.value.trim() || email,
+          password: emailPasswordInput.value,
+          imap_host: emailImapHostInput.value.trim() || 'imap.gmail.com',
+          imap_port: Number(emailImapPortInput.value || 993),
+          imap_ssl: emailImapSslInput.checked,
+          folder: emailFolderInput.value.trim() || 'INBOX',
+          is_primary: emailIsPrimaryInput.checked,
+          is_active: emailIsActiveInput.checked,
+        }),
+      });
+      emailLabelInput.value = '';
+      emailAddressInput.value = '';
+      emailUsernameInput.value = '';
+      emailPasswordInput.value = '';
+      emailIsPrimaryInput.checked = false;
+      emailIsActiveInput.checked = true;
+      setEmailFeedback('Correo guardado correctamente.');
+      await loadEmailInboxes();
+    } catch (error) {
+      setEmailFeedback(error.message || 'No fue posible guardar el correo.', true);
+    }
+  };
+
   const loadOrganizations = async () => {
     try {
       const organizations = await orgRequest('/organizations/');
       renderOrganizations(organizations);
+      renderEmailOrganizations(organizations);
       setOrgFeedback(`Se cargaron ${organizations.length} organizaciones.`);
     } catch (error) {
       renderOrganizations([]);
@@ -268,6 +379,7 @@
       orgTerminalCodeInput.value = '00001';
       setOrgFeedback(`Organización creada: ${created.name} (#${created.id}).`);
       await loadOrganizations();
+    await loadEmailInboxes();
     } catch (error) {
       setOrgFeedback(error.message || 'No fue posible crear la organización.', true);
     }
@@ -745,6 +857,8 @@
   assignRoleButton.addEventListener('click', assignRole);
   createCollaboratorUserButton.addEventListener('click', createCollaboratorUser);
   saveAvailabilityRuleButton.addEventListener('click', saveAvailabilityRule);
+  saveEmailInboxButton.addEventListener('click', createEmailInbox);
+  emailOrgSelect.addEventListener('change', () => loadEmailInboxes().catch(() => null));
   availabilityViewCollaborator.addEventListener('change', renderAvailabilityRules);
   document.addEventListener('change', (event) => {
     if (event.target?.id === 'organization-switcher') {
@@ -754,6 +868,7 @@
   setupSubmenuTabs();
   loadData();
   loadOrganizations();
+  loadEmailInboxes();
   loadCollaborators();
   setTimeout(loadCollaborators, 1200);
 })();

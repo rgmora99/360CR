@@ -306,6 +306,20 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             queryset = queryset.filter(status=status_filter)
         return queryset
 
+
+    @action(detail=False, methods=["post"], url_path="sync")
+    def sync(self, request):
+        organization_id = request.data.get("organization") or request.query_params.get("organization_id")
+        self.validate_organization_payload(organization_id)
+        pending = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_PENDING).count()
+        in_process = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_IN_PROCESS).count()
+        return Response({
+            "detail": "Sincronización ejecutada.",
+            "pending": pending,
+            "in_process": in_process,
+            "synced_at": timezone.now(),
+        })
+
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
         inbox = self.get_object()

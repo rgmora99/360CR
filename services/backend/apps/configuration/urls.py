@@ -8,6 +8,7 @@ from apps.configuration.views import (
     SystemSettingViewSet,
     UserPreferenceViewSet,
     UserRoleAssignmentViewSet,
+    OrganizationEmailInboxViewSet,
 )
 
 router = DefaultRouter()
@@ -16,6 +17,7 @@ router.register(r"config/roles", RoleCatalogViewSet, basename="config-role")
 router.register(r"config/system-settings", SystemSettingViewSet, basename="config-system-setting")
 router.register(r"config/user-preferences", UserPreferenceViewSet, basename="config-user-preference")
 router.register(r"config/user-role-assignments", UserRoleAssignmentViewSet, basename="config-user-role-assignment")
+router.register(r"config/email-inboxes", OrganizationEmailInboxViewSet, basename="config-email-inbox")
 
 urlpatterns = [
     path("config/organization-collaborators/", OrganizationCollaboratorView.as_view(), name="config-organization-collaborators"),
