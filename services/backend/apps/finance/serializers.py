@@ -8,7 +8,15 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.customers.models import Customer
-from apps.finance.models import Invoice, InvoiceItem, Product
+from apps.finance.models import (
+    Invoice,
+    InvoiceItem,
+    Product,
+    Purchase,
+    PurchaseInboxInvoice,
+    PurchaseItem,
+    TaxReport,
+)
 from apps.loyalty.models import LoyaltyMember, LoyaltyPointEntry, LoyaltyRule
 from apps.suppliers.models import Supplier
 from apps.tenants.models import Membership, Organization
@@ -479,3 +487,116 @@ class InvoiceCreateSerializer(serializers.Serializer):
         member.last_activity_at = timezone.now()
         member.save(update_fields=["lifetime_points", "available_points", "last_activity_at", "updated_at"])
         return awarded_points
+
+
+class PurchaseItemWriteSerializer(serializers.Serializer):
+    description = serializers.CharField(max_length=220)
+    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2)
+    quantity = serializers.DecimalField(max_digits=12, decimal_places=3)
+
+
+class PurchaseItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseItem
+        fields = ["id", "line_number", "description", "unit_price", "quantity", "subtotal"]
+
+
+class PurchaseSerializer(serializers.ModelSerializer):
+    items = PurchaseItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Purchase
+        fields = [
+            "id",
+            "organization",
+            "supplier_name",
+            "supplier_tax_id",
+            "buyer_name",
+            "buyer_tax_id",
+            "issue_date",
+            "invoice_number",
+            "numeric_key",
+            "subtotal",
+            "tax_total",
+            "total",
+            "source",
+            "created_at",
+            "items",
+        ]
+
+
+class PurchaseCreateSerializer(serializers.Serializer):
+    organization = serializers.IntegerField()
+    supplier_name = serializers.CharField(max_length=200)
+    supplier_tax_id = serializers.CharField(max_length=50)
+    buyer_name = serializers.CharField(max_length=200)
+    buyer_tax_id = serializers.CharField(max_length=50)
+    issue_date = serializers.DateField()
+    invoice_number = serializers.CharField(max_length=40)
+    numeric_key = serializers.RegexField(r"^\d{50}$")
+    tax_total = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, default=Decimal("0.00"))
+    source = serializers.CharField(max_length=20, required=False, default="manual")
+    items = PurchaseItemWriteSerializer(many=True)
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        has_access = Membership.objects.filter(user=request.user, organization_id=attrs["organization"]).exists()
+        if not has_access:
+            raise serializers.ValidationError("No tiene acceso a la organización seleccionada.")
+        if not attrs["items"]:
+            raise serializers.ValidationError("Debe incluir al menos una línea.")
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        items = validated_data.pop("items")
+        tax_total = validated_data.pop("tax_total", Decimal("0.00"))
+        subtotal = Decimal("0.00")
+        purchase = Purchase.objects.create(**validated_data)
+        for idx, item in enumerate(items, start=1):
+            line_subtotal = money(item["unit_price"] * item["quantity"])
+            subtotal += line_subtotal
+            PurchaseItem.objects.create(
+                purchase=purchase,
+                line_number=idx,
+                description=item["description"],
+                unit_price=item["unit_price"],
+                quantity=item["quantity"],
+                subtotal=line_subtotal,
+            )
+        purchase.subtotal = money(subtotal)
+        purchase.tax_total = money(tax_total)
+        purchase.total = money(purchase.subtotal + purchase.tax_total)
+        purchase.save(update_fields=["subtotal", "tax_total", "total"])
+
+        PurchaseInboxInvoice.objects.get_or_create(
+            organization_id=purchase.organization_id,
+            numeric_key=purchase.numeric_key,
+            defaults={
+                "supplier_name": purchase.supplier_name,
+                "supplier_tax_id": purchase.supplier_tax_id,
+                "buyer_name": purchase.buyer_name,
+                "buyer_tax_id": purchase.buyer_tax_id,
+                "issue_date": purchase.issue_date,
+                "invoice_number": purchase.invoice_number,
+                "subtotal": purchase.subtotal,
+                "tax_total": purchase.tax_total,
+                "total": purchase.total,
+                "status": PurchaseInboxInvoice.STATUS_REGISTERED,
+                "source": purchase.source,
+                "purchase": purchase,
+            },
+        )
+        return purchase
+
+
+class PurchaseInboxSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseInboxInvoice
+        fields = "__all__"
+
+
+class TaxReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaxReport
+        fields = "__all__"
