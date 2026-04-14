@@ -128,7 +128,7 @@ class UserRoleAssignmentSerializer(serializers.ModelSerializer):
 
 
 class OrganizationEmailInboxSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = OrganizationEmailInbox
@@ -149,10 +149,51 @@ class OrganizationEmailInboxSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate_email(self, value):
+        normalized = (value or "").strip().lower()
+        if not normalized:
+            raise serializers.ValidationError("El correo es requerido.")
+        return normalized
+
+    def validate_username(self, value):
+        clean_value = (value or "").strip()
+        if not clean_value:
+            raise serializers.ValidationError("El usuario IMAP es requerido.")
+        return clean_value
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         organization = attrs.get("organization") or getattr(self.instance, "organization", None)
         is_primary = attrs.get("is_primary", getattr(self.instance, "is_primary", False))
+        email = attrs.get("email", getattr(self.instance, "email", "")).strip().lower()
+        username = attrs.get("username", getattr(self.instance, "username", "")).strip()
+        password = attrs.get("password", "")
+        imap_host = (attrs.get("imap_host", getattr(self.instance, "imap_host", "")) or "").strip()
+        imap_port = attrs.get("imap_port", getattr(self.instance, "imap_port", None))
+        folder = (attrs.get("folder", getattr(self.instance, "folder", "")) or "").strip()
+
+        attrs["email"] = email
+        attrs["username"] = username
+        attrs["imap_host"] = imap_host
+        attrs["folder"] = folder or "INBOX"
+
+        if not organization:
+            raise serializers.ValidationError({"organization": "La organización es requerida."})
+        if not email:
+            raise serializers.ValidationError({"email": "El correo es requerido."})
+        if not username:
+            raise serializers.ValidationError({"username": "El usuario IMAP es requerido."})
+        if not self.instance and not password:
+            raise serializers.ValidationError({"password": "La contraseña IMAP es requerida."})
+        if imap_port is None or int(imap_port) <= 0:
+            raise serializers.ValidationError({"imap_port": "El puerto IMAP debe ser mayor a 0."})
+
+        duplicate_queryset = OrganizationEmailInbox.objects.filter(organization=organization, email=email)
+        if self.instance:
+            duplicate_queryset = duplicate_queryset.exclude(id=self.instance.id)
+        if duplicate_queryset.exists():
+            raise serializers.ValidationError({"email": "Ya existe una conexión registrada para ese correo en esta organización."})
+
         if organization and is_primary:
             queryset = OrganizationEmailInbox.objects.filter(organization=organization, is_primary=True)
             if self.instance:
@@ -160,3 +201,8 @@ class OrganizationEmailInboxSerializer(serializers.ModelSerializer):
             if queryset.exists():
                 raise serializers.ValidationError({"is_primary": "Ya existe un correo principal para esta organización."})
         return attrs
+
+    def update(self, instance, validated_data):
+        if validated_data.get("password", None) == "":
+            validated_data.pop("password", None)
+        return super().update(instance, validated_data)

@@ -49,7 +49,9 @@
   const emailImapSslInput = document.getElementById('email-imap-ssl');
   const emailIsPrimaryInput = document.getElementById('email-is-primary');
   const emailIsActiveInput = document.getElementById('email-is-active');
+  const testEmailInboxButton = document.getElementById('test-email-inbox');
   const saveEmailInboxButton = document.getElementById('save-email-inbox');
+  const cancelEmailEditButton = document.getElementById('cancel-email-edit');
   const emailInboxesList = document.getElementById('email-inboxes-list');
   const emailFeedback = document.getElementById('email-feedback');
   const API_BASE = '/api';
@@ -58,6 +60,7 @@
   let rolesCache = [];
   let usersCache = [];
   let collaboratorsCache = [];
+  let editingEmailInboxId = null;
 
   if (
     !usersList ||
@@ -106,7 +109,9 @@
     !emailImapSslInput ||
     !emailIsPrimaryInput ||
     !emailIsActiveInput ||
+    !testEmailInboxButton ||
     !saveEmailInboxButton ||
+    !cancelEmailEditButton ||
     !emailInboxesList ||
     !emailFeedback
   ) {
@@ -198,6 +203,23 @@
     }
   };
 
+  const parseApiError = (error) => {
+    const raw = error?.message || 'No fue posible completar la operación.';
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.detail) return parsed.detail;
+      if (typeof parsed === 'object') {
+        return Object.entries(parsed)
+          .flatMap(([, value]) => (Array.isArray(value) ? value : [value]))
+          .filter(Boolean)
+          .join(' ');
+      }
+    } catch (_err) {
+      return raw;
+    }
+    return raw;
+  };
+
   const setupSubmenuTabs = () => {
     if (!settingsTabs.length || !settingsPanels.length) return;
 
@@ -270,6 +292,54 @@
     }
   };
 
+  const resetEmailInboxForm = () => {
+    editingEmailInboxId = null;
+    emailLabelInput.value = '';
+    emailAddressInput.value = '';
+    emailUsernameInput.value = '';
+    emailPasswordInput.value = '';
+    emailImapHostInput.value = 'imap.gmail.com';
+    emailImapPortInput.value = '993';
+    emailFolderInput.value = 'INBOX';
+    emailImapSslInput.checked = true;
+    emailIsPrimaryInput.checked = false;
+    emailIsActiveInput.checked = true;
+    saveEmailInboxButton.textContent = 'Guardar correo';
+    cancelEmailEditButton.hidden = true;
+  };
+
+  const getEmailInboxPayload = () => {
+    const organizationId = Number(emailOrgSelect.value || window.AppSession?.getActiveOrganizationId?.());
+    const email = emailAddressInput.value.trim().toLowerCase();
+    const username = emailUsernameInput.value.trim() || email;
+    const password = emailPasswordInput.value;
+    const imapHost = emailImapHostInput.value.trim();
+    const imapPort = Number(emailImapPortInput.value || 0);
+    const folder = emailFolderInput.value.trim() || 'INBOX';
+
+    if (!organizationId) throw new Error('Selecciona una organización válida.');
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Ingresa un correo válido.');
+    if (!username) throw new Error('El usuario IMAP es requerido.');
+    if (!editingEmailInboxId && !password) throw new Error('La contraseña IMAP es requerida.');
+    if (!imapHost) throw new Error('El host IMAP es requerido.');
+    if (!imapPort || imapPort <= 0) throw new Error('El puerto IMAP debe ser mayor a 0.');
+
+    return {
+      id: editingEmailInboxId || undefined,
+      organization: organizationId,
+      label: emailLabelInput.value.trim() || (emailIsPrimaryInput.checked ? 'Principal' : 'Secundario'),
+      email,
+      username,
+      password,
+      imap_host: imapHost,
+      imap_port: imapPort,
+      imap_ssl: emailImapSslInput.checked,
+      folder,
+      is_primary: emailIsPrimaryInput.checked,
+      is_active: emailIsActiveInput.checked,
+    };
+  };
+
   const renderEmailInboxes = (inboxes) => {
     if (!inboxes.length) {
       emailInboxesList.innerHTML = '<li>Sin correos configurados.</li>';
@@ -289,7 +359,7 @@
     }
     try {
       const inboxes = await orgRequest(`/config/email-inboxes/?organization_id=${organizationId}`);
-      renderEmailInboxes(inboxes);
+      renderEmailInboxesEnhanced(inboxes);
       setEmailFeedback(`Se cargaron ${inboxes.length} correo(s).`);
     } catch (error) {
       renderEmailInboxes([]);
@@ -330,6 +400,105 @@
       await loadEmailInboxes();
     } catch (error) {
       setEmailFeedback(error.message || 'No fue posible guardar el correo.', true);
+    }
+  };
+
+  const renderEmailInboxesEnhanced = (inboxes) => {
+    if (!inboxes.length) {
+      emailInboxesList.innerHTML = '<li>Sin correos configurados.</li>';
+      return;
+    }
+    emailInboxesList.innerHTML = inboxes
+      .map(
+        (inbox) => `<li>
+          <strong>${inbox.label}</strong>
+          <span>${inbox.email} - ${inbox.is_primary ? 'Principal' : 'Secundario'} - ${inbox.is_active ? 'Activo' : 'Inactivo'}</span>
+          <small>${inbox.imap_host}:${inbox.imap_port} - Carpeta ${inbox.folder} - ${inbox.imap_ssl ? 'SSL' : 'Sin SSL'}</small>
+          <div class="actions">
+            <button class="btn btn-secondary" type="button" data-email-edit="${inbox.id}">Editar</button>
+            <button class="btn btn-secondary" type="button" data-email-delete="${inbox.id}">Eliminar</button>
+          </div>
+        </li>`,
+      )
+      .join('');
+  };
+
+  const runEmailInboxConnectionTest = async () => {
+    try {
+      const payload = getEmailInboxPayload();
+      const result = await orgRequest('/config/email-inboxes/test-connection/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setEmailFeedback(result?.detail || 'Conexión IMAP exitosa.');
+      return true;
+    } catch (error) {
+      setEmailFeedback(parseApiError(error) || 'La conexión IMAP falló.', true);
+      return false;
+    }
+  };
+
+  const saveEmailInbox = async () => {
+    try {
+      const payload = getEmailInboxPayload();
+      const isOk = await runEmailInboxConnectionTest();
+      if (!isOk) return;
+
+      const currentEditId = editingEmailInboxId;
+      await orgRequest(currentEditId ? `/config/email-inboxes/${currentEditId}/` : '/config/email-inboxes/', {
+        method: currentEditId ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload),
+      });
+      resetEmailInboxForm();
+      setEmailFeedback(currentEditId ? 'Correo actualizado correctamente.' : 'Correo guardado correctamente.');
+      await loadEmailInboxes();
+    } catch (error) {
+      setEmailFeedback(parseApiError(error) || 'No fue posible guardar el correo.', true);
+    }
+  };
+
+  const startEmailInboxEdit = async (inboxId) => {
+    try {
+      const organizationId = Number(emailOrgSelect.value || window.AppSession?.getActiveOrganizationId?.());
+      const inboxes = await orgRequest(`/config/email-inboxes/?organization_id=${organizationId}`);
+      const inbox = inboxes.find((item) => Number(item.id) === Number(inboxId));
+      if (!inbox) {
+        setEmailFeedback('No se encontró la conexión seleccionada.', true);
+        return;
+      }
+
+      editingEmailInboxId = inbox.id;
+      emailOrgSelect.value = String(inbox.organization);
+      emailLabelInput.value = inbox.label || '';
+      emailAddressInput.value = inbox.email || '';
+      emailUsernameInput.value = inbox.username || inbox.email || '';
+      emailPasswordInput.value = '';
+      emailImapHostInput.value = inbox.imap_host || 'imap.gmail.com';
+      emailImapPortInput.value = String(inbox.imap_port || 993);
+      emailFolderInput.value = inbox.folder || 'INBOX';
+      emailImapSslInput.checked = Boolean(inbox.imap_ssl);
+      emailIsPrimaryInput.checked = Boolean(inbox.is_primary);
+      emailIsActiveInput.checked = Boolean(inbox.is_active);
+      saveEmailInboxButton.textContent = 'Actualizar correo';
+      cancelEmailEditButton.hidden = false;
+      setEmailFeedback(`Editando ${inbox.email}. Si no cambias la contraseña, se mantiene la actual.`);
+    } catch (error) {
+      setEmailFeedback(parseApiError(error) || 'No fue posible preparar la edición del correo.', true);
+    }
+  };
+
+  const removeEmailInbox = async (inboxId) => {
+    if (!window.confirm('¿Deseas eliminar esta conexión de correo?')) return;
+
+    try {
+      await orgRequest(`/config/email-inboxes/${inboxId}/`, { method: 'DELETE' });
+      if (Number(editingEmailInboxId) === Number(inboxId)) {
+        resetEmailInboxForm();
+      }
+      setEmailFeedback('Conexión eliminada correctamente.');
+      await loadEmailInboxes();
+    } catch (error) {
+      setEmailFeedback(parseApiError(error) || 'No fue posible eliminar el correo.', true);
     }
   };
 
@@ -857,8 +1026,25 @@
   assignRoleButton.addEventListener('click', assignRole);
   createCollaboratorUserButton.addEventListener('click', createCollaboratorUser);
   saveAvailabilityRuleButton.addEventListener('click', saveAvailabilityRule);
-  saveEmailInboxButton.addEventListener('click', createEmailInbox);
-  emailOrgSelect.addEventListener('change', () => loadEmailInboxes().catch(() => null));
+  testEmailInboxButton.addEventListener('click', () => {
+    runEmailInboxConnectionTest().catch(() => null);
+  });
+  saveEmailInboxButton.addEventListener('click', saveEmailInbox);
+  cancelEmailEditButton.addEventListener('click', resetEmailInboxForm);
+  emailOrgSelect.addEventListener('change', () => {
+    resetEmailInboxForm();
+    loadEmailInboxes().catch(() => null);
+  });
+  emailInboxesList.addEventListener('click', (event) => {
+    const editId = event.target?.dataset?.emailEdit;
+    const deleteId = event.target?.dataset?.emailDelete;
+    if (editId) {
+      startEmailInboxEdit(editId).catch(() => null);
+    }
+    if (deleteId) {
+      removeEmailInbox(deleteId).catch(() => null);
+    }
+  });
   availabilityViewCollaborator.addEventListener('change', renderAvailabilityRules);
   document.addEventListener('change', (event) => {
     if (event.target?.id === 'organization-switcher') {
@@ -866,6 +1052,7 @@
     }
   });
   setupSubmenuTabs();
+  resetEmailInboxForm();
   loadData();
   loadOrganizations();
   loadEmailInboxes();
