@@ -68,9 +68,23 @@
                   <option value="rejected">Rechazada</option>
                 </select>
               </label>
+              <label>
+                Año
+                <input id="sync-year-input" type="number" value="2026" min="2026" max="2026" readonly />
+              </label>
+              <label>
+                Inicio del lote
+                <input id="sync-offset" type="number" value="0" min="0" step="1" />
+              </label>
+              <label>
+                Correos por lote
+                <input id="sync-limit" type="number" value="150" min="1" max="500" step="1" />
+              </label>
               <div class="actions">
                 <button id="sync-now" class="btn btn-secondary" type="button">Sincronizar ahora</button>
-                <small id="sync-meta" class="subtitle">Solo se sincroniza 2026 · Auto-sync cada 5 min</small>
+                <button id="sync-prev" class="btn btn-secondary" type="button">Lote anterior</button>
+                <button id="sync-next" class="btn btn-secondary" type="button">Siguiente lote</button>
+                <small id="sync-meta" class="subtitle">Solo se sincroniza 2026 · Incluye correos leídos y no leídos · Auto-sync cada 5 min</small>
               </div>
             </div>
 
@@ -79,6 +93,7 @@
               <div class="sync-stats">
                 <span id="sync-elapsed">0s</span>
                 <span id="sync-year">Año 2026</span>
+                <span id="sync-range">Lote 0 - 149</span>
                 <span id="sync-new-count">Nuevas: 0</span>
                 <span id="sync-processed-count">Procesadas: 0</span>
                 <span id="sync-scanned-count">Leídas: 0</span>
