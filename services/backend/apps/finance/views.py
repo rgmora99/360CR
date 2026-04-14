@@ -1,3 +1,7 @@
+import email
+import imaplib
+import xml.etree.ElementTree as ET
+from datetime import datetime
 from decimal import Decimal
 
 from django.conf import settings
@@ -9,6 +13,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.configuration.models import OrganizationEmailInbox
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, Product, Purchase, PurchaseInboxInvoice, TaxReport
 from apps.finance.serializers import (
@@ -22,6 +27,221 @@ from apps.finance.serializers import (
 )
 from apps.loyalty.models import LoyaltyMember
 from apps.tenants.access import OrganizationScopedViewMixin
+
+
+def _xml_find_text(element, path, namespaces=None):
+    node = element.find(path, namespaces or {})
+    if node is None or node.text is None:
+        return ""
+    return node.text.strip()
+
+
+def _parse_decimal(value, default="0.00"):
+    raw = (value or "").strip()
+    if not raw:
+        return Decimal(default)
+    return Decimal(raw.replace(",", ""))
+
+
+def _parse_issue_date(value):
+    raw = (value or "").strip()
+    if not raw:
+        return timezone.localdate()
+
+    for candidate in (raw, raw.replace("Z", "+00:00")):
+        try:
+            return datetime.fromisoformat(candidate).date()
+        except ValueError:
+            continue
+    return timezone.localdate()
+
+
+def _extract_xml_attachment(message):
+    for part in message.walk():
+        if part.get_content_maintype() == "multipart":
+            continue
+
+        filename = (part.get_filename() or "").lower()
+        content_type = (part.get_content_type() or "").lower()
+        if not filename.endswith(".xml") and content_type not in {"text/xml", "application/xml"}:
+            continue
+
+        payload = part.get_payload(decode=True)
+        if payload:
+            return payload
+    return None
+
+
+def _parse_invoice_xml(xml_bytes):
+    root = ET.fromstring(xml_bytes)
+    namespace_uri = ""
+    if root.tag.startswith("{") and "}" in root.tag:
+        namespace_uri = root.tag[1:].split("}", 1)[0]
+
+    ns = {"fe": namespace_uri} if namespace_uri else {}
+    prefix = "fe:" if namespace_uri else ""
+
+    data = {
+        "numeric_key": _xml_find_text(root, f".//{prefix}Clave", ns),
+        "invoice_number": _xml_find_text(root, f".//{prefix}NumeroConsecutivo", ns),
+        "issue_date": _parse_issue_date(_xml_find_text(root, f".//{prefix}FechaEmision", ns)),
+        "supplier_name": _xml_find_text(root, f".//{prefix}Emisor/{prefix}Nombre", ns),
+        "supplier_tax_id": _xml_find_text(root, f".//{prefix}Emisor/{prefix}Identificacion/{prefix}Numero", ns),
+        "buyer_name": _xml_find_text(root, f".//{prefix}Receptor/{prefix}Nombre", ns),
+        "buyer_tax_id": _xml_find_text(root, f".//{prefix}Receptor/{prefix}Identificacion/{prefix}Numero", ns),
+        "subtotal": _parse_decimal(_xml_find_text(root, f".//{prefix}ResumenFactura/{prefix}TotalVentaNeta", ns)),
+        "tax_total": _parse_decimal(_xml_find_text(root, f".//{prefix}ResumenFactura/{prefix}TotalImpuesto", ns)),
+        "total": _parse_decimal(_xml_find_text(root, f".//{prefix}ResumenFactura/{prefix}TotalComprobante", ns)),
+        "items": [],
+    }
+
+    detail_nodes = root.findall(f".//{prefix}DetalleServicio/{prefix}LineaDetalle", ns)
+    for index, item_node in enumerate(detail_nodes, start=1):
+        description = _xml_find_text(item_node, f"{prefix}Detalle", ns) or f"Linea {index}"
+        quantity = _parse_decimal(_xml_find_text(item_node, f"{prefix}Cantidad", ns), default="1.000")
+        unit_price = _parse_decimal(_xml_find_text(item_node, f"{prefix}PrecioUnitario", ns))
+        if unit_price == Decimal("0.00"):
+            subtotal = _parse_decimal(_xml_find_text(item_node, f"{prefix}SubTotal", ns))
+            unit_price = (subtotal / quantity).quantize(Decimal("0.01")) if quantity > 0 else subtotal
+
+        data["items"].append(
+            {
+                "description": description[:220],
+                "quantity": quantity.quantize(Decimal("0.001")),
+                "unit_price": unit_price.quantize(Decimal("0.01")),
+            }
+        )
+
+    if not data["items"]:
+        base_amount = data["subtotal"] if data["subtotal"] > Decimal("0.00") else data["total"]
+        data["items"] = [
+            {
+                "description": "Factura electronica importada desde correo",
+                "quantity": Decimal("1.000"),
+                "unit_price": base_amount.quantize(Decimal("0.01")),
+            }
+        ]
+
+    if not data["numeric_key"] or len(data["numeric_key"]) != 50 or not data["numeric_key"].isdigit():
+        raise ValueError("El XML no incluye una Clave valida de 50 digitos.")
+    if not data["invoice_number"]:
+        raise ValueError("El XML no incluye NumeroConsecutivo.")
+    if not data["supplier_name"]:
+        raise ValueError("El XML no incluye el nombre del emisor.")
+
+    return data
+
+
+def _fetch_email_invoice_payloads(inbox):
+    connection_class = imaplib.IMAP4_SSL if inbox.imap_ssl else imaplib.IMAP4
+    mailbox = connection_class(inbox.imap_host, inbox.imap_port)
+    try:
+        mailbox.login(inbox.username, inbox.password)
+        status_code, _ = mailbox.select(inbox.folder or "INBOX")
+        if status_code != "OK":
+            raise ValueError(f"No fue posible abrir la carpeta {inbox.folder or 'INBOX'}.")
+
+        status_code, data = mailbox.search(None, "ALL")
+        if status_code != "OK":
+            raise ValueError("No fue posible consultar la bandeja del correo.")
+
+        payloads = []
+        errors = []
+        for message_id in reversed(data[0].split()):
+            status_code, parts = mailbox.fetch(message_id, "(RFC822)")
+            if status_code != "OK" or not parts:
+                continue
+
+            raw_email = next((part[1] for part in parts if isinstance(part, tuple) and len(part) > 1), None)
+            if not raw_email:
+                continue
+
+            message = email.message_from_bytes(raw_email)
+            xml_payload = _extract_xml_attachment(message)
+            if not xml_payload:
+                continue
+
+            try:
+                payloads.append(_parse_invoice_xml(xml_payload))
+            except Exception as exc:
+                errors.append(f"Mensaje {message_id.decode(errors='ignore') or '?'}: {exc}")
+
+        return payloads, errors
+    finally:
+        try:
+            mailbox.close()
+        except Exception:
+            pass
+        try:
+            mailbox.logout()
+        except Exception:
+            pass
+
+
+def _sync_email_invoices_for_organization(organization_id):
+    inboxes = OrganizationEmailInbox.objects.filter(organization_id=organization_id, is_active=True).order_by("-is_primary", "id")
+    if not inboxes.exists():
+        return {
+            "created": 0,
+            "updated": 0,
+            "processed_messages": 0,
+            "errors": ["No hay correos IMAP activos configurados para esta organizacion."],
+        }
+
+    created = 0
+    updated = 0
+    processed_messages = 0
+    errors = []
+
+    for inbox in inboxes:
+        try:
+            payloads, inbox_errors = _fetch_email_invoice_payloads(inbox)
+            processed_messages += len(payloads)
+            errors.extend(f"{inbox.email}: {error}" for error in inbox_errors)
+            for payload in payloads:
+                defaults = {
+                    "supplier_name": payload["supplier_name"],
+                    "supplier_tax_id": payload["supplier_tax_id"],
+                    "buyer_name": payload["buyer_name"],
+                    "buyer_tax_id": payload["buyer_tax_id"],
+                    "issue_date": payload["issue_date"],
+                    "invoice_number": payload["invoice_number"][:40],
+                    "subtotal": payload["subtotal"],
+                    "tax_total": payload["tax_total"],
+                    "total": payload["total"],
+                    "status": PurchaseInboxInvoice.STATUS_PENDING,
+                    "source": "email",
+                    "payload": {"items": payload["items"], "inbox_email": inbox.email},
+                }
+                invoice, was_created = PurchaseInboxInvoice.objects.get_or_create(
+                    organization_id=organization_id,
+                    numeric_key=payload["numeric_key"],
+                    defaults=defaults,
+                )
+                if was_created:
+                    created += 1
+                    continue
+
+                if invoice.status == PurchaseInboxInvoice.STATUS_REGISTERED:
+                    continue
+
+                changed_fields = []
+                for field, value in defaults.items():
+                    if getattr(invoice, field) != value:
+                        setattr(invoice, field, value)
+                        changed_fields.append(field)
+                if changed_fields:
+                    invoice.save(update_fields=changed_fields)
+                    updated += 1
+        except Exception as exc:
+            errors.append(f"{inbox.email}: {exc}")
+
+    return {
+        "created": created,
+        "updated": updated,
+        "processed_messages": processed_messages,
+        "errors": errors,
+    }
 
 
 def _escape_pdf_text(value):
@@ -311,12 +531,17 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     def sync(self, request):
         organization_id = request.data.get("organization") or request.query_params.get("organization_id")
         self.validate_organization_payload(organization_id)
+        sync_result = _sync_email_invoices_for_organization(organization_id)
         pending = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_PENDING).count()
         in_process = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_IN_PROCESS).count()
         return Response({
             "detail": "Sincronización ejecutada.",
             "pending": pending,
             "in_process": in_process,
+            "created": sync_result["created"],
+            "updated": sync_result["updated"],
+            "processed_messages": sync_result["processed_messages"],
+            "errors": sync_result["errors"],
             "synced_at": timezone.now(),
         })
 

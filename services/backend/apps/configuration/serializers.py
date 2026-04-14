@@ -128,6 +128,8 @@ class UserRoleAssignmentSerializer(serializers.ModelSerializer):
 
 
 class OrganizationEmailInboxSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+
     class Meta:
         model = OrganizationEmailInbox
         fields = [

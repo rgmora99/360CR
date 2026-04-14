@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 .env
 services/docs/PADRON_COMPLETO.txt
-
+.venv
+README.md
+.venv/
 services/frontend/docs/PADRON_COMPLETO.txt
 services/backend/docs/PADRON_COMPLETO.txt
