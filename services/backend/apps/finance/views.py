@@ -99,6 +99,18 @@ def _normalize_text(value):
     return "".join(character for character in normalized if not unicodedata.combining(character))
 
 
+def _serialize_json_safe(value):
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    if isinstance(value, dict):
+        return {key: _serialize_json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_serialize_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_serialize_json_safe(item) for item in value]
+    return value
+
+
 def _coerce_header_text(value):
     if value is None:
         return ""
@@ -380,6 +392,7 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
             has_more = has_more or inbox_total_candidates > inbox_scanned_messages
             errors.extend(f"{inbox.email}: {error}" for error in inbox_errors)
             for payload in payloads:
+                inbox_payload = _serialize_json_safe({"items": payload["items"], "inbox_email": inbox.email})
                 defaults = {
                     "supplier_name": payload["supplier_name"],
                     "supplier_tax_id": payload["supplier_tax_id"],
@@ -392,7 +405,7 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
                     "total": payload["total"],
                     "status": PurchaseInboxInvoice.STATUS_PENDING,
                     "source": "email",
-                    "payload": {"items": payload["items"], "inbox_email": inbox.email},
+                    "payload": inbox_payload,
                 }
                 invoice, was_created = PurchaseInboxInvoice.objects.get_or_create(
                     organization_id=organization_id,
