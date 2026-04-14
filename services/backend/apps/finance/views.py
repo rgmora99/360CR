@@ -5,6 +5,7 @@ import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from decimal import Decimal
+from email.header import decode_header, make_header
 
 from django.conf import settings
 from django.core.mail import send_mail
@@ -98,9 +99,20 @@ def _normalize_text(value):
     return "".join(character for character in normalized if not unicodedata.combining(character))
 
 
+def _coerce_header_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    try:
+        return str(make_header(decode_header(value)))
+    except Exception:
+        return str(value)
+
+
 def _extract_invoice_message_text(message):
     text_chunks = []
-    subject = message.get("Subject", "")
+    subject = _coerce_header_text(message.get("Subject", ""))
     if subject:
         text_chunks.append(subject)
 
@@ -131,7 +143,7 @@ def _extract_invoice_attachments(message):
         if part.get_content_maintype() == "multipart":
             continue
 
-        filename = (part.get_filename() or "").lower()
+        filename = _coerce_header_text(part.get_filename() or "").lower()
         content_type = (part.get_content_type() or "").lower()
         if filename:
             attachment_names.append(filename)
