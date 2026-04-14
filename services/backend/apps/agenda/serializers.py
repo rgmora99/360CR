@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.agenda.models import AgendaEvent, AgendaEventType
+from apps.agenda.models import AgendaEvent, AgendaEventType, CollaboratorAvailability
 from apps.finance.models import Product
 from apps.tenants.models import Membership
 
@@ -9,6 +9,37 @@ class AgendaEventTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = AgendaEventType
         fields = ["id", "code", "name", "color"]
+
+
+class CollaboratorAvailabilitySerializer(serializers.ModelSerializer):
+    collaborator_email = serializers.CharField(source="collaborator.email", read_only=True)
+
+    class Meta:
+        model = CollaboratorAvailability
+        fields = [
+            "id",
+            "organization",
+            "collaborator",
+            "collaborator_email",
+            "weekday",
+            "start_time",
+            "end_time",
+            "is_active",
+            "updated_at",
+        ]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        organization = attrs.get("organization") or getattr(self.instance, "organization", None)
+        collaborator = attrs.get("collaborator") or getattr(self.instance, "collaborator", None)
+        if collaborator and organization:
+            if not Membership.objects.filter(user_id=collaborator.id, organization_id=organization.id).exists():
+                raise serializers.ValidationError({"collaborator": "El colaborador no pertenece a la organización seleccionada."})
+        start_time = attrs.get("start_time") or getattr(self.instance, "start_time", None)
+        end_time = attrs.get("end_time") or getattr(self.instance, "end_time", None)
+        if start_time and end_time and end_time <= start_time:
+            raise serializers.ValidationError({"end_time": "La hora final debe ser mayor a la hora inicial."})
+        return attrs
 
 
 class AgendaEventSerializer(serializers.ModelSerializer):

@@ -55,11 +55,11 @@
   const emailInboxesList = document.getElementById('email-inboxes-list');
   const emailFeedback = document.getElementById('email-feedback');
   const API_BASE = '/api';
-  const AVAILABILITY_STORAGE_KEY = 'cr360.config.availability-rules';
   const USER_ROLE_FALLBACK = 'colaborador';
   let rolesCache = [];
   let usersCache = [];
   let collaboratorsCache = [];
+  let availabilityRulesCache = [];
   let editingEmailInboxId = null;
 
   if (
@@ -668,18 +668,6 @@
       .join('');
   };
 
-  const getStoredAvailabilityRules = () => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(AVAILABILITY_STORAGE_KEY) || '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (_error) {
-      return [];
-    }
-  };
-  const saveAvailabilityRules = (rules) => {
-    localStorage.setItem(AVAILABILITY_STORAGE_KEY, JSON.stringify(rules));
-  };
-
   const renderUsersOptions = (users) => {
     if (!users.length) {
       assignRoleUserSelect.innerHTML = '<option value="">Sin usuarios activos</option>';
@@ -831,11 +819,11 @@
 
   const renderAvailabilityRules = () => {
     const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
-    const rules = getStoredAvailabilityRules().filter((rule) => Number(rule.organizationId) === activeOrganizationId);
+    const rules = availabilityRulesCache.filter((rule) => Number(rule.organization) === activeOrganizationId);
 
     const collaboratorFilter = Number(availabilityViewCollaborator.value);
     const filteredRules = collaboratorFilter
-      ? rules.filter((rule) => Number(rule.collaboratorId) === collaboratorFilter)
+      ? rules.filter((rule) => Number(rule.collaborator) === collaboratorFilter)
       : rules;
 
     if (!filteredRules.length) {
@@ -844,7 +832,7 @@
     }
 
     const groupedRules = filteredRules.reduce((acc, rule) => {
-      const key = String(rule.collaboratorId);
+      const key = String(rule.collaborator);
       if (!acc[key]) acc[key] = [];
       acc[key].push(rule);
       return acc;
@@ -858,8 +846,8 @@
           .map(
             (rule) => `<div class="availability-row">
               <span>${weekdayLabels[rule.weekday] || 'Día no definido'}</span>
-              <span>${rule.start} - ${rule.end}</span>
-              <small>${rule.active ? 'Disponible' : 'Bloqueado'}</small>
+              <span>${String(rule.start_time || '').slice(0, 5)} - ${String(rule.end_time || '').slice(0, 5)}</span>
+              <small>${rule.is_active ? 'Disponible' : 'Bloqueado'}</small>
             </div>`,
           )
           .join('');
@@ -871,7 +859,24 @@
       .join('');
   };
 
-  const saveAvailabilityRule = () => {
+  const loadAvailabilityRules = async () => {
+    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    if (!organizationId) {
+      availabilityRulesCache = [];
+      renderAvailabilityRules();
+      return;
+    }
+    try {
+      availabilityRulesCache = await orgRequest(`/agenda-availability/?organization_id=${organizationId}`);
+      renderAvailabilityRules();
+    } catch (error) {
+      availabilityRulesCache = [];
+      renderAvailabilityRules();
+      setAvailabilityFeedback(parseApiError(error) || 'No fue posible cargar la disponibilidad.', true);
+    }
+  };
+
+  const saveAvailabilityRule = async () => {
     const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
     const collaboratorId = Number(availabilityCollaborator.value);
     const weekday = Number(availabilityWeekday.value);
@@ -892,31 +897,32 @@
       return;
     }
 
-    const currentRules = getStoredAvailabilityRules().filter(
-      (rule) =>
-        !(
-          Number(rule.organizationId) === organizationId &&
-          Number(rule.collaboratorId) === collaboratorId &&
-          Number(rule.weekday) === weekday
-        ),
-    );
+    try {
+      const existing = availabilityRulesCache.find(
+        (rule) =>
+          Number(rule.organization) === organizationId &&
+          Number(rule.collaborator) === collaboratorId &&
+          Number(rule.weekday) === weekday,
+      );
 
-    currentRules.push({
-      id: Date.now(),
-      organizationId,
-      collaboratorId,
-      weekday,
-      start,
-      end,
-      active,
-      updatedAt: new Date().toISOString(),
-    });
-
-    saveAvailabilityRules(currentRules);
-    setAvailabilityFeedback(
-      `Horario guardado para ${getCollaboratorLabel(collaboratorId)} (${weekdayLabels[weekday]} ${start}-${end}).`,
-    );
-    renderAvailabilityRules();
+      await orgRequest(existing ? `/agenda-availability/${existing.id}/` : '/agenda-availability/', {
+        method: existing ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          organization: organizationId,
+          collaborator: collaboratorId,
+          weekday,
+          start_time: start,
+          end_time: end,
+          is_active: active,
+        }),
+      });
+      setAvailabilityFeedback(
+        `Horario guardado para ${getCollaboratorLabel(collaboratorId)} (${weekdayLabels[weekday]} ${start}-${end}).`,
+      );
+      await loadAvailabilityRules();
+    } catch (error) {
+      setAvailabilityFeedback(parseApiError(error) || 'No fue posible guardar la disponibilidad.', true);
+    }
   };
 
   const loadCollaborators = async () => {
@@ -924,6 +930,7 @@
     if (!organizationId) {
       collaboratorsCache = [];
       renderCollaboratorsOptions([]);
+      availabilityRulesCache = [];
       renderAvailabilityRules();
       setAvailabilityFeedback('Sin organización activa para cargar colaboradores.', true);
       return;
@@ -941,12 +948,12 @@
         collaboratorsCache = fallbackCollaboratorsFromUsers();
       }
       renderCollaboratorsOptions(collaboratorsCache);
-      renderAvailabilityRules();
+      await loadAvailabilityRules();
       setAvailabilityFeedback(`Se cargaron ${collaboratorsCache.length} colaboradores para esta agenda.`);
     } catch (error) {
       collaboratorsCache = fallbackCollaboratorsFromUsers();
       renderCollaboratorsOptions(collaboratorsCache);
-      renderAvailabilityRules();
+      await loadAvailabilityRules();
       if (collaboratorsCache.length) {
         setAvailabilityFeedback('No fue posible consultar agenda; se muestran usuarios activos como respaldo.', true);
         return;
@@ -1025,7 +1032,9 @@
   createRoleButton.addEventListener('click', createRole);
   assignRoleButton.addEventListener('click', assignRole);
   createCollaboratorUserButton.addEventListener('click', createCollaboratorUser);
-  saveAvailabilityRuleButton.addEventListener('click', saveAvailabilityRule);
+  saveAvailabilityRuleButton.addEventListener('click', () => {
+    saveAvailabilityRule().catch(() => null);
+  });
   testEmailInboxButton.addEventListener('click', () => {
     runEmailInboxConnectionTest().catch(() => null);
   });

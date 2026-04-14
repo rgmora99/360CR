@@ -9,8 +9,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from apps.agenda.models import AgendaEvent, AgendaEventType
-from apps.agenda.serializers import AgendaEventSerializer, AgendaEventTypeSerializer
+from apps.agenda.models import AgendaEvent, AgendaEventType, CollaboratorAvailability, agenda_weekday_for_date
+from apps.agenda.serializers import AgendaEventSerializer, AgendaEventTypeSerializer, CollaboratorAvailabilitySerializer
 from apps.customers.models import Customer, CustomerType
 from apps.customers.serializers import CustomerSerializer
 from apps.finance.models import Product
@@ -25,6 +25,25 @@ class AgendaEventTypeViewSet(viewsets.ModelViewSet):
     queryset = AgendaEventType.objects.all()
     serializer_class = AgendaEventTypeSerializer
     permission_classes = [IsAuthenticated]
+
+
+class CollaboratorAvailabilityViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
+    serializer_class = CollaboratorAvailabilitySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = CollaboratorAvailability.objects.select_related("organization", "collaborator")
+        return self.scope_queryset(queryset)
+
+    def perform_create(self, serializer):
+        organization = serializer.validated_data["organization"]
+        self.validate_organization_payload(organization.id)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        organization = serializer.validated_data.get("organization") or serializer.instance.organization
+        self.validate_organization_payload(organization.id)
+        serializer.save()
 
 
 class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
@@ -135,7 +154,76 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             }
             for item in events
         ]
-        return Response({"organization": organization.id, "collaborator": collaborator.id, "date": day.isoformat(), "occupied": occupied})
+        weekday = agenda_weekday_for_date(day)
+        availability = CollaboratorAvailability.objects.filter(
+            organization=organization,
+            collaborator=collaborator,
+            weekday=weekday,
+        ).first()
+
+        requested_start = request.query_params.get("start_time")
+        requested_end = request.query_params.get("end_time")
+        slot_message = ""
+        slot_is_available = True
+        if requested_start and requested_end and availability:
+            try:
+                requested_start_time = datetime.strptime(requested_start, "%H:%M").time()
+                requested_end_time = datetime.strptime(requested_end, "%H:%M").time()
+            except ValueError:
+                return Response({"detail": "start_time y end_time deben usar formato HH:MM."}, status=400)
+
+            if not availability.is_active:
+                slot_is_available = False
+                slot_message = "El colaborador está bloqueado para ese día."
+            elif requested_start_time < availability.start_time or requested_end_time > availability.end_time:
+                slot_is_available = False
+                slot_message = (
+                    "La cita queda fuera del horario del colaborador. "
+                    f"Horario permitido: {availability.start_time.strftime('%H:%M')} - {availability.end_time.strftime('%H:%M')}."
+                )
+            else:
+                requested_start_at = timezone.make_aware(datetime.combine(day, requested_start_time), tz)
+                requested_end_at = timezone.make_aware(datetime.combine(day, requested_end_time), tz)
+                slot_conflicts = (
+                    AgendaEvent.objects.filter(
+                        organization=organization,
+                        collaborator=collaborator,
+                        starts_at__lt=requested_end_at,
+                        ends_at__gt=requested_start_at,
+                    )
+                    .exclude(status=AgendaEvent.STATUS_CANCELLED)
+                    .exists()
+                )
+                slot_is_available = not slot_conflicts
+                slot_message = (
+                    "Horario disponible para reservar."
+                    if slot_is_available
+                    else "Ya existe una cita que se cruza con ese horario."
+                )
+        elif requested_start and requested_end and not availability:
+            slot_is_available = False
+            slot_message = "El colaborador no tiene horario configurado para ese día."
+
+        return Response(
+            {
+                "organization": organization.id,
+                "collaborator": collaborator.id,
+                "date": day.isoformat(),
+                "occupied": occupied,
+                "schedule": (
+                    {
+                        "weekday": weekday,
+                        "start_time": availability.start_time.strftime("%H:%M"),
+                        "end_time": availability.end_time.strftime("%H:%M"),
+                        "is_active": availability.is_active,
+                    }
+                    if availability
+                    else None
+                ),
+                "slot_available": slot_is_available,
+                "slot_message": slot_message,
+            }
+        )
 
     @action(detail=False, methods=["post"], url_path="self-book")
     def self_book(self, request):

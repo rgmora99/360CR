@@ -105,6 +105,13 @@
     }
   }
 
+  async function notifyUser(message, type = 'info', title = '') {
+    availabilityResult.textContent = message;
+    if (window.appAlerts?.notify) {
+      await window.appAlerts.notify(message, type, title);
+    }
+  }
+
   function calculateEndTime() {
     const serviceId = Number(selfBook.service.value);
     const service = servicesById.get(serviceId);
@@ -236,16 +243,27 @@
       if (!selfBook.date.value || !selfBook.collaborator.value) {
         throw new Error('Selecciona fecha y colaborador para consultar disponibilidad.');
       }
+      if (!selfBook.start.value || !selfBook.end.value) {
+        throw new Error('Selecciona una hora de inicio válida para calcular la duración del servicio.');
+      }
 
       const params = new URLSearchParams({
         organization_id: String(organizationId),
         collaborator_id: selfBook.collaborator.value,
         date: selfBook.date.value,
+        start_time: selfBook.start.value,
+        end_time: selfBook.end.value,
       });
 
       const result = await request(`${getApiBase()}/agenda-events/availability/?${params.toString()}`);
+      if (result.slot_available === false) {
+        await notifyUser(result.slot_message || 'Ese horario no está disponible.', 'warning', 'Horario no disponible');
+        return;
+      }
       if (!result.occupied.length) {
-        availabilityResult.textContent = 'Disponible todo el día para ese colaborador.';
+        availabilityResult.textContent = result.schedule
+          ? `Disponible. Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.`
+          : 'Disponible para ese colaborador.';
         return;
       }
 
@@ -253,7 +271,7 @@
         .map((item) => `${formatDate(item.starts_at)} - ${formatDate(item.ends_at)} | ${item.title}`)
         .join('\n');
     } catch (error) {
-      availabilityResult.textContent = `Error: ${normalizeErrorMessage(error)}`;
+      notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo consultar disponibilidad').catch(() => null);
     }
   }
 
@@ -282,12 +300,12 @@
         body: JSON.stringify(payload),
       });
 
-      availabilityResult.textContent = `Tu cita fue agendada correctamente para ${customer.legal_name}.`;
+      await notifyUser(`Tu cita fue agendada correctamente para ${customer.legal_name}.`, 'success', 'Cita agendada');
       selfBookForm.reset();
       selectedCustomer = null;
       setExtraFieldsVisible(false);
     } catch (error) {
-      availabilityResult.textContent = `No se pudo autoagendar: ${normalizeErrorMessage(error)}`;
+      await notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo agendar la cita');
     }
   });
 
@@ -295,7 +313,7 @@
     resolveCustomerByTaxId()
       .then(syncCustomerFromPadron)
       .catch((error) => {
-        availabilityResult.textContent = `No se pudo validar la cédula: ${normalizeErrorMessage(error)}`;
+        notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo validar la cédula').catch(() => null);
       });
   });
 
