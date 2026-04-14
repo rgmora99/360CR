@@ -159,6 +159,10 @@
     return getTypeCode(fields.type.value) === 'fisico';
   }
 
+  function isLegalCustomer() {
+    return !isPhysicalCustomer();
+  }
+
   function findCustomerByTaxId(taxId) {
     const normalizedTaxId = window.CedulaPadron?.normalizeCedula(taxId) || String(taxId || '').replace(/\D/g, '');
     if (!normalizedTaxId) return null;
@@ -232,6 +236,32 @@
         message: error?.message || error,
       });
       setFeedback('No se pudo validar la cédula en este momento. Revisa la consola para más detalle.', true);
+    }
+  }
+
+  async function syncCustomerNameFromTaxRegistry() {
+    if (!isLegalCustomer()) {
+      return;
+    }
+
+    const normalizedTaxId = String(fields.taxId.value || '').replace(/\D/g, '');
+    if (normalizedTaxId.length !== 10) {
+      return;
+    }
+
+    try {
+      const record = await request(apiUrl(`/customers/tax-registry/?tax_id=${normalizedTaxId}`));
+      if (!record) return;
+
+      if (!fields.legalName.value.trim()) {
+        fields.legalName.value = record.nombre || '';
+      }
+
+      const status = record?.situacion?.estado || 'Sin estado';
+      const administration = record?.situacion?.administracionTributaria || 'Sin administración';
+      setFeedback(`Razón social validada en Hacienda. Estado: ${status}. Administración: ${administration}.`);
+    } catch (error) {
+      logInfo('No se pudo consultar Hacienda para cliente jurídico.', { taxId: normalizedTaxId, detail: error?.message || error });
     }
   }
 
@@ -460,6 +490,7 @@
 
     try {
       await syncCustomerNameFromPadron();
+      await syncCustomerNameFromTaxRegistry();
       const id = fields.id.value;
       const payload = buildPayload();
       const isEdit = Boolean(id);
@@ -530,9 +561,11 @@
   fields.type.addEventListener('change', () => {
     syncFormLabelsFromType(fields.type.value);
     syncCustomerNameFromPadron().catch(() => null);
+    syncCustomerNameFromTaxRegistry().catch(() => null);
   });
   fields.taxId.addEventListener('blur', () => {
     syncCustomerNameFromPadron().catch(() => null);
+    syncCustomerNameFromTaxRegistry().catch(() => null);
   });
   fields.taxId.addEventListener('input', () => {
     const normalizedTaxId = window.CedulaPadron?.normalizeCedula(fields.taxId.value) || fields.taxId.value.replace(/\D/g, '');
@@ -545,6 +578,7 @@
     }
     padronTypingTimer = setTimeout(() => {
       syncCustomerNameFromPadron().catch(() => null);
+      syncCustomerNameFromTaxRegistry().catch(() => null);
     }, 250);
   });
   searchInput.addEventListener('input', renderTable);

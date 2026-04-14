@@ -99,6 +99,10 @@
     return getTypeCode(fields.type.value) === 'fisico';
   }
 
+  function isLegalSupplier() {
+    return !isPhysicalSupplier();
+  }
+
   async function syncSupplierNameFromPadron() {
     if (!window.CedulaPadron || !isPhysicalSupplier()) {
       return;
@@ -126,6 +130,32 @@
     const isSameName = window.CedulaPadron.compareName(fields.legalName.value, record);
     if (isSameName === false) {
       setFeedback(`La cédula ${taxId} corresponde a "${record.fullName}". Verifica el nombre ingresado.`, true);
+    }
+  }
+
+  async function syncSupplierNameFromTaxRegistry() {
+    if (!isLegalSupplier()) {
+      return;
+    }
+
+    const normalizedTaxId = String(fields.taxId.value || '').replace(/\D/g, '');
+    if (normalizedTaxId.length !== 10) {
+      return;
+    }
+
+    try {
+      const record = await request(`${getApiBase()}/suppliers/tax-registry/?tax_id=${normalizedTaxId}`);
+      if (!record) return;
+
+      if (!fields.legalName.value.trim()) {
+        fields.legalName.value = record.nombre || '';
+      }
+
+      const status = record?.situacion?.estado || 'Sin estado';
+      const administration = record?.situacion?.administracionTributaria || 'Sin administración';
+      setFeedback(`Razón social validada en Hacienda. Estado: ${status}. Administración: ${administration}.`);
+    } catch (error) {
+      console.info('[Proveedores] No se pudo consultar Hacienda para persona jurídica.', error?.message || error);
     }
   }
 
@@ -312,6 +342,7 @@
 
     try {
       await syncSupplierNameFromPadron();
+      await syncSupplierNameFromTaxRegistry();
       const id = fields.id.value;
       const payload = buildPayload();
       const isEdit = Boolean(id);
@@ -379,14 +410,17 @@
   fields.type.addEventListener('change', () => {
     refreshPersonKindLabels();
     syncSupplierNameFromPadron().catch(() => null);
+    syncSupplierNameFromTaxRegistry().catch(() => null);
   });
   fields.taxId.addEventListener('blur', () => {
     syncSupplierNameFromPadron().catch(() => null);
+    syncSupplierNameFromTaxRegistry().catch(() => null);
   });
   fields.taxId.addEventListener('input', () => {
     if (padronTypingTimer) clearTimeout(padronTypingTimer);
     padronTypingTimer = setTimeout(() => {
       syncSupplierNameFromPadron().catch(() => null);
+      syncSupplierNameFromTaxRegistry().catch(() => null);
     }, 250);
   });
   searchInput.addEventListener('input', renderTable);

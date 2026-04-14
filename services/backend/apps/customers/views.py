@@ -1,7 +1,10 @@
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
+from apps.core.tax_registry import lookup_hacienda_taxpayer, normalize_tax_id
 from apps.customers.models import Customer, CustomerAddress, CustomerContact, CustomerType
 from apps.customers.serializers import (
     CustomerAddressSerializer,
@@ -35,6 +38,18 @@ class CustomerViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     def perform_update(self, serializer):
         self.validate_organization_payload(serializer.validated_data["organization"].id)
         serializer.save()
+
+    @action(detail=False, methods=["get"], url_path="tax-registry")
+    def tax_registry(self, request):
+        tax_id = normalize_tax_id(request.query_params.get("tax_id"))
+        if len(tax_id) != 10:
+            return Response({"detail": "La cédula jurídica debe tener 10 dígitos."}, status=400)
+
+        taxpayer = lookup_hacienda_taxpayer(tax_id)
+        if not taxpayer:
+            return Response({"detail": "No se encontró información tributaria para esa cédula jurídica."}, status=404)
+
+        return Response(taxpayer)
 
 
 class OrganizationViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
