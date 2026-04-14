@@ -52,5 +52,11 @@ class OrganizationScopedViewMixin:
         return queryset
 
     def validate_organization_payload(self, organization_id):
-        if organization_id not in self.get_allowed_organization_ids():
+        try:
+            selected_id = int(organization_id)
+        except (TypeError, ValueError):
+            raise PermissionDenied("organization_id inválido")
+
+        if selected_id not in self.get_allowed_organization_ids():
             raise PermissionDenied("No tiene acceso a la organización solicitada")
+        return selected_id

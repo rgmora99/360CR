@@ -65,6 +65,100 @@
         border-color: rgba(255, 125, 125, 0.4);
       }
 
+      .invoice-modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(2, 6, 23, 0.74);
+        z-index: 1100;
+      }
+
+      .invoice-modal.is-open {
+        display: flex;
+      }
+
+      .invoice-modal__panel {
+        width: min(1100px, 100%);
+        max-height: 90vh;
+        overflow: auto;
+        background: #10192d;
+        border: 1px solid rgba(122, 162, 255, 0.26);
+        border-radius: 18px;
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
+        padding: 20px;
+      }
+
+      .invoice-modal__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+
+      .invoice-modal__grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px;
+      }
+
+      .invoice-modal__card {
+        padding: 16px;
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.72);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+      }
+
+      .invoice-modal__card h3 {
+        margin: 0 0 12px;
+      }
+
+      .invoice-modal__meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 16px;
+      }
+
+      .invoice-modal__meta span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .invoice-modal__meta strong {
+        display: block;
+        margin-top: 2px;
+      }
+
+      .invoice-modal__pdf {
+        width: 100%;
+        min-height: 520px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .invoice-modal__line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      }
+
+      .invoice-modal__line:last-child {
+        border-bottom: 0;
+      }
+
+      @media (max-width: 900px) {
+        .invoice-modal__grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
       @keyframes spin {
         to {
           transform: rotate(360deg);
@@ -151,6 +245,35 @@
     </div>
 
     <div id="sync-toast" class="sync-toast" role="status" aria-live="polite"></div>
+    <div id="invoice-modal" class="invoice-modal" aria-hidden="true">
+      <div class="invoice-modal__panel">
+        <div class="invoice-modal__header">
+          <div>
+            <h2 id="invoice-modal-title">Detalle de factura</h2>
+            <p id="invoice-modal-subtitle" class="subtitle"></p>
+          </div>
+          <button id="invoice-modal-close" class="btn btn-secondary" type="button">Cerrar</button>
+        </div>
+        <div class="invoice-modal__grid">
+          <section class="invoice-modal__card">
+            <h3>Información general</h3>
+            <div id="invoice-modal-meta" class="invoice-modal__meta"></div>
+          </section>
+          <section class="invoice-modal__card">
+            <h3>PDF adjunto</h3>
+            <div id="invoice-modal-pdf"></div>
+          </section>
+          <section class="invoice-modal__card">
+            <h3>Líneas de factura</h3>
+            <div id="invoice-modal-lines"></div>
+          </section>
+          <section class="invoice-modal__card">
+            <h3>Estado y trazabilidad</h3>
+            <div id="invoice-modal-status" class="invoice-modal__meta"></div>
+          </section>
+        </div>
+      </div>
+    </div>
 
     <script src="/assets/js/navigation.js"></script>
     <script>

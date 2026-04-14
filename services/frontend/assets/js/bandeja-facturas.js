@@ -15,9 +15,18 @@
   const syncDateToInput = $('sync-date-to');
   const syncLimitInput = $('sync-limit');
   const syncToast = $('sync-toast');
+  const modal = $('invoice-modal');
+  const modalTitle = $('invoice-modal-title');
+  const modalSubtitle = $('invoice-modal-subtitle');
+  const modalMeta = $('invoice-modal-meta');
+  const modalPdf = $('invoice-modal-pdf');
+  const modalLines = $('invoice-modal-lines');
+  const modalStatus = $('invoice-modal-status');
+  const modalClose = $('invoice-modal-close');
   let syncTimer = null;
   let syncPollTimer = null;
   let syncStartedAt = 0;
+  let currentRows = [];
 
   async function request(path, options) {
     const response = await fetch(`/api${path}`, {
@@ -65,6 +74,25 @@
 
   function renderSyncRange(dateFrom, dateTo) {
     syncRange.textContent = `Rango ${dateFrom} a ${dateTo}`;
+  }
+
+  function currencySymbol(code) {
+    return code === 'USD' ? '$' : 'CRC ';
+  }
+
+  function formatMoney(amount, currency = 'CRC') {
+    const numeric = Number(amount || 0);
+    if (!Number.isFinite(numeric)) return `${currencySymbol(currency)}0.00`;
+    return `${currencySymbol(currency)}${numeric.toFixed(2)}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
   }
 
   function startSyncProgress() {
@@ -163,16 +191,92 @@
     }
   }
 
+  function renderMeta(container, entries) {
+    container.innerHTML = entries
+      .map(
+        ([label, value]) =>
+          `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`
+      )
+      .join('');
+  }
+
+  function openModal(invoice) {
+    const payload = invoice.payload || {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    const currency = invoice.currency || 'CRC';
+    modalTitle.textContent = `Factura ${invoice.invoice_number}`;
+    modalSubtitle.textContent = `${invoice.supplier_name} · ${invoice.issue_date}`;
+    renderMeta(modalMeta, [
+      ['Proveedor', invoice.supplier_name],
+      ['Cédula proveedor', invoice.supplier_tax_id || 'No disponible'],
+      ['Comprador', invoice.buyer_name || 'No disponible'],
+      ['Cédula comprador', invoice.buyer_tax_id || 'No disponible'],
+      ['Moneda', currency],
+      ['Tipo de cambio', invoice.exchange_rate || '1.0000'],
+      ['Subtotal', formatMoney(invoice.subtotal, currency)],
+      ['IVA', formatMoney(invoice.tax_total, currency)],
+      ['Total', formatMoney(invoice.total, currency)],
+    ]);
+    renderMeta(modalStatus, [
+      ['Estado', invoice.status],
+      ['Clave numérica', invoice.numeric_key],
+      ['Origen', invoice.source || 'email'],
+      ['Documento', payload.document_type || 'No disponible'],
+      ['Compra registrada', invoice.purchase ? `Sí · ID ${invoice.purchase}` : 'No'],
+      ['Buzón origen', payload.inbox_email || 'No disponible'],
+    ]);
+    modalLines.innerHTML = items.length
+      ? items
+          .map(
+            (item, index) => `
+              <div class="invoice-modal__line">
+                <div>
+                  <strong>${escapeHtml(item.description || `Línea ${index + 1}`)}</strong><br />
+                  <span>${escapeHtml(item.quantity || '1')} × ${formatMoney(item.unit_price, currency)}</span>
+                </div>
+                <strong>${formatMoney((Number(item.quantity || 1) * Number(item.unit_price || 0)).toFixed(2), currency)}</strong>
+              </div>
+            `
+          )
+          .join('')
+      : '<p class="subtitle">No hay líneas detalladas para esta factura.</p>';
+
+    if (payload.pdf_base64) {
+      const pdfSrc = `data:application/pdf;base64,${payload.pdf_base64}`;
+      const fileName = payload.pdf_filename || `factura-${invoice.invoice_number}.pdf`;
+      modalPdf.innerHTML = `
+        <p class="subtitle">${escapeHtml(fileName)}</p>
+        <iframe class="invoice-modal__pdf" src="${pdfSrc}" title="PDF de factura"></iframe>
+      `;
+    } else {
+      modalPdf.innerHTML = '<p class="subtitle">Esta factura no tiene PDF adjunto disponible.</p>';
+    }
+
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeModal() {
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
   async function loadInbox(showMessage = true) {
     const status = $('status-filter').value;
     const query = status ? `&status=${status}` : '';
     const rows = await request(`/purchase-inbox/?organization_id=${orgId()}${query}`);
+    currentRows = rows;
     $('inbox-body').innerHTML =
       rows
-        .map(
-          (i) =>
-            `<tr><td>${i.issue_date}</td><td>${i.supplier_name}</td><td>${i.invoice_number}</td><td>CRC ${i.subtotal}</td><td>CRC ${i.tax_total}</td><td>CRC ${i.total}</td><td>${i.status}</td><td>${i.status === 'pending' || i.status === 'in_process' ? `<button class='btn btn-secondary' data-approve='${i.id}'>Aprobar</button> <button class='btn btn-secondary' data-reject='${i.id}'>Rechazar</button>` : '-'}</td></tr>`
-        )
+        .map((i) => {
+          const currency = i.currency || 'CRC';
+          const detailButton = `<button class='btn btn-secondary' data-detail='${i.id}'>Ver detalles</button>`;
+          const actionButtons =
+            i.status === 'pending' || i.status === 'in_process'
+              ? `<button class='btn btn-secondary' data-approve='${i.id}'>Aprobar</button> <button class='btn btn-secondary' data-reject='${i.id}'>Rechazar</button> ${detailButton}`
+              : detailButton;
+          return `<tr><td>${i.issue_date}</td><td>${escapeHtml(i.supplier_name)}</td><td>${escapeHtml(i.invoice_number)}</td><td>${formatMoney(i.subtotal, currency)}</td><td>${formatMoney(i.tax_total, currency)}</td><td>${formatMoney(i.total, currency)}</td><td>${escapeHtml(i.status)}</td><td>${actionButtons}</td></tr>`;
+        })
         .join('') || '<tr><td colspan="8">Sin facturas electrónicas.</td></tr>';
     if (showMessage) {
       feedback(`Mostrando ${rows.length} factura(s) en bandeja.`);
@@ -182,7 +286,13 @@
   $('inbox-body').addEventListener('click', async (event) => {
     const idApprove = event.target.dataset.approve;
     const idReject = event.target.dataset.reject;
+    const idDetail = event.target.dataset.detail;
     try {
+      if (idDetail) {
+        const invoice = currentRows.find((row) => String(row.id) === String(idDetail));
+        if (invoice) openModal(invoice);
+        return;
+      }
       if (idApprove) {
         await request(`/purchase-inbox/${idApprove}/approve/`, { method: 'POST' });
         showToast('Factura aprobada correctamente.', false);
@@ -196,6 +306,11 @@
       feedback(error.message, true);
       showToast('No se pudo completar la acción sobre la factura.', true);
     }
+  });
+
+  modalClose.addEventListener('click', closeModal);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeModal();
   });
 
   $('organization-id').addEventListener('change', () => {

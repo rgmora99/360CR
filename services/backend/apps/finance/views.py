@@ -1,4 +1,5 @@
 import email
+import base64
 import imaplib
 import logging
 import threading
@@ -181,6 +182,8 @@ def _extract_invoice_message_text(message):
 def _extract_invoice_attachments(message):
     xml_payload = None
     has_pdf = False
+    pdf_payload = None
+    pdf_filename = ""
     attachment_names = []
 
     for part in message.walk():
@@ -198,12 +201,17 @@ def _extract_invoice_attachments(message):
 
         if filename.endswith(".pdf") or content_type == "application/pdf":
             has_pdf = True
+            if pdf_payload is None:
+                pdf_payload = payload
+                pdf_filename = filename or "factura.pdf"
         if xml_payload is None and (filename.endswith(".xml") or content_type in {"text/xml", "application/xml"}):
             xml_payload = payload
 
     return {
         "xml_payload": xml_payload,
         "has_pdf": has_pdf,
+        "pdf_payload": pdf_payload,
+        "pdf_filename": pdf_filename,
         "attachment_names": attachment_names,
     }
 
@@ -256,8 +264,27 @@ def _parse_invoice_xml(xml_bytes):
         "subtotal": _parse_decimal(_xml_find_text(root, f".//{prefix}ResumenFactura/{prefix}TotalVentaNeta", ns)),
         "tax_total": _parse_decimal(_xml_find_text(root, f".//{prefix}ResumenFactura/{prefix}TotalImpuesto", ns)),
         "total": _parse_decimal(_xml_find_text(root, f".//{prefix}ResumenFactura/{prefix}TotalComprobante", ns)),
+        "currency": "CRC",
+        "exchange_rate": Decimal("1.0000"),
+        "document_type": _extract_xml_document_type(xml_bytes),
         "items": [],
     }
+
+    currency_code = (
+        _xml_find_text(root, f".//{prefix}CodigoTipoMoneda/{prefix}CodigoMoneda", ns)
+        or _xml_find_text(root, f".//{prefix}ResumenFactura/{prefix}CodigoTipoMoneda/{prefix}CodigoMoneda", ns)
+        or _xml_find_text(root, f".//{prefix}CodigoMoneda", ns)
+    ).upper()
+    if currency_code in {"CRC", "USD"}:
+        data["currency"] = currency_code
+
+    exchange_rate_text = (
+        _xml_find_text(root, f".//{prefix}CodigoTipoMoneda/{prefix}TipoCambio", ns)
+        or _xml_find_text(root, f".//{prefix}ResumenFactura/{prefix}CodigoTipoMoneda/{prefix}TipoCambio", ns)
+        or _xml_find_text(root, f".//{prefix}TipoCambio", ns)
+    )
+    if exchange_rate_text:
+        data["exchange_rate"] = _parse_decimal(exchange_rate_text, default="1.0000").quantize(Decimal("0.0001"))
 
     detail_nodes = root.findall(f".//{prefix}DetalleServicio/{prefix}LineaDetalle", ns)
     for index, item_node in enumerate(detail_nodes, start=1):
@@ -356,6 +383,9 @@ def _fetch_email_invoice_payloads(inbox, date_from, date_to, max_messages=SYNC_M
                     if progress_key:
                         _increment_sync_progress(progress_key, skipped_out_of_range=1)
                     continue
+                if attachments["pdf_payload"]:
+                    payload["pdf_filename"] = attachments["pdf_filename"] or "factura.pdf"
+                    payload["pdf_base64"] = base64.b64encode(attachments["pdf_payload"]).decode("ascii")
                 payloads.append(payload)
                 if progress_key:
                     _increment_sync_progress(progress_key, processed_messages=1)
@@ -465,7 +495,15 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
             has_more = has_more or inbox_total_candidates > inbox_scanned_messages
             errors.extend(f"{inbox.email}: {error}" for error in inbox_errors)
             for payload in payloads:
-                inbox_payload = _serialize_json_safe({"items": payload["items"], "inbox_email": inbox.email})
+                inbox_payload = _serialize_json_safe(
+                    {
+                        "items": payload["items"],
+                        "inbox_email": inbox.email,
+                        "pdf_filename": payload.get("pdf_filename", ""),
+                        "pdf_base64": payload.get("pdf_base64", ""),
+                        "document_type": payload.get("document_type", ""),
+                    }
+                )
                 defaults = {
                     "supplier_name": payload["supplier_name"],
                     "supplier_tax_id": payload["supplier_tax_id"],
@@ -473,6 +511,8 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
                     "buyer_tax_id": payload["buyer_tax_id"],
                     "issue_date": payload["issue_date"],
                     "invoice_number": payload["invoice_number"][:40],
+                    "currency": payload["currency"],
+                    "exchange_rate": payload["exchange_rate"],
                     "subtotal": payload["subtotal"],
                     "tax_total": payload["tax_total"],
                     "total": payload["total"],
@@ -873,7 +913,7 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="sync")
     def sync(self, request):
         organization_id = request.data.get("organization") or request.query_params.get("organization_id")
-        self.validate_organization_payload(organization_id)
+        organization_id = self.validate_organization_payload(organization_id)
         default_date_from = datetime(SYNC_TARGET_YEAR, 1, 1).date()
         default_date_to = datetime(SYNC_TARGET_YEAR, 12, 31).date()
         date_from_raw = request.data.get("date_from") or request.query_params.get("date_from") or default_date_from.isoformat()
@@ -892,7 +932,7 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             return Response({"detail": "La fecha inicial no puede ser mayor a la fecha final."}, status=400)
         if date_from.year != SYNC_TARGET_YEAR or date_to.year != SYNC_TARGET_YEAR:
             return Response({"detail": f"Solo se permite sincronizar fechas del {SYNC_TARGET_YEAR}."}, status=400)
-        progress_key = _build_sync_progress_key(int(organization_id), date_from, date_to, limit)
+        progress_key = _build_sync_progress_key(organization_id, date_from, date_to, limit)
         current_progress = _get_sync_progress(progress_key)
         if current_progress and current_progress.get("status") == "running":
             return Response(current_progress, status=status.HTTP_202_ACCEPTED)
@@ -900,7 +940,7 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         _set_sync_progress(
             progress_key,
             status="queued",
-            organization_id=int(organization_id),
+            organization_id=organization_id,
             date_from=date_from.isoformat(),
             date_to=date_to.isoformat(),
             limit=limit,
@@ -929,7 +969,7 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         )
         worker = threading.Thread(
             target=_run_purchase_inbox_sync,
-            args=(progress_key, int(organization_id), date_from, date_to, limit),
+            args=(progress_key, organization_id, date_from, date_to, limit),
             daemon=True,
         )
         worker.start()
@@ -938,19 +978,19 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="sync-status")
     def sync_status(self, request):
         organization_id = request.query_params.get("organization_id")
-        self.validate_organization_payload(organization_id)
+        organization_id = self.validate_organization_payload(organization_id)
         default_date_from = datetime(SYNC_TARGET_YEAR, 1, 1).date()
         default_date_to = datetime(SYNC_TARGET_YEAR, 12, 31).date()
         date_from = _parse_sync_date(request.query_params.get("date_from"), default_date_from)
         date_to = _parse_sync_date(request.query_params.get("date_to"), default_date_to)
         limit = max(1, min(int(request.query_params.get("limit") or SYNC_MAX_MESSAGES), SYNC_MAX_BATCH_SIZE))
-        progress_key = _build_sync_progress_key(int(organization_id), date_from, date_to, limit)
+        progress_key = _build_sync_progress_key(organization_id, date_from, date_to, limit)
         progress = _get_sync_progress(progress_key)
         if not progress:
             return Response(
                 {
                     "status": "idle",
-                    "organization_id": int(organization_id),
+                    "organization_id": organization_id,
                     "date_from": date_from.isoformat(),
                     "date_to": date_to.isoformat(),
                     "limit": limit,
@@ -975,6 +1015,8 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             "issue_date": inbox.issue_date,
             "invoice_number": inbox.invoice_number,
             "numeric_key": inbox.numeric_key,
+            "currency": inbox.currency,
+            "exchange_rate": inbox.exchange_rate,
             "tax_total": inbox.tax_total,
             "source": "inbox",
             "items": inbox.payload.get("items") or [{"description": "Factura electrónica", "unit_price": inbox.subtotal, "quantity": "1.000"}],

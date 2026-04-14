@@ -516,6 +516,8 @@ class PurchaseSerializer(serializers.ModelSerializer):
             "issue_date",
             "invoice_number",
             "numeric_key",
+            "currency",
+            "exchange_rate",
             "subtotal",
             "tax_total",
             "total",
@@ -534,6 +536,8 @@ class PurchaseCreateSerializer(serializers.Serializer):
     issue_date = serializers.DateField()
     invoice_number = serializers.CharField(max_length=40)
     numeric_key = serializers.RegexField(r"^\d{50}$")
+    currency = serializers.RegexField(r"^[A-Z]{3}$", required=False, default="CRC")
+    exchange_rate = serializers.DecimalField(max_digits=10, decimal_places=4, required=False, default=Decimal("1.0000"))
     tax_total = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, default=Decimal("0.00"))
     source = serializers.CharField(max_length=20, required=False, default="manual")
     items = PurchaseItemWriteSerializer(many=True)
@@ -580,6 +584,8 @@ class PurchaseCreateSerializer(serializers.Serializer):
                 "buyer_tax_id": purchase.buyer_tax_id,
                 "issue_date": purchase.issue_date,
                 "invoice_number": purchase.invoice_number,
+                "currency": purchase.currency,
+                "exchange_rate": purchase.exchange_rate,
                 "subtotal": purchase.subtotal,
                 "tax_total": purchase.tax_total,
                 "total": purchase.total,

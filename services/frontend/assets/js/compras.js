@@ -25,6 +25,16 @@
     $('feedback').style.color = isError ? '#ff7d7d' : 'var(--muted)';
   }
 
+  function currencySymbol(code) {
+    return code === 'USD' ? '$' : 'CRC ';
+  }
+
+  function formatMoney(amount, currency = 'CRC') {
+    const numeric = Number(amount || 0);
+    if (!Number.isFinite(numeric)) return `${currencySymbol(currency)}0.00`;
+    return `${currencySymbol(currency)}${numeric.toFixed(2)}`;
+  }
+
   async function syncNameFromPadron(taxInputId, nameInputId, actorLabel) {
     if (!window.CedulaPadron) {
       return;
@@ -74,7 +84,10 @@
   async function loadPurchases() {
     const purchases = await request(`/purchases/?organization_id=${orgId()}`);
     state.purchases = purchases;
-    $('purchases-body').innerHTML = purchases.map((item) => `<tr><td>${item.issue_date}</td><td>${item.supplier_name}</td><td>${item.invoice_number}</td><td>₡${item.subtotal}</td><td>₡${item.tax_total}</td><td>₡${item.total}</td></tr>`).join('') || '<tr><td colspan="6">Sin compras registradas.</td></tr>';
+    $('purchases-body').innerHTML = purchases.map((item) => {
+      const currency = item.currency || 'CRC';
+      return `<tr><td>${item.issue_date}</td><td>${item.supplier_name}</td><td>${item.invoice_number}</td><td>${formatMoney(item.subtotal, currency)}</td><td>${formatMoney(item.tax_total, currency)}</td><td>${formatMoney(item.total, currency)}</td></tr>`;
+    }).join('') || '<tr><td colspan="6">Sin compras registradas.</td></tr>';
     setFeedback(`Mostrando ${purchases.length} compra(s).`);
   }
 
