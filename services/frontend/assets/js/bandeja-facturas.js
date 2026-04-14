@@ -8,6 +8,7 @@
   const syncYear = $('sync-year');
   const syncNewCount = $('sync-new-count');
   const syncProcessedCount = $('sync-processed-count');
+  const syncScannedCount = $('sync-scanned-count');
   let syncTimer = null;
   let syncStartedAt = 0;
 
@@ -42,6 +43,7 @@
     syncYear.textContent = 'Año 2026';
     syncNewCount.textContent = 'Nuevas: 0';
     syncProcessedCount.textContent = 'Procesadas: 0';
+    syncScannedCount.textContent = 'Leídas: 0';
     syncNowButton.textContent = 'Sincronizando...';
     if (syncTimer) clearInterval(syncTimer);
     syncTimer = setInterval(() => {
@@ -59,6 +61,7 @@
       syncYear.textContent = `Año ${result?.year || 2026}`;
       syncNewCount.textContent = `Nuevas: ${result?.created || 0}`;
       syncProcessedCount.textContent = `Procesadas: ${result?.processed_messages || 0}`;
+      syncScannedCount.textContent = `Leídas: ${result?.scanned_messages || 0}`;
     } else {
       syncProgress.classList.remove('is-active');
     }
@@ -80,7 +83,10 @@
 
       if (showToast) {
         const errors = Array.isArray(result?.errors) ? result.errors.filter(Boolean) : [];
-        const message = `Sync ${result?.year || 2026} completada. Nuevas: ${result?.created || 0}. Actualizadas: ${result?.updated || 0}. Procesadas: ${result?.processed_messages || 0}.`;
+        const truncationNote = result?.truncated
+          ? ` Se limitaron a las ${result?.scanned_messages || 0} más recientes de ${result?.total_candidates || 0} correos del año.`
+          : '';
+        const message = `Sync ${result?.year || 2026} completada. Nuevas: ${result?.created || 0}. Actualizadas: ${result?.updated || 0}. Procesadas: ${result?.processed_messages || 0}.${truncationNote}`;
         feedback(errors.length ? `${message} Errores: ${errors.join(' | ')}` : message, errors.length > 0);
       }
       return result;

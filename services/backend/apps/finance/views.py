@@ -31,6 +31,7 @@ from apps.tenants.access import OrganizationScopedViewMixin
 
 logger = logging.getLogger(__name__)
 SYNC_TARGET_YEAR = 2026
+SYNC_MAX_MESSAGES = 150
 
 
 def _xml_find_text(element, path, namespaces=None):
@@ -136,7 +137,7 @@ def _parse_invoice_xml(xml_bytes):
     return data
 
 
-def _fetch_email_invoice_payloads(inbox, year=SYNC_TARGET_YEAR):
+def _fetch_email_invoice_payloads(inbox, year=SYNC_TARGET_YEAR, max_messages=SYNC_MAX_MESSAGES):
     connection_class = imaplib.IMAP4_SSL if inbox.imap_ssl else imaplib.IMAP4
     mailbox = connection_class(inbox.imap_host, inbox.imap_port)
     try:
@@ -151,10 +152,14 @@ def _fetch_email_invoice_payloads(inbox, year=SYNC_TARGET_YEAR):
         if status_code != "OK":
             raise ValueError("No fue posible consultar la bandeja del correo.")
 
+        all_message_ids = data[0].split()
+        total_candidates = len(all_message_ids)
+        candidate_ids = all_message_ids[-max_messages:] if max_messages and total_candidates > max_messages else all_message_ids
+
         payloads = []
         errors = []
         skipped_out_of_year = 0
-        for message_id in reversed(data[0].split()):
+        for message_id in reversed(candidate_ids):
             status_code, parts = mailbox.fetch(message_id, "(RFC822)")
             if status_code != "OK" or not parts:
                 continue
@@ -178,14 +183,17 @@ def _fetch_email_invoice_payloads(inbox, year=SYNC_TARGET_YEAR):
                 errors.append(f"Mensaje {message_id.decode(errors='ignore') or '?'}: {exc}")
 
         logger.info(
-            "Sync IMAP inbox=%s year=%s encontrados=%s omitidos_fuera_de_anio=%s errores_parseo=%s",
+            "Sync IMAP inbox=%s year=%s candidatos=%s procesados=%s encontrados=%s omitidos_fuera_de_anio=%s errores_parseo=%s truncado=%s",
             inbox.email,
             year,
+            total_candidates,
+            len(candidate_ids),
             len(payloads),
             skipped_out_of_year,
             len(errors),
+            total_candidates > len(candidate_ids),
         )
-        return payloads, errors, skipped_out_of_year
+        return payloads, errors, skipped_out_of_year, total_candidates, len(candidate_ids)
     finally:
         try:
             mailbox.close()
@@ -204,7 +212,10 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
             "created": 0,
             "updated": 0,
             "processed_messages": 0,
+            "scanned_messages": 0,
+            "total_candidates": 0,
             "skipped_out_of_year": 0,
+            "truncated": False,
             "errors": ["No hay correos IMAP activos configurados para esta organizacion."],
         }
 
@@ -213,14 +224,24 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
     created = 0
     updated = 0
     processed_messages = 0
+    scanned_messages = 0
+    total_candidates = 0
     skipped_out_of_year = 0
     errors = []
+    truncated = False
 
     for inbox in inboxes:
         try:
-            payloads, inbox_errors, inbox_skipped_out_of_year = _fetch_email_invoice_payloads(inbox, year=year)
+            payloads, inbox_errors, inbox_skipped_out_of_year, inbox_total_candidates, inbox_scanned_messages = _fetch_email_invoice_payloads(
+                inbox,
+                year=year,
+                max_messages=SYNC_MAX_MESSAGES,
+            )
             processed_messages += len(payloads)
+            scanned_messages += inbox_scanned_messages
+            total_candidates += inbox_total_candidates
             skipped_out_of_year += inbox_skipped_out_of_year
+            truncated = truncated or inbox_total_candidates > inbox_scanned_messages
             errors.extend(f"{inbox.email}: {error}" for error in inbox_errors)
             for payload in payloads:
                 defaults = {
@@ -267,6 +288,15 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
                 inbox_skipped_out_of_year,
                 len(inbox_errors),
             )
+            if inbox_total_candidates > inbox_scanned_messages:
+                logger.warning(
+                    "Sync truncado organization_id=%s inbox=%s total_candidates=%s scanned_messages=%s max_messages=%s",
+                    organization_id,
+                    inbox.email,
+                    inbox_total_candidates,
+                    inbox_scanned_messages,
+                    SYNC_MAX_MESSAGES,
+                )
         except Exception as exc:
             errors.append(f"{inbox.email}: {exc}")
             logger.exception("Error sincronizando inbox=%s organization_id=%s year=%s", inbox.email, organization_id, year)
@@ -278,6 +308,8 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
         created,
         updated,
         processed_messages,
+        scanned_messages,
+        total_candidates,
         skipped_out_of_year,
         len(errors),
     )
@@ -285,7 +317,10 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
         "created": created,
         "updated": updated,
         "processed_messages": processed_messages,
+        "scanned_messages": scanned_messages,
+        "total_candidates": total_candidates,
         "skipped_out_of_year": skipped_out_of_year,
+        "truncated": truncated,
         "errors": errors,
     }
 
@@ -588,7 +623,10 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             "created": sync_result["created"],
             "updated": sync_result["updated"],
             "processed_messages": sync_result["processed_messages"],
+            "scanned_messages": sync_result["scanned_messages"],
+            "total_candidates": sync_result["total_candidates"],
             "skipped_out_of_year": sync_result["skipped_out_of_year"],
+            "truncated": sync_result["truncated"],
             "errors": sync_result["errors"],
             "synced_at": timezone.now(),
         })
