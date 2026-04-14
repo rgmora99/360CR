@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "insecure-dev-secret")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
@@ -95,4 +97,42 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s:%(lineno)s - %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+        },
+        "system_file": {
+            "class": "logging.FileHandler",
+            "filename": str(LOG_DIR / "system.log"),
+            "formatter": "standard",
+            "encoding": "utf-8",
+        },
+    },
+    "root": {
+        "handlers": ["console", "system_file"],
+        "level": os.getenv("LOG_LEVEL", "INFO"),
+    },
+    "loggers": {
+        "apps.finance": {
+            "handlers": ["console", "system_file"],
+            "level": os.getenv("FINANCE_LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console", "system_file"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
 }

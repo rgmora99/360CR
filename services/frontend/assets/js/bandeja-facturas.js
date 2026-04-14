@@ -156,7 +156,7 @@
 
   $('organization-id').addEventListener('change', () => {
     window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
-    syncInbox(false).then(() => loadInbox(false)).catch((e) => feedback(e.message, true));
+    loadInbox(false).catch((e) => feedback(e.message, true));
   });
   $('status-filter').addEventListener('change', () => loadInbox().catch((e) => feedback(e.message, true)));
   syncDateFromInput.addEventListener('change', () => renderSyncRange(getSyncFilters().date_from, getSyncFilters().date_to));
@@ -165,5 +165,5 @@
 
   renderOrganizations();
   renderSyncRange(getSyncFilters().date_from, getSyncFilters().date_to);
-  syncInbox(false).then(() => loadInbox(false)).catch((e) => feedback(e.message, true));
+  loadInbox(false).catch((e) => feedback(e.message, true));
 })();
