@@ -1,6 +1,7 @@
 import email
 import imaplib
 import logging
+import threading
 import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
@@ -35,6 +36,8 @@ logger = logging.getLogger(__name__)
 SYNC_TARGET_YEAR = 2026
 SYNC_MAX_MESSAGES = 150
 SYNC_MAX_BATCH_SIZE = 500
+SYNC_PROGRESS = {}
+SYNC_PROGRESS_LOCK = threading.Lock()
 SYNC_INVOICE_KEYWORDS = (
     "factura electronica",
     "factura electrónica",
@@ -109,6 +112,35 @@ def _serialize_json_safe(value):
     if isinstance(value, tuple):
         return [_serialize_json_safe(item) for item in value]
     return value
+
+
+def _build_sync_progress_key(organization_id, date_from, date_to, limit):
+    return f"{organization_id}:{date_from.isoformat()}:{date_to.isoformat()}:{limit}"
+
+
+def _set_sync_progress(progress_key, **updates):
+    with SYNC_PROGRESS_LOCK:
+        current = dict(SYNC_PROGRESS.get(progress_key, {}))
+        current.update(updates)
+        current["updated_at"] = timezone.now().isoformat()
+        SYNC_PROGRESS[progress_key] = current
+        return dict(current)
+
+
+def _increment_sync_progress(progress_key, **increments):
+    with SYNC_PROGRESS_LOCK:
+        current = dict(SYNC_PROGRESS.get(progress_key, {}))
+        for key, value in increments.items():
+            current[key] = current.get(key, 0) + value
+        current["updated_at"] = timezone.now().isoformat()
+        SYNC_PROGRESS[progress_key] = current
+        return dict(current)
+
+
+def _get_sync_progress(progress_key):
+    with SYNC_PROGRESS_LOCK:
+        current = SYNC_PROGRESS.get(progress_key)
+        return dict(current) if current else None
 
 
 def _coerce_header_text(value):
@@ -264,7 +296,7 @@ def _parse_invoice_xml(xml_bytes):
     return data
 
 
-def _fetch_email_invoice_payloads(inbox, date_from, date_to, max_messages=SYNC_MAX_MESSAGES):
+def _fetch_email_invoice_payloads(inbox, date_from, date_to, max_messages=SYNC_MAX_MESSAGES, progress_key=None):
     connection_class = imaplib.IMAP4_SSL if inbox.imap_ssl else imaplib.IMAP4
     mailbox = connection_class(inbox.imap_host, inbox.imap_port)
     try:
@@ -285,12 +317,22 @@ def _fetch_email_invoice_payloads(inbox, date_from, date_to, max_messages=SYNC_M
         ordered_message_ids = list(reversed(all_message_ids))
         safe_limit = max(1, min(int(max_messages or SYNC_MAX_MESSAGES), SYNC_MAX_BATCH_SIZE))
         candidate_ids = ordered_message_ids[:safe_limit]
+        if progress_key:
+            _set_sync_progress(
+                progress_key,
+                current_inbox=inbox.email,
+                total_candidates=total_candidates,
+                selected_candidates=len(candidate_ids),
+                message=f"Leyendo correo {inbox.email}",
+            )
 
         payloads = []
         errors = []
         skipped_out_of_range = 0
         skipped_non_invoice = 0
         for message_id in candidate_ids:
+            if progress_key:
+                _increment_sync_progress(progress_key, scanned_messages=1)
             status_code, parts = mailbox.fetch(message_id, "(RFC822)")
             if status_code != "OK" or not parts:
                 continue
@@ -303,14 +345,20 @@ def _fetch_email_invoice_payloads(inbox, date_from, date_to, max_messages=SYNC_M
             attachments = _extract_invoice_attachments(message)
             if not _message_looks_like_invoice(message, attachments):
                 skipped_non_invoice += 1
+                if progress_key:
+                    _increment_sync_progress(progress_key, skipped_non_invoice=1)
                 continue
 
             try:
                 payload = _parse_invoice_xml(attachments["xml_payload"])
                 if payload["issue_date"] < date_from or payload["issue_date"] > date_to:
                     skipped_out_of_range += 1
+                    if progress_key:
+                        _increment_sync_progress(progress_key, skipped_out_of_range=1)
                     continue
                 payloads.append(payload)
+                if progress_key:
+                    _increment_sync_progress(progress_key, processed_messages=1)
             except Exception as exc:
                 errors.append(f"Mensaje {message_id.decode(errors='ignore') or '?'}: {exc}")
 
@@ -339,7 +387,7 @@ def _fetch_email_invoice_payloads(inbox, date_from, date_to, max_messages=SYNC_M
             pass
 
 
-def _sync_email_invoices_for_organization(organization_id, date_from, date_to, limit=SYNC_MAX_MESSAGES):
+def _sync_email_invoices_for_organization(organization_id, date_from, date_to, limit=SYNC_MAX_MESSAGES, progress_key=None):
     inboxes = OrganizationEmailInbox.objects.filter(organization_id=organization_id, is_active=True).order_by("-is_primary", "id")
     if not inboxes.exists():
         return {
@@ -363,6 +411,30 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
         inboxes.count(),
         limit,
     )
+    if progress_key:
+        _set_sync_progress(
+            progress_key,
+            status="running",
+            organization_id=int(organization_id),
+            date_from=date_from.isoformat(),
+            date_to=date_to.isoformat(),
+            limit=limit,
+            year=SYNC_TARGET_YEAR,
+            created=0,
+            updated=0,
+            processed_messages=0,
+            scanned_messages=0,
+            total_candidates=0,
+            selected_candidates=0,
+            skipped_non_invoice=0,
+            skipped_out_of_range=0,
+            has_more=False,
+            truncated=False,
+            errors=[],
+            message="Iniciando sincronización",
+            started_at=timezone.now().isoformat(),
+            finished_at=None,
+        )
 
     created = 0
     updated = 0
@@ -382,6 +454,7 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
                 date_from=date_from,
                 date_to=date_to,
                 max_messages=limit,
+                progress_key=progress_key,
             )
             processed_messages += len(payloads)
             scanned_messages += inbox_scanned_messages
@@ -414,6 +487,8 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
                 )
                 if was_created:
                     created += 1
+                    if progress_key:
+                        _set_sync_progress(progress_key, created=created, message=f"Factura nueva detectada: {payload['invoice_number'][:40]}")
                     continue
 
                 if invoice.status == PurchaseInboxInvoice.STATUS_REGISTERED:
@@ -427,6 +502,8 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
                 if changed_fields:
                     invoice.save(update_fields=changed_fields)
                     updated += 1
+                    if progress_key:
+                        _set_sync_progress(progress_key, updated=updated, message=f"Factura actualizada: {payload['invoice_number'][:40]}")
             logger.info(
                 "Sync parcial organization_id=%s inbox=%s created=%s updated=%s processed=%s skipped_non_invoice=%s skipped_out_of_range=%s errors=%s",
                 organization_id,
@@ -477,6 +554,38 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
         "has_more": has_more,
         "errors": errors,
     }
+
+
+def _run_purchase_inbox_sync(progress_key, organization_id, date_from, date_to, limit):
+    try:
+        sync_result = _sync_email_invoices_for_organization(
+            organization_id=organization_id,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+            progress_key=progress_key,
+        )
+        pending = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_PENDING).count()
+        in_process = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_IN_PROCESS).count()
+        _set_sync_progress(
+            progress_key,
+            status="completed",
+            pending=pending,
+            in_process=in_process,
+            finished_at=timezone.now().isoformat(),
+            synced_at=timezone.now().isoformat(),
+            message="Sincronización completada correctamente",
+            **sync_result,
+        )
+    except Exception as exc:
+        logger.exception("Error ejecutando trabajo de sincronizacion progress_key=%s", progress_key)
+        _set_sync_progress(
+            progress_key,
+            status="error",
+            finished_at=timezone.now().isoformat(),
+            message="La sincronización terminó con error",
+            errors=[str(exc)],
+        )
 
 
 def _escape_pdf_text(value):
@@ -783,37 +892,73 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             return Response({"detail": "La fecha inicial no puede ser mayor a la fecha final."}, status=400)
         if date_from.year != SYNC_TARGET_YEAR or date_to.year != SYNC_TARGET_YEAR:
             return Response({"detail": f"Solo se permite sincronizar fechas del {SYNC_TARGET_YEAR}."}, status=400)
+        progress_key = _build_sync_progress_key(int(organization_id), date_from, date_to, limit)
+        current_progress = _get_sync_progress(progress_key)
+        if current_progress and current_progress.get("status") == "running":
+            return Response(current_progress, status=status.HTTP_202_ACCEPTED)
 
-        sync_result = _sync_email_invoices_for_organization(organization_id, date_from=date_from, date_to=date_to, limit=limit)
-        pending = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_PENDING).count()
-        in_process = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_IN_PROCESS).count()
-        return Response({
-            "detail": "Sincronización ejecutada.",
-            "pending": pending,
-            "in_process": in_process,
-            "year": SYNC_TARGET_YEAR,
-            "date_from": date_from,
-            "date_to": date_to,
-            "limit": limit,
-            "created": sync_result["created"],
-            "updated": sync_result["updated"],
-            "processed_messages": sync_result["processed_messages"],
-            "scanned_messages": sync_result["scanned_messages"],
-            "total_candidates": sync_result["total_candidates"],
-            "skipped_non_invoice": sync_result["skipped_non_invoice"],
-            "skipped_out_of_range": sync_result["skipped_out_of_range"],
-            "truncated": sync_result["truncated"],
-            "has_more": sync_result["has_more"],
-            "read_status_scope": "all",
-            "rules": {
+        _set_sync_progress(
+            progress_key,
+            status="queued",
+            organization_id=int(organization_id),
+            date_from=date_from.isoformat(),
+            date_to=date_to.isoformat(),
+            limit=limit,
+            year=SYNC_TARGET_YEAR,
+            created=0,
+            updated=0,
+            processed_messages=0,
+            scanned_messages=0,
+            total_candidates=0,
+            selected_candidates=0,
+            skipped_non_invoice=0,
+            skipped_out_of_range=0,
+            has_more=False,
+            truncated=False,
+            read_status_scope="all",
+            rules={
                 "requires_xml": True,
                 "requires_pdf_or_invoice_keywords": True,
                 "reads_seen_and_unseen": True,
                 "allowed_xml_issue_year": SYNC_TARGET_YEAR,
             },
-            "errors": sync_result["errors"],
-            "synced_at": timezone.now(),
-        })
+            errors=[],
+            message="Sincronización en cola",
+            started_at=timezone.now().isoformat(),
+            finished_at=None,
+        )
+        worker = threading.Thread(
+            target=_run_purchase_inbox_sync,
+            args=(progress_key, int(organization_id), date_from, date_to, limit),
+            daemon=True,
+        )
+        worker.start()
+        return Response(_get_sync_progress(progress_key), status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=False, methods=["get"], url_path="sync-status")
+    def sync_status(self, request):
+        organization_id = request.query_params.get("organization_id")
+        self.validate_organization_payload(organization_id)
+        default_date_from = datetime(SYNC_TARGET_YEAR, 1, 1).date()
+        default_date_to = datetime(SYNC_TARGET_YEAR, 12, 31).date()
+        date_from = _parse_sync_date(request.query_params.get("date_from"), default_date_from)
+        date_to = _parse_sync_date(request.query_params.get("date_to"), default_date_to)
+        limit = max(1, min(int(request.query_params.get("limit") or SYNC_MAX_MESSAGES), SYNC_MAX_BATCH_SIZE))
+        progress_key = _build_sync_progress_key(int(organization_id), date_from, date_to, limit)
+        progress = _get_sync_progress(progress_key)
+        if not progress:
+            return Response(
+                {
+                    "status": "idle",
+                    "organization_id": int(organization_id),
+                    "date_from": date_from.isoformat(),
+                    "date_to": date_to.isoformat(),
+                    "limit": limit,
+                    "year": SYNC_TARGET_YEAR,
+                    "message": "No hay una sincronización activa para este rango.",
+                }
+            )
+        return Response(progress)
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):

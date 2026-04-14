@@ -37,6 +37,34 @@
         color: var(--muted);
       }
 
+      .sync-toast {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        min-width: 280px;
+        max-width: 420px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.96);
+        border: 1px solid rgba(122, 162, 255, 0.35);
+        color: #e8eefc;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(12px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        z-index: 1000;
+      }
+
+      .sync-toast.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .sync-toast.is-error {
+        border-color: rgba(255, 125, 125, 0.4);
+      }
+
       @keyframes spin {
         to {
           transform: rotate(360deg);
@@ -121,6 +149,8 @@
         </div>
       </section>
     </div>
+
+    <div id="sync-toast" class="sync-toast" role="status" aria-live="polite"></div>
 
     <script src="/assets/js/navigation.js"></script>
     <script>

@@ -549,6 +549,7 @@ class PurchaseCreateSerializer(serializers.Serializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        validated_data["organization_id"] = validated_data.pop("organization")
         items = validated_data.pop("items")
         tax_total = validated_data.pop("tax_total", Decimal("0.00"))
         subtotal = Decimal("0.00")
