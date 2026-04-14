@@ -9,6 +9,7 @@
   const syncNewCount = $('sync-new-count');
   const syncProcessedCount = $('sync-processed-count');
   const syncScannedCount = $('sync-scanned-count');
+  const syncSkippedCount = $('sync-skipped-count');
   let syncTimer = null;
   let syncStartedAt = 0;
 
@@ -44,6 +45,7 @@
     syncNewCount.textContent = 'Nuevas: 0';
     syncProcessedCount.textContent = 'Procesadas: 0';
     syncScannedCount.textContent = 'Leídas: 0';
+    syncSkippedCount.textContent = 'Descartadas: 0';
     syncNowButton.textContent = 'Sincronizando...';
     if (syncTimer) clearInterval(syncTimer);
     syncTimer = setInterval(() => {
@@ -62,6 +64,7 @@
       syncNewCount.textContent = `Nuevas: ${result?.created || 0}`;
       syncProcessedCount.textContent = `Procesadas: ${result?.processed_messages || 0}`;
       syncScannedCount.textContent = `Leídas: ${result?.scanned_messages || 0}`;
+      syncSkippedCount.textContent = `Descartadas: ${result?.skipped_non_invoice || 0}`;
     } else {
       syncProgress.classList.remove('is-active');
     }
@@ -86,7 +89,7 @@
         const truncationNote = result?.truncated
           ? ` Se limitaron a las ${result?.scanned_messages || 0} más recientes de ${result?.total_candidates || 0} correos del año.`
           : '';
-        const message = `Sync ${result?.year || 2026} completada. Nuevas: ${result?.created || 0}. Actualizadas: ${result?.updated || 0}. Procesadas: ${result?.processed_messages || 0}.${truncationNote}`;
+        const message = `Sync ${result?.year || 2026} completada. Nuevas: ${result?.created || 0}. Actualizadas: ${result?.updated || 0}. Procesadas: ${result?.processed_messages || 0}. Descartadas por no ser factura: ${result?.skipped_non_invoice || 0}.${truncationNote}`;
         feedback(errors.length ? `${message} Errores: ${errors.join(' | ')}` : message, errors.length > 0);
       }
       return result;

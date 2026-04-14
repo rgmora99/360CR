@@ -1,6 +1,7 @@
 import email
 import imaplib
 import logging
+import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from decimal import Decimal
@@ -32,6 +33,20 @@ from apps.tenants.access import OrganizationScopedViewMixin
 logger = logging.getLogger(__name__)
 SYNC_TARGET_YEAR = 2026
 SYNC_MAX_MESSAGES = 150
+SYNC_INVOICE_KEYWORDS = (
+    "factura electronica",
+    "factura electrónica",
+    "tiquete electronico",
+    "tiquete electrónico",
+    "comprobante electronico",
+    "comprobante electrónico",
+    "nota credito electronica",
+    "nota crédito electrónica",
+    "nota debito electronica",
+    "nota débito electrónica",
+    "electronic invoice",
+    "e-invoice",
+)
 
 
 def _xml_find_text(element, path, namespaces=None):
@@ -61,20 +76,80 @@ def _parse_issue_date(value):
     return timezone.localdate()
 
 
-def _extract_xml_attachment(message):
+def _normalize_text(value):
+    text = (value or "").strip().lower()
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFKD", text)
+    return "".join(character for character in normalized if not unicodedata.combining(character))
+
+
+def _extract_invoice_message_text(message):
+    text_chunks = []
+    subject = message.get("Subject", "")
+    if subject:
+        text_chunks.append(subject)
+
+    for part in message.walk():
+        if part.get_content_maintype() == "multipart":
+            continue
+        content_type = (part.get_content_type() or "").lower()
+        if content_type not in {"text/plain", "text/html"}:
+            continue
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+        charset = part.get_content_charset() or "utf-8"
+        try:
+            text_chunks.append(payload.decode(charset, errors="ignore"))
+        except LookupError:
+            text_chunks.append(payload.decode("utf-8", errors="ignore"))
+
+    return _normalize_text(" ".join(text_chunks)[:5000])
+
+
+def _extract_invoice_attachments(message):
+    xml_payload = None
+    has_pdf = False
+    attachment_names = []
+
     for part in message.walk():
         if part.get_content_maintype() == "multipart":
             continue
 
         filename = (part.get_filename() or "").lower()
         content_type = (part.get_content_type() or "").lower()
-        if not filename.endswith(".xml") and content_type not in {"text/xml", "application/xml"}:
-            continue
+        if filename:
+            attachment_names.append(filename)
 
         payload = part.get_payload(decode=True)
-        if payload:
-            return payload
-    return None
+        if not payload:
+            continue
+
+        if filename.endswith(".pdf") or content_type == "application/pdf":
+            has_pdf = True
+        if xml_payload is None and (filename.endswith(".xml") or content_type in {"text/xml", "application/xml"}):
+            xml_payload = payload
+
+    return {
+        "xml_payload": xml_payload,
+        "has_pdf": has_pdf,
+        "attachment_names": attachment_names,
+    }
+
+
+def _message_looks_like_invoice(message, attachments):
+    normalized_text = _extract_invoice_message_text(message)
+    normalized_attachment_names = _normalize_text(" ".join(attachments["attachment_names"]))
+    keyword_match = any(
+        keyword in normalized_text or _normalize_text(keyword) in normalized_text or _normalize_text(keyword) in normalized_attachment_names
+        for keyword in SYNC_INVOICE_KEYWORDS
+    )
+
+    if not attachments["xml_payload"]:
+        return False
+
+    return attachments["has_pdf"] or keyword_match
 
 
 def _parse_invoice_xml(xml_bytes):
@@ -159,6 +234,7 @@ def _fetch_email_invoice_payloads(inbox, year=SYNC_TARGET_YEAR, max_messages=SYN
         payloads = []
         errors = []
         skipped_out_of_year = 0
+        skipped_non_invoice = 0
         for message_id in reversed(candidate_ids):
             status_code, parts = mailbox.fetch(message_id, "(RFC822)")
             if status_code != "OK" or not parts:
@@ -169,12 +245,13 @@ def _fetch_email_invoice_payloads(inbox, year=SYNC_TARGET_YEAR, max_messages=SYN
                 continue
 
             message = email.message_from_bytes(raw_email)
-            xml_payload = _extract_xml_attachment(message)
-            if not xml_payload:
+            attachments = _extract_invoice_attachments(message)
+            if not _message_looks_like_invoice(message, attachments):
+                skipped_non_invoice += 1
                 continue
 
             try:
-                payload = _parse_invoice_xml(xml_payload)
+                payload = _parse_invoice_xml(attachments["xml_payload"])
                 if payload["issue_date"].year != year:
                     skipped_out_of_year += 1
                     continue
@@ -183,17 +260,18 @@ def _fetch_email_invoice_payloads(inbox, year=SYNC_TARGET_YEAR, max_messages=SYN
                 errors.append(f"Mensaje {message_id.decode(errors='ignore') or '?'}: {exc}")
 
         logger.info(
-            "Sync IMAP inbox=%s year=%s candidatos=%s procesados=%s encontrados=%s omitidos_fuera_de_anio=%s errores_parseo=%s truncado=%s",
+            "Sync IMAP inbox=%s year=%s candidatos=%s procesados=%s encontrados=%s omitidos_no_factura=%s omitidos_fuera_de_anio=%s errores_parseo=%s truncado=%s",
             inbox.email,
             year,
             total_candidates,
             len(candidate_ids),
             len(payloads),
+            skipped_non_invoice,
             skipped_out_of_year,
             len(errors),
             total_candidates > len(candidate_ids),
         )
-        return payloads, errors, skipped_out_of_year, total_candidates, len(candidate_ids)
+        return payloads, errors, skipped_out_of_year, skipped_non_invoice, total_candidates, len(candidate_ids)
     finally:
         try:
             mailbox.close()
@@ -214,6 +292,7 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
             "processed_messages": 0,
             "scanned_messages": 0,
             "total_candidates": 0,
+            "skipped_non_invoice": 0,
             "skipped_out_of_year": 0,
             "truncated": False,
             "errors": ["No hay correos IMAP activos configurados para esta organizacion."],
@@ -226,13 +305,14 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
     processed_messages = 0
     scanned_messages = 0
     total_candidates = 0
+    skipped_non_invoice = 0
     skipped_out_of_year = 0
     errors = []
     truncated = False
 
     for inbox in inboxes:
         try:
-            payloads, inbox_errors, inbox_skipped_out_of_year, inbox_total_candidates, inbox_scanned_messages = _fetch_email_invoice_payloads(
+            payloads, inbox_errors, inbox_skipped_out_of_year, inbox_skipped_non_invoice, inbox_total_candidates, inbox_scanned_messages = _fetch_email_invoice_payloads(
                 inbox,
                 year=year,
                 max_messages=SYNC_MAX_MESSAGES,
@@ -240,6 +320,7 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
             processed_messages += len(payloads)
             scanned_messages += inbox_scanned_messages
             total_candidates += inbox_total_candidates
+            skipped_non_invoice += inbox_skipped_non_invoice
             skipped_out_of_year += inbox_skipped_out_of_year
             truncated = truncated or inbox_total_candidates > inbox_scanned_messages
             errors.extend(f"{inbox.email}: {error}" for error in inbox_errors)
@@ -279,12 +360,13 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
                     invoice.save(update_fields=changed_fields)
                     updated += 1
             logger.info(
-                "Sync parcial organization_id=%s inbox=%s created=%s updated=%s processed=%s skipped_out_of_year=%s errors=%s",
+                "Sync parcial organization_id=%s inbox=%s created=%s updated=%s processed=%s skipped_non_invoice=%s skipped_out_of_year=%s errors=%s",
                 organization_id,
                 inbox.email,
                 created,
                 updated,
                 len(payloads),
+                inbox_skipped_non_invoice,
                 inbox_skipped_out_of_year,
                 len(inbox_errors),
             )
@@ -302,7 +384,7 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
             logger.exception("Error sincronizando inbox=%s organization_id=%s year=%s", inbox.email, organization_id, year)
 
     logger.info(
-        "Sync final organization_id=%s year=%s created=%s updated=%s processed=%s skipped_out_of_year=%s errors=%s",
+        "Sync final organization_id=%s year=%s created=%s updated=%s processed=%s scanned=%s candidates=%s skipped_non_invoice=%s skipped_out_of_year=%s errors=%s",
         organization_id,
         year,
         created,
@@ -310,6 +392,7 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
         processed_messages,
         scanned_messages,
         total_candidates,
+        skipped_non_invoice,
         skipped_out_of_year,
         len(errors),
     )
@@ -319,6 +402,7 @@ def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR
         "processed_messages": processed_messages,
         "scanned_messages": scanned_messages,
         "total_candidates": total_candidates,
+        "skipped_non_invoice": skipped_non_invoice,
         "skipped_out_of_year": skipped_out_of_year,
         "truncated": truncated,
         "errors": errors,
@@ -625,6 +709,7 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             "processed_messages": sync_result["processed_messages"],
             "scanned_messages": sync_result["scanned_messages"],
             "total_candidates": sync_result["total_candidates"],
+            "skipped_non_invoice": sync_result["skipped_non_invoice"],
             "skipped_out_of_year": sync_result["skipped_out_of_year"],
             "truncated": sync_result["truncated"],
             "errors": sync_result["errors"],
