@@ -1,5 +1,6 @@
 import email
 import imaplib
+import logging
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from decimal import Decimal
@@ -27,6 +28,9 @@ from apps.finance.serializers import (
 )
 from apps.loyalty.models import LoyaltyMember
 from apps.tenants.access import OrganizationScopedViewMixin
+
+logger = logging.getLogger(__name__)
+SYNC_TARGET_YEAR = 2026
 
 
 def _xml_find_text(element, path, namespaces=None):
@@ -132,7 +136,7 @@ def _parse_invoice_xml(xml_bytes):
     return data
 
 
-def _fetch_email_invoice_payloads(inbox):
+def _fetch_email_invoice_payloads(inbox, year=SYNC_TARGET_YEAR):
     connection_class = imaplib.IMAP4_SSL if inbox.imap_ssl else imaplib.IMAP4
     mailbox = connection_class(inbox.imap_host, inbox.imap_port)
     try:
@@ -141,12 +145,15 @@ def _fetch_email_invoice_payloads(inbox):
         if status_code != "OK":
             raise ValueError(f"No fue posible abrir la carpeta {inbox.folder or 'INBOX'}.")
 
-        status_code, data = mailbox.search(None, "ALL")
+        start_date = f"01-Jan-{year}"
+        end_date = f"01-Jan-{year + 1}"
+        status_code, data = mailbox.search(None, "SINCE", start_date, "BEFORE", end_date)
         if status_code != "OK":
             raise ValueError("No fue posible consultar la bandeja del correo.")
 
         payloads = []
         errors = []
+        skipped_out_of_year = 0
         for message_id in reversed(data[0].split()):
             status_code, parts = mailbox.fetch(message_id, "(RFC822)")
             if status_code != "OK" or not parts:
@@ -162,11 +169,23 @@ def _fetch_email_invoice_payloads(inbox):
                 continue
 
             try:
-                payloads.append(_parse_invoice_xml(xml_payload))
+                payload = _parse_invoice_xml(xml_payload)
+                if payload["issue_date"].year != year:
+                    skipped_out_of_year += 1
+                    continue
+                payloads.append(payload)
             except Exception as exc:
                 errors.append(f"Mensaje {message_id.decode(errors='ignore') or '?'}: {exc}")
 
-        return payloads, errors
+        logger.info(
+            "Sync IMAP inbox=%s year=%s encontrados=%s omitidos_fuera_de_anio=%s errores_parseo=%s",
+            inbox.email,
+            year,
+            len(payloads),
+            skipped_out_of_year,
+            len(errors),
+        )
+        return payloads, errors, skipped_out_of_year
     finally:
         try:
             mailbox.close()
@@ -178,25 +197,30 @@ def _fetch_email_invoice_payloads(inbox):
             pass
 
 
-def _sync_email_invoices_for_organization(organization_id):
+def _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR):
     inboxes = OrganizationEmailInbox.objects.filter(organization_id=organization_id, is_active=True).order_by("-is_primary", "id")
     if not inboxes.exists():
         return {
             "created": 0,
             "updated": 0,
             "processed_messages": 0,
+            "skipped_out_of_year": 0,
             "errors": ["No hay correos IMAP activos configurados para esta organizacion."],
         }
+
+    logger.info("Iniciando sincronizacion organization_id=%s year=%s inboxes=%s", organization_id, year, inboxes.count())
 
     created = 0
     updated = 0
     processed_messages = 0
+    skipped_out_of_year = 0
     errors = []
 
     for inbox in inboxes:
         try:
-            payloads, inbox_errors = _fetch_email_invoice_payloads(inbox)
+            payloads, inbox_errors, inbox_skipped_out_of_year = _fetch_email_invoice_payloads(inbox, year=year)
             processed_messages += len(payloads)
+            skipped_out_of_year += inbox_skipped_out_of_year
             errors.extend(f"{inbox.email}: {error}" for error in inbox_errors)
             for payload in payloads:
                 defaults = {
@@ -233,13 +257,35 @@ def _sync_email_invoices_for_organization(organization_id):
                 if changed_fields:
                     invoice.save(update_fields=changed_fields)
                     updated += 1
+            logger.info(
+                "Sync parcial organization_id=%s inbox=%s created=%s updated=%s processed=%s skipped_out_of_year=%s errors=%s",
+                organization_id,
+                inbox.email,
+                created,
+                updated,
+                len(payloads),
+                inbox_skipped_out_of_year,
+                len(inbox_errors),
+            )
         except Exception as exc:
             errors.append(f"{inbox.email}: {exc}")
+            logger.exception("Error sincronizando inbox=%s organization_id=%s year=%s", inbox.email, organization_id, year)
 
+    logger.info(
+        "Sync final organization_id=%s year=%s created=%s updated=%s processed=%s skipped_out_of_year=%s errors=%s",
+        organization_id,
+        year,
+        created,
+        updated,
+        processed_messages,
+        skipped_out_of_year,
+        len(errors),
+    )
     return {
         "created": created,
         "updated": updated,
         "processed_messages": processed_messages,
+        "skipped_out_of_year": skipped_out_of_year,
         "errors": errors,
     }
 
@@ -531,16 +577,18 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     def sync(self, request):
         organization_id = request.data.get("organization") or request.query_params.get("organization_id")
         self.validate_organization_payload(organization_id)
-        sync_result = _sync_email_invoices_for_organization(organization_id)
+        sync_result = _sync_email_invoices_for_organization(organization_id, year=SYNC_TARGET_YEAR)
         pending = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_PENDING).count()
         in_process = PurchaseInboxInvoice.objects.filter(organization_id=organization_id, status=PurchaseInboxInvoice.STATUS_IN_PROCESS).count()
         return Response({
             "detail": "Sincronización ejecutada.",
             "pending": pending,
             "in_process": in_process,
+            "year": SYNC_TARGET_YEAR,
             "created": sync_result["created"],
             "updated": sync_result["updated"],
             "processed_messages": sync_result["processed_messages"],
+            "skipped_out_of_year": sync_result["skipped_out_of_year"],
             "errors": sync_result["errors"],
             "synced_at": timezone.now(),
         })
