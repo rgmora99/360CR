@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="/assets/css/pages/customers.css" />
   </head>
   <body>
-    <div class="dashboard-layout">
+    <div class="dashboard-layout" data-purchases-view="register">
       <aside id="shared-sidebar"></aside>
       <section class="main-panel">
         <header id="shared-topbar"></header>
@@ -26,7 +26,7 @@
           </section>
 
           <section class="grid single-column">
-            <article class="card">
+            <article class="card" id="purchase-form-card">
               <h2>Registrar compra</h2>
               <form id="purchase-form" class="customer-form">
                 <div class="form-grid">
@@ -53,11 +53,12 @@
               </form>
             </article>
 
-            <article class="card">
-              <h2>Compras registradas</h2>
-              <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Subtotal</th><th>Impuesto</th><th>Total</th></tr></thead><tbody id="purchases-body"></tbody></table></div>
-              <p id="feedback" class="subtitle">Sin datos.</p>
-            </article>
+          </section>
+          <section class="card">
+            <div class="actions">
+              <a class="btn btn-secondary" href="/compras-listado.html">Ver listado de compras</a>
+            </div>
+            <p id="feedback" class="subtitle">Sin datos.</p>
           </section>
         </div>
       </section>
@@ -65,7 +66,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="/assets/js/alerts.js"></script>
     <script src="/assets/js/navigation.js"></script>
-    <script>window.renderSharedNavigation({ activeModule: 'compras' });</script>
+    <script>window.renderSharedNavigation({ activeModule: 'compras-registrar' });</script>
     <script src="/assets/js/cedula-padron.js"></script>
     <script src="/assets/js/compras.js"></script>
   </body>

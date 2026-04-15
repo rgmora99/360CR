@@ -598,6 +598,8 @@ class PurchaseCreateSerializer(serializers.Serializer):
 
 
 class PurchaseInboxSerializer(serializers.ModelSerializer):
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+
     class Meta:
         model = PurchaseInboxInvoice
         fields = "__all__"

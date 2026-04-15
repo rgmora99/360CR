@@ -263,6 +263,7 @@ class PurchaseInboxInvoice(models.Model):
     source = models.CharField(max_length=20, default="email")
     payload = models.JSONField(default=dict, blank=True)
     purchase = models.OneToOneField(Purchase, on_delete=models.SET_NULL, null=True, blank=True, related_name="inbox_invoice")
+    rejection_reason = models.TextField(blank=True)
     received_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(null=True, blank=True)
 

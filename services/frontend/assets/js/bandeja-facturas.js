@@ -1,6 +1,6 @@
 (function initBandeja() {
   const $ = (id) => document.getElementById(id);
-  const orgId = () => Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
+  const pageMode = document.querySelector('.dashboard-layout')?.dataset.inboxView || 'inbox';
   const syncMeta = $('sync-meta');
   const syncNowButton = $('sync-now');
   const syncProgress = $('sync-progress');
@@ -28,6 +28,15 @@
   let syncStartedAt = 0;
   let currentRows = [];
 
+  const statusLabels = {
+    pending: 'Pendiente',
+    in_process: 'En registro',
+    registered: 'Registrada',
+    rejected: 'Rechazada',
+  };
+
+  const orgId = () => Number($('organization-id')?.value || window.AppSession?.getActiveOrganizationId?.());
+
   async function request(path, options) {
     const response = await fetch(`/api${path}`, {
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -40,8 +49,10 @@
   }
 
   function feedback(msg, err = false) {
-    $('feedback').textContent = msg;
-    $('feedback').style.color = err ? '#ff7d7d' : 'var(--muted)';
+    const node = $('feedback');
+    if (!node) return;
+    node.textContent = msg;
+    node.style.color = err ? '#ff7d7d' : 'var(--muted)';
   }
 
   function showToast(message, isError = false) {
@@ -56,24 +67,28 @@
   }
 
   function renderOrganizations() {
+    const select = $('organization-id');
+    if (!select) return;
     const organizations = window.AppSession?.getOrganizations?.() || [];
     const activeId = Number(window.AppSession?.getActiveOrganizationId?.());
-    $('organization-id').innerHTML = organizations.map((org) => `<option value="${org.id}">${org.name}</option>`).join('');
-    if (activeId) $('organization-id').value = String(activeId);
+    select.innerHTML = organizations.map((org) => `<option value="${org.id}">${org.name}</option>`).join('');
+    if (activeId) select.value = String(activeId);
   }
 
   function getSyncFilters() {
-    const dateFrom = syncDateFromInput.value || '2026-01-01';
-    const dateTo = syncDateToInput.value || '2026-12-31';
-    const limit = Math.min(500, Math.max(1, Number(syncLimitInput.value || 150)));
-    syncDateFromInput.value = dateFrom;
-    syncDateToInput.value = dateTo;
-    syncLimitInput.value = String(limit);
+    const dateFrom = syncDateFromInput?.value || '2026-01-01';
+    const dateTo = syncDateToInput?.value || '2026-12-31';
+    const limit = Math.min(500, Math.max(1, Number(syncLimitInput?.value || 150)));
+    if (syncDateFromInput) syncDateFromInput.value = dateFrom;
+    if (syncDateToInput) syncDateToInput.value = dateTo;
+    if (syncLimitInput) syncLimitInput.value = String(limit);
     return { date_from: dateFrom, date_to: dateTo, limit };
   }
 
   function renderSyncRange(dateFrom, dateTo) {
-    syncRange.textContent = `Rango ${dateFrom} a ${dateTo}`;
+    if (syncRange) {
+      syncRange.textContent = `Rango ${dateFrom} a ${dateTo}`;
+    }
   }
 
   function currencySymbol(code) {
@@ -95,7 +110,12 @@
       .replaceAll("'", '&#39;');
   }
 
+  function statusText(invoice) {
+    return invoice.status_label || statusLabels[invoice.status] || invoice.status || 'Sin estado';
+  }
+
   function startSyncProgress() {
+    if (!syncNowButton || !syncProgress) return;
     const filters = getSyncFilters();
     syncStartedAt = Date.now();
     syncNowButton.disabled = true;
@@ -120,23 +140,26 @@
     syncTimer = null;
     if (syncPollTimer) clearInterval(syncPollTimer);
     syncPollTimer = null;
-    syncNowButton.disabled = false;
-    syncNowButton.textContent = 'Sincronizar ahora';
+    if (syncNowButton) {
+      syncNowButton.disabled = false;
+      syncNowButton.textContent = 'Sincronizar ahora';
+    }
     if (result) {
       updateProgressFromStatus(result);
-    } else {
+    } else if (syncProgress) {
       syncProgress.classList.remove('is-active');
     }
   }
 
   function updateProgressFromStatus(result) {
+    if (!syncProgress) return;
     syncProgress.classList.add('is-active');
-    syncYear.textContent = `Año ${result?.year || 2026}`;
+    if (syncYear) syncYear.textContent = `Año ${result?.year || 2026}`;
     renderSyncRange(result?.date_from || '2026-01-01', result?.date_to || '2026-12-31');
-    syncNewCount.textContent = `Nuevas: ${result?.created || 0}`;
-    syncProcessedCount.textContent = `Procesadas: ${result?.processed_messages || 0}`;
-    syncScannedCount.textContent = `Leídas: ${result?.scanned_messages || 0}`;
-    syncSkippedCount.textContent = `Descartadas: ${(result?.skipped_non_invoice || 0) + (result?.skipped_out_of_range || 0)}`;
+    if (syncNewCount) syncNewCount.textContent = `Nuevas: ${result?.created || 0}`;
+    if (syncProcessedCount) syncProcessedCount.textContent = `Procesadas: ${result?.processed_messages || 0}`;
+    if (syncScannedCount) syncScannedCount.textContent = `Leídas: ${result?.scanned_messages || 0}`;
+    if (syncSkippedCount) syncSkippedCount.textContent = `Descartadas: ${(result?.skipped_non_invoice || 0) + (result?.skipped_out_of_range || 0)}`;
     if (syncMeta) {
       const message = result?.message ? ` · ${result.message}` : '';
       syncMeta.textContent =
@@ -192,15 +215,14 @@
   }
 
   function renderMeta(container, entries) {
+    if (!container) return;
     container.innerHTML = entries
-      .map(
-        ([label, value]) =>
-          `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`
-      )
+      .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
       .join('');
   }
 
   function openModal(invoice) {
+    if (!modal) return;
     const payload = invoice.payload || {};
     const items = Array.isArray(payload.items) ? payload.items : [];
     const currency = invoice.currency || 'CRC';
@@ -218,26 +240,30 @@
       ['Total', formatMoney(invoice.total, currency)],
     ]);
     renderMeta(modalStatus, [
-      ['Estado', invoice.status],
+      ['Estado', statusText(invoice)],
       ['Clave numérica', invoice.numeric_key],
       ['Origen', invoice.source || 'email'],
       ['Documento', payload.document_type || 'No disponible'],
       ['Compra registrada', invoice.purchase ? `Sí · ID ${invoice.purchase}` : 'No'],
+      ['Motivo rechazo', invoice.rejection_reason || 'No aplica'],
       ['Buzón origen', payload.inbox_email || 'No disponible'],
+      ['Procesada', invoice.processed_at || 'Pendiente'],
     ]);
     modalLines.innerHTML = items.length
       ? items
-          .map(
-            (item, index) => `
+          .map((item, index) => {
+            const quantity = Number(item.quantity || 1);
+            const unitPrice = Number(item.unit_price || 0);
+            return `
               <div class="invoice-modal__line">
                 <div>
                   <strong>${escapeHtml(item.description || `Línea ${index + 1}`)}</strong><br />
-                  <span>${escapeHtml(item.quantity || '1')} × ${formatMoney(item.unit_price, currency)}</span>
+                  <span>${escapeHtml(item.quantity || '1')} × ${formatMoney(unitPrice, currency)}</span>
                 </div>
-                <strong>${formatMoney((Number(item.quantity || 1) * Number(item.unit_price || 0)).toFixed(2), currency)}</strong>
+                <strong>${formatMoney(quantity * unitPrice, currency)}</strong>
               </div>
-            `
-          )
+            `;
+          })
           .join('')
       : '<p class="subtitle">No hay líneas detalladas para esta factura.</p>';
 
@@ -257,75 +283,115 @@
   }
 
   function closeModal() {
+    if (!modal) return;
     modal.classList.remove('is-open');
     modal.setAttribute('aria-hidden', 'true');
   }
 
+  async function askRejectReason() {
+    if (!window.Swal) {
+      const reason = window.prompt('Indica el motivo del rechazo:');
+      return reason ? reason.trim() : '';
+    }
+    const result = await window.Swal.fire({
+      title: 'Motivo del rechazo',
+      input: 'textarea',
+      inputLabel: 'Escribe el motivo por el que se rechaza la factura',
+      inputPlaceholder: 'Ejemplo: El monto no coincide con la orden de compra.',
+      inputAttributes: { maxlength: 500 },
+      confirmButtonText: 'Rechazar factura',
+      showCancelButton: true,
+      cancelButtonText: 'Cancelar',
+      inputValidator: (value) => {
+        if (!String(value || '').trim()) return 'Debes indicar el motivo del rechazo.';
+        return null;
+      },
+    });
+    if (!result.isConfirmed) return '';
+    return String(result.value || '').trim();
+  }
+
   async function loadInbox(showMessage = true) {
-    const status = $('status-filter').value;
-    const query = status ? `&status=${status}` : '';
-    const rows = await request(`/purchase-inbox/?organization_id=${orgId()}${query}`);
+    const status = $('status-filter')?.value || '';
+    const query = status ? `&status=${encodeURIComponent(status)}` : '';
+    const rows = await request(`/purchase-inbox/?organization_id=${orgId()}&bucket=${pageMode}${query}`);
     currentRows = rows;
     $('inbox-body').innerHTML =
       rows
-        .map((i) => {
-          const currency = i.currency || 'CRC';
-          const detailButton = `<button class='btn btn-secondary' data-detail='${i.id}'>Ver detalles</button>`;
-          const actionButtons =
-            i.status === 'pending' || i.status === 'in_process'
-              ? `<button class='btn btn-secondary' data-approve='${i.id}'>Aprobar</button> <button class='btn btn-secondary' data-reject='${i.id}'>Rechazar</button> ${detailButton}`
-              : detailButton;
-          return `<tr><td>${i.issue_date}</td><td>${escapeHtml(i.supplier_name)}</td><td>${escapeHtml(i.invoice_number)}</td><td>${formatMoney(i.subtotal, currency)}</td><td>${formatMoney(i.tax_total, currency)}</td><td>${formatMoney(i.total, currency)}</td><td>${escapeHtml(i.status)}</td><td>${actionButtons}</td></tr>`;
+        .map((invoice) => {
+          const currency = invoice.currency || 'CRC';
+          const detailButton = `<button class='btn btn-secondary' data-detail='${invoice.id}'>Ver detalles</button>`;
+          let actionButtons = detailButton;
+          if (pageMode === 'inbox') {
+            actionButtons = `<button class='btn btn-secondary' data-approve='${invoice.id}'>Aprobar</button> <button class='btn btn-secondary' data-reject='${invoice.id}'>Rechazar</button> ${detailButton}`;
+          }
+          return `<tr><td>${invoice.issue_date}</td><td>${escapeHtml(invoice.supplier_name)}</td><td>${escapeHtml(invoice.invoice_number)}</td><td>${formatMoney(invoice.subtotal, currency)}</td><td>${formatMoney(invoice.tax_total, currency)}</td><td>${formatMoney(invoice.total, currency)}</td><td>${escapeHtml(statusText(invoice))}</td><td>${actionButtons}</td></tr>`;
         })
-        .join('') || '<tr><td colspan="8">Sin facturas electrónicas.</td></tr>';
+        .join('') ||
+      `<tr><td colspan="8">${pageMode === 'history' ? 'Sin facturas en histórico.' : 'Sin facturas electrónicas pendientes.'}</td></tr>`;
     if (showMessage) {
-      feedback(`Mostrando ${rows.length} factura(s) en bandeja.`);
+      feedback(
+        pageMode === 'history'
+          ? `Mostrando ${rows.length} factura(s) en histórico.`
+          : `Mostrando ${rows.length} factura(s) en bandeja.`
+      );
     }
   }
 
-  $('inbox-body').addEventListener('click', async (event) => {
-    const idApprove = event.target.dataset.approve;
-    const idReject = event.target.dataset.reject;
-    const idDetail = event.target.dataset.detail;
-    try {
-      if (idDetail) {
-        const invoice = currentRows.find((row) => String(row.id) === String(idDetail));
-        if (invoice) openModal(invoice);
-        return;
+  if ($('inbox-body')) {
+    $('inbox-body').addEventListener('click', async (event) => {
+      const idApprove = event.target.dataset.approve;
+      const idReject = event.target.dataset.reject;
+      const idDetail = event.target.dataset.detail;
+      try {
+        if (idDetail) {
+          const invoice = currentRows.find((row) => String(row.id) === String(idDetail));
+          if (invoice) openModal(invoice);
+          return;
+        }
+        if (idApprove) {
+          await request(`/purchase-inbox/${idApprove}/approve/`, { method: 'POST' });
+          showToast('Factura aprobada correctamente. Se movió al histórico.', false);
+        }
+        if (idReject) {
+          const reason = await askRejectReason();
+          if (!reason) return;
+          await request(`/purchase-inbox/${idReject}/reject/`, {
+            method: 'POST',
+            body: JSON.stringify({ reason }),
+          });
+          showToast('Factura rechazada correctamente. Se movió al histórico.', false);
+        }
+        await loadInbox(true);
+      } catch (error) {
+        feedback(error.message, true);
+        showToast('No se pudo completar la acción sobre la factura.', true);
       }
-      if (idApprove) {
-        await request(`/purchase-inbox/${idApprove}/approve/`, { method: 'POST' });
-        showToast('Factura aprobada correctamente.', false);
-      }
-      if (idReject) {
-        await request(`/purchase-inbox/${idReject}/reject/`, { method: 'POST' });
-        showToast('Factura rechazada correctamente.', false);
-      }
-      await loadInbox(true);
-    } catch (error) {
-      feedback(error.message, true);
-      showToast('No se pudo completar la acción sobre la factura.', true);
-    }
-  });
+    });
+  }
 
-  modalClose.addEventListener('click', closeModal);
-  modal.addEventListener('click', (event) => {
+  modalClose?.addEventListener('click', closeModal);
+  modal?.addEventListener('click', (event) => {
     if (event.target === modal) closeModal();
   });
 
-  $('organization-id').addEventListener('change', () => {
+  $('organization-id')?.addEventListener('change', () => {
     window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
     loadInbox(false).catch((e) => feedback(e.message, true));
   });
-  $('status-filter').addEventListener('change', () => loadInbox().catch((e) => feedback(e.message, true)));
-  syncDateFromInput.addEventListener('change', () => renderSyncRange(getSyncFilters().date_from, getSyncFilters().date_to));
-  syncDateToInput.addEventListener('change', () => renderSyncRange(getSyncFilters().date_from, getSyncFilters().date_to));
-  syncNowButton.addEventListener('click', () => syncInbox().catch((e) => {
-    feedback(e.message, true);
-    showToast('No se pudo iniciar la sincronización.', true);
-  }));
+  $('status-filter')?.addEventListener('change', () => loadInbox().catch((e) => feedback(e.message, true)));
+  syncDateFromInput?.addEventListener('change', () => renderSyncRange(getSyncFilters().date_from, getSyncFilters().date_to));
+  syncDateToInput?.addEventListener('change', () => renderSyncRange(getSyncFilters().date_from, getSyncFilters().date_to));
+  syncNowButton?.addEventListener('click', () =>
+    syncInbox().catch((e) => {
+      feedback(e.message, true);
+      showToast('No se pudo iniciar la sincronización.', true);
+    })
+  );
 
   renderOrganizations();
-  renderSyncRange(getSyncFilters().date_from, getSyncFilters().date_to);
+  if (pageMode === 'inbox') {
+    renderSyncRange(getSyncFilters().date_from, getSyncFilters().date_to);
+  }
   loadInbox(false).catch((e) => feedback(e.message, true));
 })();

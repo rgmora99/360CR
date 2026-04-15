@@ -3,68 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bandeja operativa | 360CR</title>
+    <title>Histórico de facturas | 360CR</title>
     <link rel="stylesheet" href="/assets/css/base.css" />
     <link rel="stylesheet" href="/assets/css/components.css" />
     <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
     <link rel="stylesheet" href="/assets/css/pages/customers.css" />
     <style>
-      .sync-progress {
-        display: none;
-        align-items: center;
-        gap: 12px;
-        margin-top: 12px;
-      }
-
-      .sync-progress.is-active {
-        display: flex;
-      }
-
-      .sync-spinner {
-        width: 18px;
-        height: 18px;
-        border: 2px solid rgba(255, 255, 255, 0.18);
-        border-top-color: #7aa2ff;
-        border-radius: 50%;
-        animation: spin 0.85s linear infinite;
-      }
-
-      .sync-stats {
-        display: flex;
-        gap: 14px;
-        flex-wrap: wrap;
-        font-size: 0.92rem;
-        color: var(--muted);
-      }
-
-      .sync-toast {
-        position: fixed;
-        right: 24px;
-        bottom: 24px;
-        min-width: 280px;
-        max-width: 420px;
-        padding: 14px 16px;
-        border-radius: 14px;
-        background: rgba(15, 23, 42, 0.96);
-        border: 1px solid rgba(122, 162, 255, 0.35);
-        color: #e8eefc;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
-        opacity: 0;
-        pointer-events: none;
-        transform: translateY(12px);
-        transition: opacity 0.2s ease, transform 0.2s ease;
-        z-index: 1000;
-      }
-
-      .sync-toast.is-visible {
-        opacity: 1;
-        transform: translateY(0);
-      }
-
-      .sync-toast.is-error {
-        border-color: rgba(255, 125, 125, 0.4);
-      }
-
       .invoice-modal {
         position: fixed;
         inset: 0;
@@ -158,23 +102,17 @@
           grid-template-columns: 1fr;
         }
       }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
     </style>
   </head>
   <body>
-    <div class="dashboard-layout" data-inbox-view="inbox">
+    <div class="dashboard-layout" data-inbox-view="history">
       <aside id="shared-sidebar"></aside>
       <section class="main-panel">
         <header id="shared-topbar"></header>
         <div class="page-wrap">
           <section class="module-header card">
-            <h1>Bandeja operativa de facturas electrónicas</h1>
-            <p class="subtitle">Gestiona únicamente las facturas pendientes. Las aprobadas o rechazadas pasan al histórico.</p>
+            <h1>Histórico de facturas electrónicas</h1>
+            <p class="subtitle">Consulta facturas ya procesadas, aprobadas o rechazadas, con su trazabilidad completa.</p>
           </section>
 
           <section class="card">
@@ -184,39 +122,12 @@
                 Estado
                 <select id="status-filter">
                   <option value="">Todos</option>
-                  <option value="pending">Pendiente</option>
-                  <option value="in_process">En registro</option>
+                  <option value="registered">Registrada</option>
+                  <option value="rejected">Rechazada</option>
                 </select>
               </label>
-              <label>
-                Fecha inicial
-                <input id="sync-date-from" type="date" value="2026-01-01" min="2026-01-01" max="2026-12-31" />
-              </label>
-              <label>
-                Fecha final
-                <input id="sync-date-to" type="date" value="2026-12-31" min="2026-01-01" max="2026-12-31" />
-              </label>
-              <label>
-                Correos por lote
-                <input id="sync-limit" type="number" value="150" min="1" max="500" step="1" />
-              </label>
               <div class="actions">
-                <button id="sync-now" class="btn btn-secondary" type="button">Sincronizar ahora</button>
-                <a class="btn btn-secondary" href="/historico-facturas.html">Ver histórico</a>
-                <small id="sync-meta" class="subtitle">Solo se sincroniza 2026 · Incluye correos leídos y no leídos · Requiere XML y valida comprobantes electrónicos</small>
-              </div>
-            </div>
-
-            <div id="sync-progress" class="sync-progress">
-              <span class="sync-spinner" aria-hidden="true"></span>
-              <div class="sync-stats">
-                <span id="sync-elapsed">0s</span>
-                <span id="sync-year">Año 2026</span>
-                <span id="sync-range">Rango 2026-01-01 a 2026-12-31</span>
-                <span id="sync-new-count">Nuevas: 0</span>
-                <span id="sync-processed-count">Procesadas: 0</span>
-                <span id="sync-scanned-count">Leídas: 0</span>
-                <span id="sync-skipped-count">Descartadas: 0</span>
+                <a class="btn btn-secondary" href="/bandeja-facturas.html">Ir a bandeja</a>
               </div>
             </div>
 
@@ -243,7 +154,6 @@
       </section>
     </div>
 
-    <div id="sync-toast" class="sync-toast" role="status" aria-live="polite"></div>
     <div id="invoice-modal" class="invoice-modal" aria-hidden="true">
       <div class="invoice-modal__panel">
         <div class="invoice-modal__header">
@@ -277,7 +187,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="/assets/js/navigation.js"></script>
     <script>
-      window.renderSharedNavigation({ activeModule: 'bandeja-facturas' });
+      window.renderSharedNavigation({ activeModule: 'historico-facturas' });
     </script>
     <script src="/assets/js/bandeja-facturas.js"></script>
   </body>

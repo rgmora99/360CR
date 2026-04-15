@@ -905,9 +905,24 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = PurchaseInboxInvoice.objects.select_related("purchase")
         queryset = self.scope_queryset(queryset)
+        bucket = self.request.query_params.get("bucket", "inbox")
         status_filter = self.request.query_params.get("status")
         if status_filter:
             queryset = queryset.filter(status=status_filter)
+        elif bucket == "history":
+            queryset = queryset.filter(
+                status__in=[
+                    PurchaseInboxInvoice.STATUS_REGISTERED,
+                    PurchaseInboxInvoice.STATUS_REJECTED,
+                ]
+            )
+        elif bucket == "inbox":
+            queryset = queryset.filter(
+                status__in=[
+                    PurchaseInboxInvoice.STATUS_PENDING,
+                    PurchaseInboxInvoice.STATUS_IN_PROCESS,
+                ]
+            )
         return queryset
 
     @action(detail=False, methods=["post"], url_path="sync")
@@ -1005,6 +1020,8 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         inbox = self.get_object()
         if inbox.status == PurchaseInboxInvoice.STATUS_REGISTERED:
             return Response({"detail": "La factura ya fue registrada."}, status=400)
+        if inbox.status == PurchaseInboxInvoice.STATUS_REJECTED:
+            return Response({"detail": "La factura fue rechazada y ya está en el histórico."}, status=400)
 
         payload = {
             "organization": inbox.organization_id,
@@ -1027,15 +1044,22 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         inbox.status = PurchaseInboxInvoice.STATUS_REGISTERED
         inbox.purchase = purchase
         inbox.processed_at = timezone.now()
-        inbox.save(update_fields=["status", "purchase", "processed_at"])
+        inbox.rejection_reason = ""
+        inbox.save(update_fields=["status", "purchase", "processed_at", "rejection_reason"])
         return Response(PurchaseInboxSerializer(inbox).data)
 
     @action(detail=True, methods=["post"], url_path="reject")
     def reject(self, request, pk=None):
         inbox = self.get_object()
+        if inbox.status == PurchaseInboxInvoice.STATUS_REGISTERED:
+            return Response({"detail": "La factura ya fue aprobada y movida al histórico."}, status=400)
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason:
+            return Response({"detail": "Debe indicar el motivo del rechazo."}, status=400)
         inbox.status = PurchaseInboxInvoice.STATUS_REJECTED
+        inbox.rejection_reason = reason
         inbox.processed_at = timezone.now()
-        inbox.save(update_fields=["status", "processed_at"])
+        inbox.save(update_fields=["status", "rejection_reason", "processed_at"])
         return Response(PurchaseInboxSerializer(inbox).data)
 
 

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Listado de compras | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
+    <link rel="stylesheet" href="/assets/css/pages/customers.css" />
+  </head>
+  <body>
+    <div class="dashboard-layout" data-purchases-view="list">
+      <aside id="shared-sidebar"></aside>
+      <section class="main-panel">
+        <header id="shared-topbar"></header>
+        <div class="page-wrap">
+          <section class="module-header card">
+            <div>
+              <h1>Listado de compras</h1>
+              <p class="subtitle">Revise las compras registradas por organización y consulte sus montos.</p>
+            </div>
+          </section>
+
+          <section class="card filters">
+            <label>Organización<select id="organization-id" required></select></label>
+            <button class="btn btn-primary" id="reload-purchases" type="button">Recargar</button>
+            <a class="btn btn-secondary" href="/compras.html">Registrar compra</a>
+          </section>
+
+          <section class="card">
+            <h2>Compras registradas</h2>
+            <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Subtotal</th><th>Impuesto</th><th>Total</th></tr></thead><tbody id="purchases-body"></tbody></table></div>
+            <p id="feedback" class="subtitle">Sin datos.</p>
+          </section>
+        </div>
+      </section>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="/assets/js/alerts.js"></script>
+    <script src="/assets/js/navigation.js"></script>
+    <script>window.renderSharedNavigation({ activeModule: 'compras-listado' });</script>
+    <script src="/assets/js/cedula-padron.js"></script>
+    <script src="/assets/js/compras.js"></script>
+  </body>
+</html>

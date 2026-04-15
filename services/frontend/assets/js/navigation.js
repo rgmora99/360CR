@@ -106,9 +106,17 @@
         children: [
           { key: 'facturacion-listado', label: 'Listado de facturas', href: '/facturas.html' },
           { key: 'facturacion-registrar', label: 'Registrar factura', href: '/facturacion.html' },
-          { key: 'compras', label: 'Compras', href: '/compras.html' },
-          { key: 'impuestos', label: 'Impuestos RTS', href: '/impuestos.html' },
+        ],
+      },
+      {
+        key: 'compras-menu',
+        label: 'Compras',
+        children: [
+          { key: 'compras-registrar', label: 'Registrar compra', href: '/compras.html' },
+          { key: 'compras-listado', label: 'Listado de compras', href: '/compras-listado.html' },
           { key: 'bandeja-facturas', label: 'Bandeja facturas', href: '/bandeja-facturas.html' },
+          { key: 'historico-facturas', label: 'Histórico facturas', href: '/historico-facturas.html' },
+          { key: 'impuestos', label: 'Impuestos RTS', href: '/impuestos.html' },
         ],
       },
       { key: 'inventario', label: 'Inventario', href: '/inventario.html' },
