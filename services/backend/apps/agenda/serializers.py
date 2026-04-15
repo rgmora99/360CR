@@ -45,6 +45,8 @@ class CollaboratorAvailabilitySerializer(serializers.ModelSerializer):
 class AgendaEventSerializer(serializers.ModelSerializer):
     collaborator_email = serializers.CharField(source="collaborator.email", read_only=True)
     service_name = serializers.CharField(source="service.name", read_only=True)
+    customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:
         model = AgendaEvent
@@ -57,6 +59,7 @@ class AgendaEventSerializer(serializers.ModelSerializer):
             "collaborator",
             "collaborator_email",
             "customer",
+            "customer_name",
             "supplier",
             "title",
             "description",
@@ -64,6 +67,7 @@ class AgendaEventSerializer(serializers.ModelSerializer):
             "ends_at",
             "all_day",
             "status",
+            "status_display",
             "priority",
             "reminder_minutes",
             "location",

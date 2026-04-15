@@ -29,6 +29,12 @@
 
         <form id="self-book-form" class="self-book-layout">
           <section class="self-book-panel">
+            <div id="booking-mode-banner" class="booking-mode-banner is-hidden">
+              <strong>Modo reprogramación activo</strong>
+              <span id="booking-mode-text">Estás moviendo una cita existente.</span>
+              <button id="cancel-editing" class="btn btn-secondary" type="button">Cancelar edición</button>
+            </div>
+
             <h2>Datos de la cita</h2>
             <p class="section-help">Primero selecciona el servicio, el colaborador y la fecha. Luego consulta los horarios disponibles.</p>
             <div class="self-book-grid">
@@ -52,7 +58,7 @@
 
           <section class="self-book-panel">
             <h2>Tus datos</h2>
-            <p class="section-help">Usamos tu cédula para buscarte o crear tu perfil rápidamente.</p>
+            <p class="section-help">Usamos tu cédula para buscarte o crear tu perfil rápidamente. También verás tu historial de citas.</p>
             <div class="self-book-grid self-book-grid--single">
               <label>Cédula cliente<input id="self-tax-id" required placeholder="Ej: 1-1234-5678" /></label>
               <label id="self-legal-name-wrap" class="is-hidden">Nombre completo<input id="self-legal-name" placeholder="Nombre legal" /></label>
@@ -71,10 +77,22 @@
             </div>
 
             <div class="self-book-actions">
-              <button class="btn btn-secondary" type="submit">Agendar cita</button>
+              <button id="submit-booking" class="btn btn-secondary" type="submit">Agendar cita</button>
             </div>
           </section>
         </form>
+
+        <section class="self-book-history">
+          <div class="history-header">
+            <div>
+              <h2>Mis citas</h2>
+              <p class="section-help">Consulta tus próximas citas y el historial para dar seguimiento o evaluar el servicio recibido.</p>
+            </div>
+          </div>
+          <div id="history-list" class="history-list">
+            <p class="slot-list__empty">Escribe tu cédula para ver tus citas programadas e historial.</p>
+          </div>
+        </section>
 
         <section class="self-book-status">
           <h2>Estado de la reserva</h2>

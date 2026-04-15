@@ -8,6 +8,11 @@
   const slotList = $('self-slot-list');
   const scheduleHint = $('self-schedule-hint');
   const summaryContent = $('booking-summary-content');
+  const historyList = $('history-list');
+  const bookingModeBanner = $('booking-mode-banner');
+  const bookingModeText = $('booking-mode-text');
+  const cancelEditingButton = $('cancel-editing');
+  const submitBookingButton = $('submit-booking');
 
   const selfBook = {
     service: $('self-service'),
@@ -33,6 +38,8 @@
   let servicesById = new Map();
   let collaboratorsById = new Map();
   let availableSlots = [];
+  let appointmentHistory = [];
+  let editingAppointment = null;
   let padronTypingTimer = null;
 
   function getApiBase() {
@@ -131,28 +138,6 @@
     }
   }
 
-  function calculateEndTime() {
-    const selectedSlot = availableSlots.find((slot) => slot.start_time === selfBook.start.value);
-    if (selectedSlot) {
-      selfBook.end.value = selectedSlot.end_time;
-      return;
-    }
-
-    const serviceId = Number(selfBook.service.value);
-    const service = servicesById.get(serviceId);
-    if (!selfBook.start.value || !service?.service_duration_minutes) {
-      selfBook.end.value = '';
-      return;
-    }
-
-    const [hours, minutes] = selfBook.start.value.split(':').map((part) => Number(part));
-    const startMinutes = hours * 60 + minutes;
-    const endMinutes = startMinutes + Number(service.service_duration_minutes);
-    const endHours = Math.floor((endMinutes % (24 * 60)) / 60);
-    const endMins = endMinutes % 60;
-    selfBook.end.value = `${String(endHours).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
-  }
-
   function setExtraFieldsVisible(isVisible) {
     Object.values(customerExtraFields).forEach((node) => {
       node.classList.toggle('is-hidden', !isVisible);
@@ -181,6 +166,39 @@
     return `${day}/${month}/${year}`;
   }
 
+  function formatDateInput(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatTimeInput(date) {
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  }
+
+  function formatDateTime(value) {
+    return new Date(value).toLocaleString('es-CR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  }
+
+  function statusClass(status) {
+    if (status === 'done') return 'is-done';
+    if (status === 'cancelled') return 'is-cancelled';
+    return 'is-pending';
+  }
+
+  function updateBookingModeUi() {
+    const isEditing = Boolean(editingAppointment);
+    bookingModeBanner.classList.toggle('is-hidden', !isEditing);
+    submitBookingButton.textContent = isEditing ? 'Guardar cambios de la cita' : 'Agendar cita';
+    if (isEditing && editingAppointment) {
+      bookingModeText.textContent = `Estás moviendo la cita de ${formatDateTime(editingAppointment.starts_at)}.`;
+    }
+  }
+
   function renderSummary() {
     const service = servicesById.get(Number(selfBook.service.value));
     const collaborator = collaboratorsById.get(Number(selfBook.collaborator.value));
@@ -190,6 +208,18 @@
       <span>Fecha</span><strong>${formatDateOnly(selfBook.date.value)}</strong>
       <span>Hora</span><strong>${selfBook.start.value ? `${selfBook.start.value} - ${selfBook.end.value}` : 'Pendiente'}</strong>
     `;
+  }
+
+  function clearBookingSelection() {
+    selfBook.service.value = '';
+    selfBook.collaborator.value = '';
+    selfBook.date.value = '';
+    selfBook.start.value = '';
+    selfBook.end.value = '';
+    availableSlots = [];
+    slotList.innerHTML = '<p class="slot-list__empty">Todavía no has consultado horarios.</p>';
+    scheduleHint.textContent = 'Selecciona servicio, colaborador y fecha para cargar los espacios.';
+    renderSummary();
   }
 
   function resetAvailableSlots(message = 'Sin consulta.') {
@@ -207,6 +237,28 @@
     return normalized.includes('ya existe una cita') || normalized.includes('se cruza con ese horario');
   }
 
+  function calculateEndTime() {
+    const selectedSlot = availableSlots.find((slot) => slot.start_time === selfBook.start.value);
+    if (selectedSlot) {
+      selfBook.end.value = selectedSlot.end_time;
+      return;
+    }
+
+    const serviceId = Number(selfBook.service.value);
+    const service = servicesById.get(serviceId);
+    if (!selfBook.start.value || !service?.service_duration_minutes) {
+      selfBook.end.value = '';
+      return;
+    }
+
+    const [hours, minutes] = selfBook.start.value.split(':').map((part) => Number(part));
+    const startMinutes = hours * 60 + minutes;
+    const endMinutes = startMinutes + Number(service.service_duration_minutes);
+    const endHours = Math.floor((endMinutes % (24 * 60)) / 60);
+    const endMins = endMinutes % 60;
+    selfBook.end.value = `${String(endHours).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
+  }
+
   function selectSlot(startTime) {
     selfBook.start.value = startTime;
     calculateEndTime();
@@ -214,6 +266,55 @@
       button.classList.toggle('is-selected', button.dataset.startTime === startTime);
     });
     renderSummary();
+  }
+
+  function renderHistory() {
+    if (!appointmentHistory.length) {
+      historyList.innerHTML = '<p class="slot-list__empty">No hay citas registradas para esta cédula.</p>';
+      return;
+    }
+
+    historyList.innerHTML = appointmentHistory
+      .map(
+        (appointment) => `
+          <article class="history-card">
+            <div class="history-card__head">
+              <div>
+                <h3 class="history-card__title">${appointment.service_name || appointment.title}</h3>
+                <span class="status-pill ${statusClass(appointment.status)}">${appointment.status_display || appointment.status}</span>
+              </div>
+            </div>
+            <div class="history-card__meta">
+              <div><span>Fecha</span><strong>${formatDateTime(appointment.starts_at)}</strong></div>
+              <div><span>Fin</span><strong>${formatDateTime(appointment.ends_at)}</strong></div>
+              <div><span>Colaborador</span><strong>${appointment.collaborator_email || 'Sin asignar'}</strong></div>
+              <div><span>Estado</span><strong>${appointment.is_upcoming ? 'Próxima cita' : 'Histórico'}</strong></div>
+            </div>
+            <div class="history-card__actions">
+              ${appointment.can_reschedule ? `<button class="btn btn-secondary" type="button" data-action="reschedule" data-id="${appointment.id}">Mover cita</button>` : ''}
+              ${appointment.can_cancel ? `<button class="btn btn-secondary" type="button" data-action="cancel" data-id="${appointment.id}">Cancelar cita</button>` : ''}
+            </div>
+          </article>
+        `
+      )
+      .join('');
+  }
+
+  async function loadCustomerHistory(taxId) {
+    const cleanTaxId = String(taxId || '').trim();
+    if (!cleanTaxId) {
+      appointmentHistory = [];
+      renderHistory();
+      return;
+    }
+
+    const params = new URLSearchParams({
+      organization_id: String(organizationId),
+      tax_id: cleanTaxId,
+    });
+    const payload = await request(`${getApiBase()}/agenda-events/self-book-history/?${params.toString()}`);
+    appointmentHistory = Array.isArray(payload.appointments) ? payload.appointments : [];
+    renderHistory();
   }
 
   function renderAvailableSlots(result) {
@@ -243,7 +344,7 @@
         (slot) => `
           <button type="button" class="slot-chip" data-start-time="${slot.start_time}">
             <strong>${slot.start_time} - ${slot.end_time}</strong>
-            <span>Disponible</span>
+            <span>${editingAppointment ? 'Disponible para reprogramar' : 'Disponible'}</span>
           </button>
         `
       )
@@ -269,6 +370,8 @@
     if (!taxId) {
       selectedCustomer = null;
       setExtraFieldsVisible(false);
+      appointmentHistory = [];
+      renderHistory();
       return;
     }
 
@@ -278,13 +381,16 @@
     if (result.notFound) {
       selectedCustomer = null;
       setExtraFieldsVisible(true);
+      appointmentHistory = [];
+      renderHistory();
       setStatusMessage('No encontramos esta cédula. Completa los datos para crear tu perfil cliente.', 'is-warning');
       return;
     }
 
     selectedCustomer = result.payload.customer;
     setExtraFieldsVisible(false);
-    setStatusMessage(`Cliente identificado: ${selectedCustomer.legal_name}.`, 'is-success');
+    await loadCustomerHistory(taxId);
+    setStatusMessage(`Cliente identificado: ${selectedCustomer.legal_name}. Revisa abajo tus citas programadas e historial.`, 'is-success');
   }
 
   async function syncCustomerFromPadron() {
@@ -341,6 +447,7 @@
     });
 
     selectedCustomer = response.customer;
+    await loadCustomerHistory(taxId);
     return selectedCustomer;
   }
 
@@ -356,6 +463,9 @@
         service_id: selfBook.service.value,
         date: selfBook.date.value,
       });
+      if (editingAppointment?.id) {
+        params.set('exclude_event_id', String(editingAppointment.id));
+      }
 
       const result = await request(`${getApiBase()}/agenda-events/availability/?${params.toString()}`);
       renderAvailableSlots(result);
@@ -371,6 +481,51 @@
       resetAvailableSlots('Sin consulta.');
       notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo consultar disponibilidad').catch(() => null);
     }
+  }
+
+  async function beginReschedule(appointmentId) {
+    const appointment = appointmentHistory.find((item) => String(item.id) === String(appointmentId));
+    if (!appointment) return;
+
+    editingAppointment = appointment;
+    updateBookingModeUi();
+
+    const startsAt = new Date(appointment.starts_at);
+    selfBook.service.value = String(appointment.service || '');
+    selfBook.collaborator.value = String(appointment.collaborator || '');
+    selfBook.date.value = formatDateInput(startsAt);
+    selfBook.start.value = formatTimeInput(startsAt);
+    calculateEndTime();
+    renderSummary();
+    await checkAvailability();
+    if (selfBook.start.value) {
+      selectSlot(selfBook.start.value);
+    }
+    setStatusMessage('Elige un nuevo horario y guarda los cambios de la cita.', 'is-warning');
+  }
+
+  function cancelEditingMode() {
+    editingAppointment = null;
+    updateBookingModeUi();
+    clearBookingSelection();
+    setStatusMessage('Modo reprogramación cancelado.', 'is-success');
+  }
+
+  async function cancelAppointment(appointmentId) {
+    if (!selectedCustomer?.tax_id) return;
+    await request(`${getApiBase()}/agenda-events/self-book-cancel/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        organization_id: organizationId,
+        tax_id: selectedCustomer.tax_id,
+        event_id: Number(appointmentId),
+      }),
+    });
+    if (editingAppointment && String(editingAppointment.id) === String(appointmentId)) {
+      cancelEditingMode();
+    }
+    await loadCustomerHistory(selectedCustomer.tax_id);
+    setStatusMessage('La cita fue cancelada correctamente.', 'is-success');
   }
 
   selfBookForm.addEventListener('submit', async (event) => {
@@ -396,16 +551,32 @@
 
       validatePayload(payload);
 
+      if (editingAppointment) {
+        await request(`${getApiBase()}/agenda-events/self-book-reschedule/`, {
+          method: 'POST',
+          body: JSON.stringify({
+            organization_id: organizationId,
+            tax_id: customer.tax_id,
+            event_id: editingAppointment.id,
+            service: payload.service,
+            collaborator: payload.collaborator,
+            starts_at: payload.starts_at,
+          }),
+        });
+        await loadCustomerHistory(customer.tax_id);
+        cancelEditingMode();
+        await notifyUser(`La cita de ${customer.legal_name} fue reprogramada correctamente.`, 'success', 'Cita actualizada');
+        return;
+      }
+
       await request(`${getApiBase()}/agenda-events/self-book/`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
 
+      await loadCustomerHistory(customer.tax_id);
+      clearBookingSelection();
       await notifyUser(`Tu cita fue agendada correctamente para ${customer.legal_name}.`, 'success', 'Cita agendada');
-      selfBookForm.reset();
-      selectedCustomer = null;
-      setExtraFieldsVisible(false);
-      resetAvailableSlots('Sin consulta.');
     } catch (error) {
       const message = normalizeErrorMessage(error);
       if (isConflictErrorMessage(message)) {
@@ -417,7 +588,7 @@
         );
         return;
       }
-      await notifyUser(message, 'error', 'No se pudo agendar la cita');
+      await notifyUser(message, 'error', editingAppointment ? 'No se pudo mover la cita' : 'No se pudo agendar la cita');
     }
   });
 
@@ -431,6 +602,8 @@
 
   selfBook.taxId.addEventListener('input', () => {
     selectedCustomer = null;
+    appointmentHistory = [];
+    renderHistory();
     if (padronTypingTimer) clearTimeout(padronTypingTimer);
     padronTypingTimer = setTimeout(() => {
       resolveCustomerByTaxId()
@@ -458,18 +631,52 @@
     selectSlot(button.dataset.startTime);
   });
 
+  historyList.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-action]');
+    if (!button) return;
+    const action = button.dataset.action;
+    const id = button.dataset.id;
+    if (action === 'reschedule') {
+      await beginReschedule(id);
+      return;
+    }
+    if (action === 'cancel') {
+      let confirmed = true;
+      if (window.Swal) {
+        const result = await window.Swal.fire({
+          title: '¿Cancelar cita?',
+          text: 'Esta acción liberará el espacio para otros clientes.',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Sí, cancelar',
+          cancelButtonText: 'No',
+        });
+        confirmed = result.isConfirmed;
+      }
+      if (!confirmed) return;
+      try {
+        await cancelAppointment(id);
+      } catch (error) {
+        await notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo cancelar la cita');
+      }
+    }
+  });
+
+  cancelEditingButton.addEventListener('click', cancelEditingMode);
   checkAvailabilityButton.addEventListener('click', checkAvailability);
 
   try {
     organizationId = getOrganizationIdFromUrl();
     setExtraFieldsVisible(false);
+    updateBookingModeUi();
     resetAvailableSlots('Selecciona servicio, colaborador y fecha para consultar horarios.');
+    renderHistory();
     loadPublicContext().catch((error) => {
       setStatusMessage(`No se pudo cargar el portal: ${normalizeErrorMessage(error)}`, 'is-error');
     });
   } catch (error) {
     setStatusMessage(error.message, 'is-error');
     checkAvailabilityButton.disabled = true;
-    selfBookForm.querySelector('button[type="submit"]').disabled = true;
+    submitBookingButton.disabled = true;
   }
 })();

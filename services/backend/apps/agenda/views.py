@@ -105,7 +105,15 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        if self.action in {"availability", "self_book", "self_book_context", "self_book_customer"}:
+        if self.action in {
+            "availability",
+            "self_book",
+            "self_book_context",
+            "self_book_customer",
+            "self_book_history",
+            "self_book_cancel",
+            "self_book_reschedule",
+        }:
             return [AllowAny()]
         return [permission() for permission in self.permission_classes]
 
@@ -149,6 +157,44 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
         return self.scope_queryset(queryset)
 
+    def _get_public_customer(self, organization_id, tax_id):
+        if not organization_id:
+            raise ValueError("organization_id es requerido")
+        if not tax_id:
+            raise ValueError("tax_id es requerido")
+        try:
+            organization_id_int = int(organization_id)
+        except (TypeError, ValueError):
+            raise LookupError("organization_id inválido")
+
+        organization = Organization.objects.filter(id=organization_id_int).first()
+        if not organization:
+            raise LookupError("organization_id inválido")
+
+        customer = Customer.objects.filter(organization=organization, tax_id=tax_id).first()
+        return organization, customer
+
+    def _serialize_public_history(self, queryset):
+        now = timezone.now()
+        serializer = self.get_serializer(queryset, many=True)
+        items = []
+        for item in serializer.data:
+            starts_at = parse_datetime(item.get("starts_at"))
+            can_manage = bool(
+                starts_at
+                and starts_at >= now
+                and item.get("status") == AgendaEvent.STATUS_PENDING
+            )
+            items.append(
+                {
+                    **item,
+                    "is_upcoming": bool(starts_at and starts_at >= now),
+                    "can_cancel": can_manage,
+                    "can_reschedule": can_manage,
+                }
+            )
+        return items
+
     @action(detail=False, methods=["get"], url_path="collaborators")
     def collaborators(self, request):
         organization_id = request.query_params.get("organization_id")
@@ -170,6 +216,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         collaborator_id = request.query_params.get("collaborator_id")
         date_value = request.query_params.get("date")
         service_id = request.query_params.get("service_id")
+        exclude_event_id = request.query_params.get("exclude_event_id")
 
         if not organization_id or not collaborator_id or not date_value:
             return Response({"detail": "organization_id, collaborator_id y date son requeridos."}, status=400)
@@ -212,6 +259,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                 starts_at__lt=end_of_day,
                 ends_at__gt=start_of_day,
             )
+            .exclude(id=exclude_event_id) 
             .exclude(status=AgendaEvent.STATUS_CANCELLED)
             .order_by("starts_at")
             .values("starts_at", "ends_at", "title", "service_id")
@@ -474,6 +522,161 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                 },
             },
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=["get"], url_path="self-book-history")
+    def self_book_history(self, request):
+        organization_id = request.query_params.get("organization_id")
+        tax_id = (request.query_params.get("tax_id") or "").strip()
+
+        try:
+            organization, customer = self._get_public_customer(organization_id, tax_id)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        except LookupError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        if not customer:
+            return Response({"customer": None, "appointments": []})
+
+        appointments = (
+            AgendaEvent.objects.select_related("service", "collaborator", "customer")
+            .filter(organization=organization, customer=customer)
+            .order_by("-starts_at", "-id")
+        )
+        return Response(
+            {
+                "customer": {
+                    "id": customer.id,
+                    "legal_name": customer.legal_name,
+                    "tax_id": customer.tax_id,
+                    "email": customer.email,
+                    "phone": customer.phone,
+                },
+                "appointments": self._serialize_public_history(appointments),
+            }
+        )
+
+    @action(detail=False, methods=["post"], url_path="self-book-cancel")
+    def self_book_cancel(self, request):
+        organization_id = request.data.get("organization_id")
+        tax_id = (request.data.get("tax_id") or "").strip()
+        event_id = request.data.get("event_id")
+
+        try:
+            organization, customer = self._get_public_customer(organization_id, tax_id)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        except LookupError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        if not customer:
+            return Response({"detail": "Cliente no encontrado."}, status=404)
+
+        try:
+            appointment = AgendaEvent.objects.select_related("service", "collaborator", "customer").get(
+                id=int(event_id),
+                organization=organization,
+                customer=customer,
+            )
+        except (TypeError, ValueError, AgendaEvent.DoesNotExist):
+            return Response({"detail": "La cita indicada no existe."}, status=404)
+
+        if appointment.status == AgendaEvent.STATUS_CANCELLED:
+            return Response({"detail": "La cita ya estaba cancelada."}, status=400)
+        if appointment.starts_at < timezone.now():
+            return Response({"detail": "Solo puedes cancelar citas futuras."}, status=400)
+
+        appointment.status = AgendaEvent.STATUS_CANCELLED
+        appointment.save(update_fields=["status", "updated_at"])
+        return Response(
+            {
+                "detail": "Cita cancelada correctamente.",
+                "appointment": self.get_serializer(appointment).data,
+            }
+        )
+
+    @action(detail=False, methods=["post"], url_path="self-book-reschedule")
+    def self_book_reschedule(self, request):
+        organization_id = request.data.get("organization_id")
+        tax_id = (request.data.get("tax_id") or "").strip()
+        event_id = request.data.get("event_id")
+        starts_at_raw = str(request.data.get("starts_at") or "")
+        service_id = request.data.get("service")
+        collaborator_id = request.data.get("collaborator")
+
+        try:
+            organization, customer = self._get_public_customer(organization_id, tax_id)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        except LookupError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        if not customer:
+            return Response({"detail": "Cliente no encontrado."}, status=404)
+
+        try:
+            appointment = AgendaEvent.objects.select_related("service", "collaborator", "customer").get(
+                id=int(event_id),
+                organization=organization,
+                customer=customer,
+            )
+        except (TypeError, ValueError, AgendaEvent.DoesNotExist):
+            return Response({"detail": "La cita indicada no existe."}, status=404)
+
+        if appointment.status == AgendaEvent.STATUS_CANCELLED:
+            return Response({"detail": "No se puede mover una cita cancelada."}, status=400)
+        if appointment.starts_at < timezone.now():
+            return Response({"detail": "Solo puedes mover citas futuras."}, status=400)
+
+        starts_at = parse_datetime(starts_at_raw)
+        if not starts_at:
+            return Response({"detail": "starts_at inválido."}, status=400)
+
+        service = appointment.service
+        if service_id:
+            try:
+                service = Product.objects.get(
+                    id=int(service_id),
+                    organization=organization,
+                    product_type=Product.TYPE_SERVICE,
+                    is_active=True,
+                )
+            except (TypeError, ValueError, Product.DoesNotExist):
+                return Response({"detail": "El servicio seleccionado no existe para esta organización."}, status=400)
+        if not service:
+            return Response({"detail": "La cita no tiene un servicio asociado."}, status=400)
+
+        collaborator = appointment.collaborator
+        if collaborator_id:
+            try:
+                collaborator = User.objects.get(id=int(collaborator_id))
+            except (TypeError, ValueError, User.DoesNotExist):
+                return Response({"detail": "El colaborador indicado no existe."}, status=400)
+            if not Membership.objects.filter(user_id=collaborator.id, organization_id=organization.id).exists():
+                return Response({"detail": "El colaborador no pertenece a esta organización."}, status=400)
+
+        duration_minutes = int(service.service_duration_minutes or 0)
+        if duration_minutes <= 0:
+            duration_minutes = 30
+        ends_at = starts_at + timedelta(minutes=duration_minutes)
+
+        appointment.service = service
+        appointment.collaborator = collaborator
+        appointment.starts_at = starts_at
+        appointment.ends_at = ends_at
+        appointment.status = AgendaEvent.STATUS_PENDING
+        try:
+            appointment.save()
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
+            return Response(detail, status=400)
+
+        return Response(
+            {
+                "detail": "Cita reprogramada correctamente.",
+                "appointment": self.get_serializer(appointment).data,
+            }
         )
 
     def perform_create(self, serializer):

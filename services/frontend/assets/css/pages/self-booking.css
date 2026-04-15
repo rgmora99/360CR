@@ -49,7 +49,8 @@
 }
 
 .self-book-panel,
-.self-book-status {
+.self-book-status,
+.self-book-history {
   padding: 1rem;
   border-radius: 18px;
   background: rgba(13, 22, 41, 0.72);
@@ -57,7 +58,8 @@
 }
 
 .self-book-panel h2,
-.self-book-status h2 {
+.self-book-status h2,
+.self-book-history h2 {
   margin: 0 0 0.35rem;
   font-size: 1.2rem;
 }
@@ -66,6 +68,24 @@
   margin: 0 0 1rem;
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.booking-mode-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  background: rgba(92, 160, 255, 0.14);
+  border: 1px solid rgba(92, 160, 255, 0.28);
+}
+
+.booking-mode-banner strong,
+.booking-mode-banner span {
+  display: block;
 }
 
 .self-book-grid {
@@ -192,6 +212,87 @@ select {
   width: 100%;
 }
 
+.history-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.history-list {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.history-card {
+  padding: 1rem;
+  border-radius: 16px;
+  background: rgba(10, 18, 34, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.history-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.history-card__title {
+  margin: 0;
+}
+
+.history-card__meta {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.history-card__meta span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.history-card__meta strong {
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.history-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.status-pill.is-pending {
+  border-color: rgba(255, 206, 86, 0.24);
+  color: #ffd783;
+}
+
+.status-pill.is-done {
+  border-color: rgba(122, 247, 215, 0.22);
+  color: #8cf0db;
+}
+
+.status-pill.is-cancelled {
+  border-color: rgba(255, 107, 107, 0.22);
+  color: #ffaaaa;
+}
+
 .availability-result {
   margin: 0;
   padding: 1rem;
@@ -223,7 +324,8 @@ select {
 @media (max-width: 900px) {
   .self-book-hero,
   .self-book-layout,
-  .self-book-grid {
+  .self-book-grid,
+  .history-card__meta {
     grid-template-columns: 1fr;
   }
 
