@@ -21,6 +21,33 @@ from apps.tenants.models import Membership, Organization
 User = get_user_model()
 
 
+def _build_available_slots(day, availability, occupied_events, duration_minutes, tz):
+    if not availability or not availability.is_active or duration_minutes <= 0:
+        return []
+
+    schedule_start = timezone.make_aware(datetime.combine(day, availability.start_time), tz)
+    schedule_end = timezone.make_aware(datetime.combine(day, availability.end_time), tz)
+    step = timedelta(minutes=duration_minutes)
+    current_start = schedule_start
+    slots = []
+
+    while current_start + step <= schedule_end:
+        current_end = current_start + step
+        has_conflict = any(item["starts_at"] < current_end and item["ends_at"] > current_start for item in occupied_events)
+        if not has_conflict:
+            slots.append(
+                {
+                    "start_time": current_start.strftime("%H:%M"),
+                    "end_time": current_end.strftime("%H:%M"),
+                    "starts_at": current_start.isoformat(),
+                    "ends_at": current_end.isoformat(),
+                }
+            )
+        current_start += step
+
+    return slots
+
+
 class AgendaEventTypeViewSet(viewsets.ModelViewSet):
     queryset = AgendaEventType.objects.all()
     serializer_class = AgendaEventTypeSerializer
@@ -115,6 +142,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         organization_id = request.query_params.get("organization_id")
         collaborator_id = request.query_params.get("collaborator_id")
         date_value = request.query_params.get("date")
+        service_id = request.query_params.get("service_id")
 
         if not organization_id or not collaborator_id or not date_value:
             return Response({"detail": "organization_id, collaborator_id y date son requeridos."}, status=400)
@@ -128,6 +156,22 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         day = parse_date(date_value)
         if not day:
             return Response({"detail": "date inválida. Use formato YYYY-MM-DD."}, status=400)
+
+        service = None
+        duration_minutes = 0
+        if service_id:
+            try:
+                service = Product.objects.get(
+                    id=int(service_id),
+                    organization=organization,
+                    product_type=Product.TYPE_SERVICE,
+                    is_active=True,
+                )
+            except (TypeError, ValueError, Product.DoesNotExist):
+                return Response({"detail": "El servicio seleccionado no existe para esta organización."}, status=400)
+            duration_minutes = int(service.service_duration_minutes or 0)
+            if duration_minutes <= 0:
+                duration_minutes = 30
 
         tz = timezone.get_current_timezone()
         start_of_day = timezone.make_aware(datetime.combine(day, datetime.min.time()), tz)
@@ -145,6 +189,15 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             .values("starts_at", "ends_at", "title", "service_id")
         )
 
+        occupied_events = [
+            {
+                "starts_at": item["starts_at"],
+                "ends_at": item["ends_at"],
+                "title": item["title"],
+                "service_id": item["service_id"],
+            }
+            for item in events
+        ]
         occupied = [
             {
                 "starts_at": item["starts_at"].isoformat(),
@@ -152,7 +205,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                 "title": item["title"],
                 "service_id": item["service_id"],
             }
-            for item in events
+            for item in occupied_events
         ]
         weekday = agenda_weekday_for_date(day)
         availability = CollaboratorAvailability.objects.filter(
@@ -204,6 +257,8 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             slot_is_available = False
             slot_message = "El colaborador no tiene horario configurado para ese día."
 
+        available_slots = _build_available_slots(day, availability, occupied_events, duration_minutes, tz)
+
         return Response(
             {
                 "organization": organization.id,
@@ -220,6 +275,16 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                     if availability
                     else None
                 ),
+                "service": (
+                    {
+                        "id": service.id,
+                        "name": service.name,
+                        "duration_minutes": duration_minutes,
+                    }
+                    if service
+                    else None
+                ),
+                "available_slots": available_slots,
                 "slot_available": slot_is_available,
                 "slot_message": slot_message,
             }

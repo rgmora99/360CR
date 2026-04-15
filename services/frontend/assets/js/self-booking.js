@@ -28,6 +28,7 @@
   let eventTypeId = null;
   let selectedCustomer = null;
   let servicesById = new Map();
+  let availableSlots = [];
   let padronTypingTimer = null;
 
   function getApiBase() {
@@ -113,6 +114,12 @@
   }
 
   function calculateEndTime() {
+    const selectedSlot = availableSlots.find((slot) => slot.start_time === selfBook.start.value);
+    if (selectedSlot) {
+      selfBook.end.value = selectedSlot.end_time;
+      return;
+    }
+
     const serviceId = Number(selfBook.service.value);
     const service = servicesById.get(serviceId);
     if (!selfBook.start.value || !service?.service_duration_minutes) {
@@ -146,6 +153,35 @@
     } catch (_error) {
       return error.message;
     }
+  }
+
+  function resetAvailableSlots(message = 'Sin consulta.') {
+    availableSlots = [];
+    selfBook.start.innerHTML = '<option value="">Primero consulta disponibilidad</option>';
+    selfBook.start.disabled = true;
+    selfBook.end.value = '';
+    availabilityResult.textContent = message;
+  }
+
+  function renderAvailableSlots(result) {
+    availableSlots = Array.isArray(result.available_slots) ? result.available_slots : [];
+    if (!availableSlots.length) {
+      selfBook.start.innerHTML = '<option value="">No hay horas disponibles</option>';
+      selfBook.start.disabled = true;
+      selfBook.end.value = '';
+      availabilityResult.textContent = result.schedule
+        ? `No hay espacios disponibles. Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.`
+        : 'El colaborador no tiene horario configurado para ese día.';
+      return;
+    }
+
+    selfBook.start.innerHTML = ['<option value="">Seleccione una hora</option>']
+      .concat(availableSlots.map((slot) => `<option value="${slot.start_time}">${slot.start_time} - ${slot.end_time}</option>`))
+      .join('');
+    selfBook.start.disabled = false;
+    availabilityResult.textContent =
+      `Horas disponibles (${availableSlots.length}):\n` +
+      availableSlots.map((slot) => `${slot.start_time} - ${slot.end_time}`).join('\n');
   }
 
   async function loadPublicContext() {
@@ -240,37 +276,21 @@
 
   async function checkAvailability() {
     try {
-      if (!selfBook.date.value || !selfBook.collaborator.value) {
-        throw new Error('Selecciona fecha y colaborador para consultar disponibilidad.');
-      }
-      if (!selfBook.start.value || !selfBook.end.value) {
-        throw new Error('Selecciona una hora de inicio válida para calcular la duración del servicio.');
+      if (!selfBook.date.value || !selfBook.collaborator.value || !selfBook.service.value) {
+        throw new Error('Selecciona servicio, fecha y colaborador para consultar disponibilidad.');
       }
 
       const params = new URLSearchParams({
         organization_id: String(organizationId),
         collaborator_id: selfBook.collaborator.value,
+        service_id: selfBook.service.value,
         date: selfBook.date.value,
-        start_time: selfBook.start.value,
-        end_time: selfBook.end.value,
       });
 
       const result = await request(`${getApiBase()}/agenda-events/availability/?${params.toString()}`);
-      if (result.slot_available === false) {
-        await notifyUser(result.slot_message || 'Ese horario no está disponible.', 'warning', 'Horario no disponible');
-        return;
-      }
-      if (!result.occupied.length) {
-        availabilityResult.textContent = result.schedule
-          ? `Disponible. Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.`
-          : 'Disponible para ese colaborador.';
-        return;
-      }
-
-      availabilityResult.textContent = result.occupied
-        .map((item) => `${formatDate(item.starts_at)} - ${formatDate(item.ends_at)} | ${item.title}`)
-        .join('\n');
+      renderAvailableSlots(result);
     } catch (error) {
+      resetAvailableSlots('Sin consulta.');
       notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo consultar disponibilidad').catch(() => null);
     }
   }
@@ -280,6 +300,9 @@
 
     try {
       const customer = await ensureCustomer();
+      if (!selfBook.start.value) {
+        throw new Error('Selecciona una hora disponible antes de agendar la cita.');
+      }
       const payload = {
         organization: organizationId,
         event_type: eventTypeId,
@@ -304,6 +327,7 @@
       selfBookForm.reset();
       selectedCustomer = null;
       setExtraFieldsVisible(false);
+      resetAvailableSlots('Sin consulta.');
     } catch (error) {
       await notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo agendar la cita');
     }
@@ -326,14 +350,18 @@
         .catch(() => null);
     }, 250);
   });
-  selfBook.service.addEventListener('change', calculateEndTime);
-  selfBook.start.addEventListener('input', calculateEndTime);
+
+  selfBook.service.addEventListener('change', () => resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horas disponibles.'));
+  selfBook.collaborator.addEventListener('change', () => resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horas disponibles.'));
+  selfBook.date.addEventListener('change', () => resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horas disponibles.'));
+  selfBook.start.addEventListener('change', calculateEndTime);
 
   checkAvailabilityButton.addEventListener('click', checkAvailability);
 
   try {
     organizationId = getOrganizationIdFromUrl();
     setExtraFieldsVisible(false);
+    resetAvailableSlots('Selecciona servicio, colaborador y fecha para consultar horarios.');
     loadPublicContext().catch((error) => {
       availabilityResult.textContent = `No se pudo cargar el portal: ${normalizeErrorMessage(error)}`;
     });
