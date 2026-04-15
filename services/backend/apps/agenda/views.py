@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -314,7 +315,11 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
         serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
-        serializer.save(status=AgendaEvent.STATUS_PENDING)
+        try:
+            serializer.save(status=AgendaEvent.STATUS_PENDING)
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
+            return Response(detail, status=400)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], url_path="self-book-context")

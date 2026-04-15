@@ -5,6 +5,9 @@
   const selfBookForm = $('self-book-form');
   const availabilityResult = $('availability-result');
   const checkAvailabilityButton = $('check-availability');
+  const slotList = $('self-slot-list');
+  const scheduleHint = $('self-schedule-hint');
+  const summaryContent = $('booking-summary-content');
 
   const selfBook = {
     service: $('self-service'),
@@ -28,6 +31,7 @@
   let eventTypeId = null;
   let selectedCustomer = null;
   let servicesById = new Map();
+  let collaboratorsById = new Map();
   let availableSlots = [];
   let padronTypingTimer = null;
 
@@ -106,8 +110,22 @@
     }
   }
 
-  async function notifyUser(message, type = 'info', title = '') {
+  function setStatusMessage(message, variant = '') {
     availabilityResult.textContent = message;
+    availabilityResult.classList.remove('is-success', 'is-error', 'is-warning');
+    if (variant) {
+      availabilityResult.classList.add(variant);
+    }
+  }
+
+  async function notifyUser(message, type = 'info', title = '') {
+    const map = {
+      success: 'is-success',
+      error: 'is-error',
+      warning: 'is-warning',
+      info: '',
+    };
+    setStatusMessage(message, map[type] || '');
     if (window.appAlerts?.notify) {
       await window.appAlerts.notify(message, type, title);
     }
@@ -135,10 +153,6 @@
     selfBook.end.value = `${String(endHours).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
   }
 
-  function formatDate(value) {
-    return new Date(value).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' });
-  }
-
   function setExtraFieldsVisible(isVisible) {
     Object.values(customerExtraFields).forEach((node) => {
       node.classList.toggle('is-hidden', !isVisible);
@@ -149,39 +163,86 @@
   function normalizeErrorMessage(error) {
     try {
       const payload = JSON.parse(error.message);
-      return payload.detail || error.message;
+      if (typeof payload === 'string') return payload;
+      if (payload.detail) return payload.detail;
+      const firstKey = Object.keys(payload)[0];
+      const firstValue = payload[firstKey];
+      if (Array.isArray(firstValue)) return `${firstKey}: ${firstValue.join(', ')}`;
+      if (typeof firstValue === 'string') return `${firstKey}: ${firstValue}`;
+      return error.message;
     } catch (_error) {
       return error.message;
     }
   }
 
+  function formatDateOnly(value) {
+    if (!value) return 'Pendiente';
+    const [year, month, day] = value.split('-');
+    return `${day}/${month}/${year}`;
+  }
+
+  function renderSummary() {
+    const service = servicesById.get(Number(selfBook.service.value));
+    const collaborator = collaboratorsById.get(Number(selfBook.collaborator.value));
+    summaryContent.innerHTML = `
+      <span>Servicio</span><strong>${service?.name || 'Pendiente'}</strong>
+      <span>Colaborador</span><strong>${collaborator?.email || 'Pendiente'}</strong>
+      <span>Fecha</span><strong>${formatDateOnly(selfBook.date.value)}</strong>
+      <span>Hora</span><strong>${selfBook.start.value ? `${selfBook.start.value} - ${selfBook.end.value}` : 'Pendiente'}</strong>
+    `;
+  }
+
   function resetAvailableSlots(message = 'Sin consulta.') {
     availableSlots = [];
-    selfBook.start.innerHTML = '<option value="">Primero consulta disponibilidad</option>';
-    selfBook.start.disabled = true;
+    selfBook.start.value = '';
     selfBook.end.value = '';
-    availabilityResult.textContent = message;
+    slotList.innerHTML = '<p class="slot-list__empty">Todavía no has consultado horarios.</p>';
+    scheduleHint.textContent = 'Selecciona servicio, colaborador y fecha para cargar los espacios.';
+    setStatusMessage(message);
+    renderSummary();
+  }
+
+  function selectSlot(startTime) {
+    selfBook.start.value = startTime;
+    calculateEndTime();
+    slotList.querySelectorAll('.slot-chip').forEach((button) => {
+      button.classList.toggle('is-selected', button.dataset.startTime === startTime);
+    });
+    renderSummary();
   }
 
   function renderAvailableSlots(result) {
     availableSlots = Array.isArray(result.available_slots) ? result.available_slots : [];
+    scheduleHint.textContent = result.schedule
+      ? `Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.`
+      : 'El colaborador no tiene horario configurado para este día.';
+
     if (!availableSlots.length) {
-      selfBook.start.innerHTML = '<option value="">No hay horas disponibles</option>';
-      selfBook.start.disabled = true;
+      slotList.innerHTML = '<p class="slot-list__empty">No hay horarios disponibles para esta fecha.</p>';
+      selfBook.start.value = '';
       selfBook.end.value = '';
-      availabilityResult.textContent = result.schedule
-        ? `No hay espacios disponibles. Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.`
-        : 'El colaborador no tiene horario configurado para ese día.';
+      renderSummary();
+      setStatusMessage(
+        result.schedule
+          ? `No hay espacios disponibles. Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.`
+          : 'El colaborador no tiene horario configurado para ese día.',
+        'is-warning'
+      );
       return;
     }
 
-    selfBook.start.innerHTML = ['<option value="">Seleccione una hora</option>']
-      .concat(availableSlots.map((slot) => `<option value="${slot.start_time}">${slot.start_time} - ${slot.end_time}</option>`))
+    slotList.innerHTML = availableSlots
+      .map(
+        (slot) => `
+          <button type="button" class="slot-chip" data-start-time="${slot.start_time}">
+            <strong>${slot.start_time} - ${slot.end_time}</strong>
+            <span>Disponible</span>
+          </button>
+        `
+      )
       .join('');
-    selfBook.start.disabled = false;
-    availabilityResult.textContent =
-      `Horas disponibles (${availableSlots.length}):\n` +
-      availableSlots.map((slot) => `${slot.start_time} - ${slot.end_time}`).join('\n');
+    renderSummary();
+    setStatusMessage(`Encontramos ${availableSlots.length} horario(s) disponible(s). Selecciona el que prefieras.`, 'is-success');
   }
 
   async function loadPublicContext() {
@@ -189,9 +250,11 @@
     eventTypeId = payload.event_type_id;
     subtitle.textContent = `Reserva tu cita para ${payload.organization_name}.`;
     servicesById = new Map(payload.services.map((service) => [service.id, service]));
+    collaboratorsById = new Map(payload.collaborators.map((collaborator) => [collaborator.id, collaborator]));
 
     populateSelect(selfBook.service, payload.services, 'Seleccione servicio', (item) => item.name);
     populateSelect(selfBook.collaborator, payload.collaborators, 'Seleccione colaborador', (item) => item.email);
+    renderSummary();
   }
 
   async function resolveCustomerByTaxId() {
@@ -208,13 +271,13 @@
     if (result.notFound) {
       selectedCustomer = null;
       setExtraFieldsVisible(true);
-      availabilityResult.textContent = 'No encontramos esta cédula. Completa los datos para crear tu perfil cliente.';
+      setStatusMessage('No encontramos esta cédula. Completa los datos para crear tu perfil cliente.', 'is-warning');
       return;
     }
 
     selectedCustomer = result.payload.customer;
     setExtraFieldsVisible(false);
-    availabilityResult.textContent = `Cliente identificado: ${selectedCustomer.legal_name}.`;
+    setStatusMessage(`Cliente identificado: ${selectedCustomer.legal_name}.`, 'is-success');
   }
 
   async function syncCustomerFromPadron() {
@@ -231,19 +294,19 @@
 
     const record = await window.CedulaPadron.resolveByCedula(taxId);
     if (!record) {
-      availabilityResult.textContent = `La cédula ${taxId} no existe en el padrón electoral.`;
+      setStatusMessage(`La cédula ${taxId} no existe en el padrón electoral.`, 'is-warning');
       return;
     }
 
     if (!selfBook.legalName.value.trim()) {
       selfBook.legalName.value = record.fullName;
-      availabilityResult.textContent = `Nombre autocompletado desde padrón: ${record.fullName}.`;
+      setStatusMessage(`Nombre autocompletado desde padrón: ${record.fullName}.`, 'is-success');
       return;
     }
 
     const isSameName = window.CedulaPadron.compareName(selfBook.legalName.value, record);
     if (isSameName === false) {
-      availabilityResult.textContent = `La cédula corresponde a "${record.fullName}". Verifica el nombre ingresado.`;
+      setStatusMessage(`La cédula corresponde a "${record.fullName}". Verifica el nombre ingresado.`, 'is-warning');
     }
   }
 
@@ -351,10 +414,24 @@
     }, 250);
   });
 
-  selfBook.service.addEventListener('change', () => resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horas disponibles.'));
-  selfBook.collaborator.addEventListener('change', () => resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horas disponibles.'));
-  selfBook.date.addEventListener('change', () => resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horas disponibles.'));
-  selfBook.start.addEventListener('change', calculateEndTime);
+  selfBook.service.addEventListener('change', () => {
+    resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horarios.');
+    renderSummary();
+  });
+  selfBook.collaborator.addEventListener('change', () => {
+    resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horarios.');
+    renderSummary();
+  });
+  selfBook.date.addEventListener('change', () => {
+    resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horarios.');
+    renderSummary();
+  });
+
+  slotList.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-start-time]');
+    if (!button) return;
+    selectSlot(button.dataset.startTime);
+  });
 
   checkAvailabilityButton.addEventListener('click', checkAvailability);
 
@@ -363,10 +440,10 @@
     setExtraFieldsVisible(false);
     resetAvailableSlots('Selecciona servicio, colaborador y fecha para consultar horarios.');
     loadPublicContext().catch((error) => {
-      availabilityResult.textContent = `No se pudo cargar el portal: ${normalizeErrorMessage(error)}`;
+      setStatusMessage(`No se pudo cargar el portal: ${normalizeErrorMessage(error)}`, 'is-error');
     });
   } catch (error) {
-    availabilityResult.textContent = error.message;
+    setStatusMessage(error.message, 'is-error');
     checkAvailabilityButton.disabled = true;
     selfBookForm.querySelector('button[type="submit"]').disabled = true;
   }
