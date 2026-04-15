@@ -3,6 +3,16 @@
   const state = { lines: [], purchases: [] };
   const padronTimers = {};
   const pageView = document.querySelector('.dashboard-layout')?.dataset.purchasesView || 'register';
+  const purchaseSearchInput = $('purchase-search');
+  const purchaseDateFromInput = $('purchase-date-from');
+  const purchaseDateToInput = $('purchase-date-to');
+  const purchaseDetailModal = $('purchase-detail-modal');
+  const purchaseDetailTitle = $('purchase-detail-title');
+  const purchaseDetailSubtitle = $('purchase-detail-subtitle');
+  const purchaseDetailMeta = $('purchase-detail-meta');
+  const purchaseDetailExtra = $('purchase-detail-extra');
+  const purchaseDetailLines = $('purchase-detail-lines');
+  const purchaseDetailDocument = $('purchase-detail-document');
 
   function orgId() {
     const id = Number($('organization-id')?.value || window.AppSession?.getActiveOrganizationId?.());
@@ -36,6 +46,109 @@
     const numeric = Number(amount || 0);
     if (!Number.isFinite(numeric)) return `${currencySymbol(currency)}0.00`;
     return `${currencySymbol(currency)}${numeric.toFixed(2)}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function renderMeta(container, entries) {
+    if (!container) return;
+    container.innerHTML = entries
+      .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+      .join('');
+  }
+
+  function applyPurchaseFilters() {
+    if (!$('purchases-body')) return;
+
+    const searchTerm = purchaseSearchInput?.value.trim().toLowerCase() || '';
+    const dateFrom = purchaseDateFromInput?.value || '';
+    const dateTo = purchaseDateToInput?.value || '';
+
+    const filtered = state.purchases.filter((item) => {
+      const haystack = `${item.supplier_name || ''} ${item.invoice_number || ''} ${item.numeric_key || ''}`.toLowerCase();
+      const matchesText = !searchTerm || haystack.includes(searchTerm);
+      const matchesFrom = !dateFrom || item.issue_date >= dateFrom;
+      const matchesTo = !dateTo || item.issue_date <= dateTo;
+      return matchesText && matchesFrom && matchesTo;
+    });
+
+    $('purchases-body').innerHTML =
+      filtered
+        .map((item) => {
+          const currency = item.currency || 'CRC';
+          return `
+            <tr>
+              <td>${escapeHtml(item.issue_date)}</td>
+              <td>${escapeHtml(item.supplier_name)}</td>
+              <td>${escapeHtml(item.invoice_number)}</td>
+              <td>${escapeHtml(formatMoney(item.subtotal, currency))}</td>
+              <td>${escapeHtml(formatMoney(item.tax_total, currency))}</td>
+              <td>${escapeHtml(formatMoney(item.total, currency))}</td>
+              <td><button class="btn btn-secondary" data-detail="${item.id}">Ver detalles</button></td>
+            </tr>
+          `;
+        })
+        .join('') || '<tr><td colspan="7">Sin compras registradas.</td></tr>';
+
+    setFeedback(`Mostrando ${filtered.length} compra(s) de ${state.purchases.length} registradas.`);
+  }
+
+  function openPurchaseDetail(purchase) {
+    if (!purchaseDetailModal || !purchase) return;
+    const currency = purchase.currency || 'CRC';
+    purchaseDetailTitle.textContent = `Compra ${purchase.invoice_number}`;
+    purchaseDetailSubtitle.textContent = `${purchase.supplier_name} · ${purchase.issue_date}`;
+    renderMeta(purchaseDetailMeta, [
+      ['Proveedor', purchase.supplier_name],
+      ['Cédula proveedor', purchase.supplier_tax_id || 'No disponible'],
+      ['Factura', purchase.invoice_number],
+      ['Fecha de emisión', purchase.issue_date],
+      ['Subtotal', formatMoney(purchase.subtotal, currency)],
+      ['IVA', formatMoney(purchase.tax_total, currency)],
+      ['Total', formatMoney(purchase.total, currency)],
+      ['Registrada', purchase.created_at || 'No disponible'],
+    ]);
+    renderMeta(purchaseDetailExtra, [
+      ['Comprador', purchase.buyer_name || 'No disponible'],
+      ['Cédula comprador', purchase.buyer_tax_id || 'No disponible'],
+      ['Clave numérica', purchase.numeric_key || 'No disponible'],
+      ['Moneda', currency],
+      ['Tipo de cambio', purchase.exchange_rate || '1.0000'],
+      ['Origen', purchase.source || 'manual'],
+    ]);
+    purchaseDetailLines.innerHTML =
+      (purchase.items || [])
+        .map(
+          (line) => `
+            <div class="purchase-detail-line">
+              <div>
+                <strong>${escapeHtml(line.description)}</strong><br />
+                <span>${escapeHtml(line.quantity)} × ${escapeHtml(line.unit_price)}</span>
+              </div>
+              <strong>${escapeHtml(formatMoney(line.subtotal, currency))}</strong>
+            </div>
+          `
+        )
+        .join('') || '<p class="subtitle">Esta compra no tiene líneas cargadas.</p>';
+    renderMeta(purchaseDetailDocument, [
+      ['PDF', 'No disponible para compras registradas manualmente'],
+      ['Observación', 'Si necesitas respaldo visual, puedes usar la bandeja de facturas recibidas cuando el documento venga por correo.'],
+    ]);
+    purchaseDetailModal.classList.add('is-open');
+    purchaseDetailModal.setAttribute('aria-hidden', 'false');
+  }
+
+  function closePurchaseDetail() {
+    if (!purchaseDetailModal) return;
+    purchaseDetailModal.classList.remove('is-open');
+    purchaseDetailModal.setAttribute('aria-hidden', 'true');
   }
 
   async function syncNameFromPadron(taxInputId, nameInputId, actorLabel) {
@@ -93,14 +206,7 @@
     if (!$('purchases-body')) return;
     const purchases = await request(`/purchases/?organization_id=${orgId()}`);
     state.purchases = purchases;
-    $('purchases-body').innerHTML =
-      purchases
-        .map((item) => {
-          const currency = item.currency || 'CRC';
-          return `<tr><td>${item.issue_date}</td><td>${item.supplier_name}</td><td>${item.invoice_number}</td><td>${formatMoney(item.subtotal, currency)}</td><td>${formatMoney(item.tax_total, currency)}</td><td>${formatMoney(item.total, currency)}</td></tr>`;
-        })
-        .join('') || '<tr><td colspan="6">Sin compras registradas.</td></tr>';
-    setFeedback(`Mostrando ${purchases.length} compra(s).`);
+    applyPurchaseFilters();
   }
 
   if ($('add-line')) {
@@ -196,6 +302,26 @@
   if ($('reload-purchases')) {
     $('reload-purchases').addEventListener('click', () => loadPurchases().catch((error) => setFeedback(error.message, true)));
   }
+
+  purchaseSearchInput?.addEventListener('input', applyPurchaseFilters);
+  purchaseDateFromInput?.addEventListener('change', applyPurchaseFilters);
+  purchaseDateToInput?.addEventListener('change', applyPurchaseFilters);
+
+  $('purchases-body')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-detail]');
+    if (!button) return;
+    const target = state.purchases.find((item) => String(item.id) === String(button.dataset.detail));
+    if (target) {
+      openPurchaseDetail(target);
+    }
+  });
+
+  $('purchase-detail-close')?.addEventListener('click', closePurchaseDetail);
+  purchaseDetailModal?.addEventListener('click', (event) => {
+    if (event.target === purchaseDetailModal) {
+      closePurchaseDetail();
+    }
+  });
 
   renderOrganizations();
   renderLines();

@@ -11,6 +11,103 @@
     <link rel="stylesheet" href="/assets/css/components.css" />
     <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
     <link rel="stylesheet" href="/assets/css/pages/customers.css" />
+    <style>
+      .purchase-filters-grid {
+        display: grid;
+        grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) repeat(2, minmax(150px, 1fr)) auto auto;
+        gap: 0.8rem;
+        align-items: end;
+      }
+
+      .purchase-detail-modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(2, 6, 23, 0.74);
+        z-index: 1100;
+      }
+
+      .purchase-detail-modal.is-open {
+        display: flex;
+      }
+
+      .purchase-detail-panel {
+        width: min(1100px, 100%);
+        max-height: 90vh;
+        overflow: auto;
+        background: #10192d;
+        border: 1px solid rgba(122, 162, 255, 0.26);
+        border-radius: 18px;
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
+        padding: 20px;
+      }
+
+      .purchase-detail-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+
+      .purchase-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px;
+      }
+
+      .purchase-detail-card {
+        padding: 16px;
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.72);
+        border: 1px solid rgba(148, 163, 184, 0.16);
+      }
+
+      .purchase-detail-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 16px;
+      }
+
+      .purchase-detail-meta span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .purchase-detail-meta strong {
+        display: block;
+        margin-top: 2px;
+        overflow-wrap: anywhere;
+      }
+
+      .purchase-detail-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      }
+
+      .purchase-detail-line:last-child {
+        border-bottom: 0;
+      }
+
+      @media (max-width: 1200px) {
+        .purchase-filters-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 900px) {
+        .purchase-detail-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
   </head>
   <body>
     <div class="dashboard-layout" data-purchases-view="list">
@@ -26,18 +123,59 @@
           </section>
 
           <section class="card filters">
-            <label>Organización<select id="organization-id" required></select></label>
-            <button class="btn btn-primary" id="reload-purchases" type="button">Recargar</button>
-            <a class="btn btn-secondary" href="/compras.html">Registrar compra</a>
+            <div class="purchase-filters-grid">
+              <label>Organización<select id="organization-id" required></select></label>
+              <label>Buscar compra
+                <input id="purchase-search" type="text" placeholder="Proveedor, factura o clave numérica" />
+              </label>
+              <label>Desde
+                <input id="purchase-date-from" type="date" />
+              </label>
+              <label>Hasta
+                <input id="purchase-date-to" type="date" />
+              </label>
+              <button class="btn btn-primary" id="reload-purchases" type="button">Recargar</button>
+              <a class="btn btn-secondary" href="/compras.html">Registrar compra</a>
+            </div>
           </section>
 
           <section class="card">
             <h2>Compras registradas</h2>
-            <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Subtotal</th><th>Impuesto</th><th>Total</th></tr></thead><tbody id="purchases-body"></tbody></table></div>
+            <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Subtotal</th><th>Impuesto</th><th>Total</th><th>Acciones</th></tr></thead><tbody id="purchases-body"></tbody></table></div>
             <p id="feedback" class="subtitle">Sin datos.</p>
           </section>
         </div>
       </section>
+    </div>
+
+    <div id="purchase-detail-modal" class="purchase-detail-modal" aria-hidden="true">
+      <div class="purchase-detail-panel">
+        <div class="purchase-detail-header">
+          <div>
+            <h2 id="purchase-detail-title">Detalle de compra</h2>
+            <p id="purchase-detail-subtitle" class="subtitle"></p>
+          </div>
+          <button id="purchase-detail-close" class="btn btn-secondary" type="button">Cerrar</button>
+        </div>
+        <div class="purchase-detail-grid">
+          <section class="purchase-detail-card">
+            <h3>Información general</h3>
+            <div id="purchase-detail-meta" class="purchase-detail-meta"></div>
+          </section>
+          <section class="purchase-detail-card">
+            <h3>Datos fiscales</h3>
+            <div id="purchase-detail-extra" class="purchase-detail-meta"></div>
+          </section>
+          <section class="purchase-detail-card">
+            <h3>Líneas de compra</h3>
+            <div id="purchase-detail-lines"></div>
+          </section>
+          <section class="purchase-detail-card">
+            <h3>Documento</h3>
+            <div id="purchase-detail-document" class="purchase-detail-meta"></div>
+          </section>
+        </div>
+      </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="/assets/js/alerts.js"></script>
