@@ -1,6 +1,7 @@
 (function initAgendaModule() {
   const $ = (id) => document.getElementById(id);
   const BILLING_PREFILL_KEY = 'cr360.billing.prefill';
+  const CREATE_PAGE_URL = '/agenda-crear.html';
 
   const searchInput = $('search');
   const statusFilter = $('status-filter');
@@ -57,8 +58,10 @@
   }
 
   function setFeedback(message, isError) {
-    feedback.textContent = message;
-    feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    if (feedback) {
+      feedback.textContent = message;
+      feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    }
     if (window.appAlerts?.toast) {
       window.appAlerts.toast(message, isError ? 'error' : 'success');
     }
@@ -118,12 +121,18 @@
   }
 
   function populateSelect(select, items, placeholder, labelFn) {
+    if (!select) {
+      return;
+    }
     select.innerHTML = [`<option value="">${placeholder}</option>`]
       .concat(items.map((item) => `<option value="${item.id}">${labelFn(item)}</option>`))
       .join('');
   }
 
   function renderTable() {
+    if (!eventsBody || !searchInput || !statusFilter || !serviceFilter || !collaboratorFilter) {
+      return;
+    }
     const term = searchInput.value.trim().toLowerCase();
     const selectedStatus = statusFilter.value;
     const selectedService = Number(serviceFilter.value || 0);
@@ -157,7 +166,7 @@
           <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
           <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
           ${canInvoice ? `<button class="btn btn-secondary" data-action="invoice" data-id="${item.id}">Facturar</button>` : ''}
-          ${item.invoice_number ? `<span class="table-inline-note">Facturada: ${item.invoice_number}</span>` : ''}
+          ${item.invoice ? `<button class="btn btn-secondary" data-action="view-invoice" data-id="${item.id}">Ver factura</button>` : ''}
         </td>
       `;
       eventsBody.appendChild(tr);
@@ -206,7 +215,9 @@
   async function loadEventTypes() {
     await ensureDefaultEventTypes();
     eventTypes = await request(`${getApiBase()}/agenda-event-types/`);
-    fields.eventType.innerHTML = eventTypes.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
+    if (fields.eventType) {
+      fields.eventType.innerHTML = eventTypes.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
+    }
 
     if (!eventTypes.length) {
       throw new Error('No hay tipos de evento configurados.');
@@ -231,6 +242,9 @@
   }
 
   async function loadRelationOptions() {
+    if (!fields.customerId || !fields.supplierId) {
+      return;
+    }
     const organizationId = getOrganizationId();
 
     const [customers, suppliers] = await Promise.all([
@@ -248,6 +262,9 @@
   }
 
   function resetForm() {
+    if (!eventForm) {
+      return;
+    }
     eventForm.reset();
     fields.id.value = '';
     fields.reminderMinutes.value = '30';
@@ -295,6 +312,9 @@
   }
 
   function renderSelfBookingLink() {
+    if (!selfBookLinkInput || !selfBookLinkFeedback) {
+      return;
+    }
     try {
       const link = buildSelfBookingLink();
       selfBookLinkInput.value = link;
@@ -306,6 +326,9 @@
   }
 
   async function loadEvents() {
+    if (!statusFilter || !serviceFilter || !collaboratorFilter || !searchInput || !dateFromFilter || !dateToFilter) {
+      return;
+    }
     try {
       const organizationId = getOrganizationId();
       const params = new URLSearchParams({ organization_id: organizationId });
@@ -325,6 +348,9 @@
   }
 
   function fillForm(item) {
+    if (!eventForm) {
+      return;
+    }
     fields.id.value = item.id;
     fields.title.value = item.title;
     fields.eventType.value = item.event_type;
@@ -343,7 +369,15 @@
     formTitle.textContent = `Editar evento #${item.id}`;
   }
 
-  eventForm.addEventListener('submit', async (event) => {
+  async function loadEventForEdit(eventId) {
+    if (!eventId || !eventForm) {
+      return;
+    }
+    const item = await request(`${getApiBase()}/agenda-events/${eventId}/?organization_id=${getOrganizationId()}`);
+    fillForm(item);
+  }
+
+  eventForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     try {
@@ -365,15 +399,17 @@
       }
 
       resetForm();
-      await loadEvents();
+      if (eventsBody) {
+        await loadEvents();
+      }
     } catch (error) {
       setFeedback(`No se pudo guardar el evento: ${error.message}`, true);
     }
   });
 
-  cancelEditButton.addEventListener('click', resetForm);
+  cancelEditButton?.addEventListener('click', resetForm);
 
-  eventsBody.addEventListener('click', async (event) => {
+  eventsBody?.addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-action]');
     if (!button) {
       return;
@@ -388,7 +424,11 @@
     }
 
     if (action === 'edit') {
-      fillForm(target);
+      if (eventForm) {
+        fillForm(target);
+      } else {
+        window.location.href = `${CREATE_PAGE_URL}?event_id=${target.id}`;
+      }
       return;
     }
 
@@ -413,16 +453,21 @@
     if (action === 'invoice') {
       persistBillingPrefill(target);
       window.location.href = '/facturacion.html';
+      return;
+    }
+
+    if (action === 'view-invoice' && target.invoice) {
+      window.location.href = `/facturas.html?invoice_id=${target.invoice}`;
     }
   });
 
-  searchInput.addEventListener('input', renderTable);
-  statusFilter.addEventListener('change', loadEvents);
-  serviceFilter.addEventListener('change', loadEvents);
-  collaboratorFilter.addEventListener('change', loadEvents);
-  dateFromFilter.addEventListener('change', loadEvents);
-  dateToFilter.addEventListener('change', loadEvents);
-  loadButton.addEventListener('click', loadEvents);
+  searchInput?.addEventListener('input', renderTable);
+  statusFilter?.addEventListener('change', loadEvents);
+  serviceFilter?.addEventListener('change', loadEvents);
+  collaboratorFilter?.addEventListener('change', loadEvents);
+  dateFromFilter?.addEventListener('change', loadEvents);
+  dateToFilter?.addEventListener('change', loadEvents);
+  loadButton?.addEventListener('click', loadEvents);
 
   openSelfBookLinkButton?.addEventListener('click', () => {
     if (selfBookLinkInput.value) {
@@ -448,11 +493,26 @@
     }
   });
 
-  Promise.all([loadEventTypes(), loadServicesAndCollaborators(), loadRelationOptions()])
+  const startupTasks = [loadServicesAndCollaborators()];
+  if (eventForm) {
+    startupTasks.push(loadEventTypes(), loadRelationOptions());
+  }
+
+  Promise.all(startupTasks)
     .then(() => {
-      resetForm();
-      renderSelfBookingLink();
-      return loadEvents();
+      const requestedEventId = Number(new URLSearchParams(window.location.search).get('event_id') || 0);
+      if (eventForm) {
+        resetForm();
+        renderSelfBookingLink();
+      }
+      const followUps = [];
+      if (eventsBody) {
+        followUps.push(loadEvents());
+      }
+      if (requestedEventId) {
+        followUps.push(loadEventForEdit(requestedEventId));
+      }
+      return Promise.all(followUps);
     })
     .catch((error) => setFeedback(`Error inicial: ${error.message}`, true));
 })();

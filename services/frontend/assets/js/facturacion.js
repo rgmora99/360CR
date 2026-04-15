@@ -51,6 +51,29 @@
     sessionStorage.removeItem(BILLING_PREFILL_KEY);
   }
 
+  function setAgendaPrefillBanner(prefill, customerFound, lineAdded) {
+    const banner = $('agenda-prefill-banner');
+    const summary = $('agenda-prefill-summary');
+    if (!banner || !summary) {
+      return;
+    }
+    if (!prefill?.eventId) {
+      banner.classList.add('hidden');
+      summary.textContent = 'Se completarán automáticamente los datos disponibles de la cita.';
+      return;
+    }
+
+    const parts = [
+      prefill.title ? `Evento: ${prefill.title}` : 'Evento desde agenda',
+      prefill.startsAt ? `Fecha: ${new Date(prefill.startsAt).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' })}` : '',
+      customerFound ? 'Cliente cargado' : 'Cliente pendiente de validar manualmente',
+      lineAdded ? 'Servicio agregado a la factura' : prefill.serviceId ? 'Servicio pendiente de validar manualmente' : '',
+    ].filter(Boolean);
+
+    summary.textContent = parts.join(' · ');
+    banner.classList.remove('hidden');
+  }
+
   function syncInstallmentsUI() {
     const isInstallments = $('payment-method').value === '04';
     $('installments-count-wrap').classList.toggle('hidden', !isInstallments);
@@ -114,7 +137,10 @@
 
   async function applyBillingPrefill() {
     const prefill = getBillingPrefill();
-    if (!prefill) return;
+    if (!prefill) {
+      setAgendaPrefillBanner(null, false, false);
+      return;
+    }
 
     state.prefillAgendaEventId = Number(prefill.eventId) || null;
 
@@ -124,18 +150,24 @@
       await Promise.all([loadCustomers(), loadProducts()]);
     }
 
+    let customerFound = false;
     if (prefill.customerId) {
       const customerId = Number(prefill.customerId);
       const found = state.customers.find((item) => item.id === customerId);
       if (found) {
         $('customer-select').value = String(customerId);
+        $('customer-search').value = found.legal_name;
         updateCustomerMeta();
+        customerFound = true;
       }
     }
 
     let lineAdded = false;
     if (prefill.serviceId) {
       lineAdded = ensurePrefillLine(prefill.serviceId);
+      if (lineAdded && $('line-product')) {
+        $('line-product').value = String(prefill.serviceId);
+      }
     }
 
     if (prefill.notes) {
@@ -153,6 +185,7 @@
       parts.push('servicio pendiente de validar manualmente');
     }
     parts.push('notas');
+    setAgendaPrefillBanner(prefill, customerFound, lineAdded);
     setFeedback(`Datos precargados desde Agenda: ${parts.join(', ')}.`, false);
     clearBillingPrefill();
   }

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Módulo Agenda | 360CR</title>
+    <title>Crear evento | 360CR</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
@@ -22,46 +22,16 @@
         <div class="page-wrap">
           <section class="module-header card">
             <div>
-              <p class="badge">Módulo</p>
-              <h1>Agenda y Recordatorios</h1>
-              <p class="subtitle">Planifica citas por servicio, colaborador y disponibilidad.</p>
+              <p class="badge">Agenda</p>
+              <h1>Crear evento</h1>
+              <p class="subtitle">Registra una nueva cita o ajusta una existente sin salir del módulo.</p>
+            </div>
+            <div class="quick-actions">
+              <a class="btn btn-secondary" href="/agenda-eventos.html">Ver eventos programados</a>
             </div>
           </section>
 
-          <section class="card filters">
-            <label>
-              Buscar
-              <input id="search" type="text" placeholder="Título o descripción" />
-            </label>
-            <label>
-              Estado
-              <select id="status-filter">
-                <option value="">Todos</option>
-                <option value="pending">Pendiente</option>
-                <option value="done">Completado</option>
-                <option value="cancelled">Cancelado</option>
-              </select>
-            </label>
-            <label>
-              Servicio
-              <select id="service-filter"></select>
-            </label>
-            <label>
-              Colaborador
-              <select id="collaborator-filter"></select>
-            </label>
-            <label>
-              Desde
-              <input id="date-from-filter" type="date" />
-            </label>
-            <label>
-              Hasta
-              <input id="date-to-filter" type="date" />
-            </label>
-            <button id="load-events" class="btn btn-primary" type="button">Aplicar filtros</button>
-          </section>
-
-          <section class="grid">
+          <section class="grid single-column">
             <article class="card">
               <h2 id="form-title">Nueva cita</h2>
               <form id="event-form" class="event-form">
@@ -101,26 +71,7 @@
                   <button id="cancel-edit" class="btn btn-secondary" type="button">Cancelar edición</button>
                 </div>
               </form>
-            </article>
-
-            <article class="card">
-              <h2>Eventos programados</h2>
-              <p class="subtitle" id="feedback">Sin datos cargados.</p>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Título</th>
-                      <th>Servicio</th>
-                      <th>Colaborador</th>
-                      <th>Inicio</th>
-                      <th>Estado</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody id="events-body"></tbody>
-                </table>
-              </div>
+              <p id="feedback" class="subtitle"></p>
             </article>
           </section>
 
@@ -145,7 +96,7 @@
     <script src="/assets/js/alerts.js"></script>
     <script src="/assets/js/navigation.js"></script>
     <script>
-      window.renderSharedNavigation({ activeModule: 'agenda-eventos' });
+      window.renderSharedNavigation({ activeModule: 'agenda-crear' });
     </script>
     <script src="/assets/js/agenda.js"></script>
   </body>

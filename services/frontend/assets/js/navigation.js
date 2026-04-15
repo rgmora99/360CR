@@ -99,7 +99,14 @@
       { key: 'inicio', label: 'Inicio', href: '/dashboard.html' },
       { key: 'clientes', label: 'Clientes', href: '/customers.html' },
       { key: 'proveedores', label: 'Proveedores', href: '/suppliers.html' },
-      { key: 'agenda', label: 'Agenda', href: '/agenda.html' },
+      {
+        key: 'agenda-menu',
+        label: 'Agenda',
+        children: [
+          { key: 'agenda-eventos', label: 'Eventos programados', href: '/agenda-eventos.html' },
+          { key: 'agenda-crear', label: 'Crear evento', href: '/agenda-crear.html' },
+        ],
+      },
       {
         key: 'facturacion-menu',
         label: 'Facturación',

@@ -73,6 +73,10 @@
       .join('');
   }
 
+  function getRequestedInvoiceId() {
+    return Number(new URLSearchParams(window.location.search).get('invoice_id') || 0);
+  }
+
   async function loadInvoices() {
     const invoices = await request(`/invoices/?organization_id=${orgId()}`);
     currentInvoices = invoices;
@@ -84,6 +88,14 @@
         )
         .join('') || '<tr><td colspan="5">Sin facturas emitidas</td></tr>';
     feedback(`Mostrando ${invoices.length} factura(s) emitida(s).`);
+
+    const requestedInvoiceId = getRequestedInvoiceId();
+    if (requestedInvoiceId) {
+      const exists = invoices.some((invoice) => Number(invoice.id) === requestedInvoiceId);
+      if (exists) {
+        await openInvoiceDetail(requestedInvoiceId);
+      }
+    }
   }
 
   async function openInvoiceDetail(id) {

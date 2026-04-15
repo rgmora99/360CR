@@ -8,6 +8,12 @@
   margin: 0.7rem 0;
 }
 
+.quick-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
 .filters {
   display: grid;
   grid-template-columns: repeat(6, minmax(120px, 1fr)) auto;
@@ -37,6 +43,10 @@ textarea {
   display: grid;
   grid-template-columns: 1.1fr 1fr;
   gap: 1rem;
+}
+
+.single-column {
+  grid-template-columns: 1fr;
 }
 
 .form-grid,
@@ -83,6 +93,18 @@ td .btn {
   padding: 0.4rem 0.65rem;
   font-size: 0.8rem;
   margin-right: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.table-inline-note {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.38rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(15, 23, 42, 0.72);
 }
 
 .self-book-card {
