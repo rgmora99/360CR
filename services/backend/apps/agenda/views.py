@@ -22,18 +22,19 @@ from apps.tenants.models import Membership, Organization
 User = get_user_model()
 
 
-def _build_available_slots(day, availability, occupied_events, duration_minutes, tz):
-    if not availability or not availability.is_active or duration_minutes <= 0:
+def _build_available_slots(day, availability, occupied_events, duration_minutes, step_minutes, tz):
+    if not availability or not availability.is_active or duration_minutes <= 0 or step_minutes <= 0:
         return []
 
     schedule_start = timezone.make_aware(datetime.combine(day, availability.start_time), tz)
     schedule_end = timezone.make_aware(datetime.combine(day, availability.end_time), tz)
-    step = timedelta(minutes=duration_minutes)
+    duration = timedelta(minutes=duration_minutes)
+    step = timedelta(minutes=step_minutes)
     current_start = schedule_start
     slots = []
 
-    while current_start + step <= schedule_end:
-        current_end = current_start + step
+    while current_start + duration <= schedule_end:
+        current_end = current_start + duration
         has_conflict = any(item["starts_at"] < current_end and item["ends_at"] > current_start for item in occupied_events)
         if not has_conflict:
             slots.append(
@@ -47,6 +48,31 @@ def _build_available_slots(day, availability, occupied_events, duration_minutes,
         current_start += step
 
     return slots
+
+
+def _get_slot_step_minutes(organization):
+    durations = list(
+        Product.objects.filter(
+            organization=organization,
+            product_type=Product.TYPE_SERVICE,
+            is_active=True,
+            service_duration_minutes__gt=0,
+        )
+        .values_list("service_duration_minutes", flat=True)
+    )
+    if not durations:
+        return 30
+
+    normalized = sorted({int(value) for value in durations if int(value) > 0})
+    if not normalized:
+        return 30
+
+    step = normalized[0]
+    for value in normalized[1:]:
+        while value:
+            step, value = value, step % value
+
+    return max(15, step if step > 0 else 30)
 
 
 class AgendaEventTypeViewSet(viewsets.ModelViewSet):
@@ -160,6 +186,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
         service = None
         duration_minutes = 0
+        slot_step_minutes = _get_slot_step_minutes(organization)
         if service_id:
             try:
                 service = Product.objects.get(
@@ -258,7 +285,14 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             slot_is_available = False
             slot_message = "El colaborador no tiene horario configurado para ese día."
 
-        available_slots = _build_available_slots(day, availability, occupied_events, duration_minutes, tz)
+        available_slots = _build_available_slots(
+            day,
+            availability,
+            occupied_events,
+            duration_minutes,
+            slot_step_minutes,
+            tz,
+        )
 
         return Response(
             {
@@ -281,6 +315,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                         "id": service.id,
                         "name": service.name,
                         "duration_minutes": duration_minutes,
+                        "slot_step_minutes": slot_step_minutes,
                     }
                     if service
                     else None

@@ -202,6 +202,11 @@
     renderSummary();
   }
 
+  function isConflictErrorMessage(message) {
+    const normalized = String(message || '').toLowerCase();
+    return normalized.includes('ya existe una cita') || normalized.includes('se cruza con ese horario');
+  }
+
   function selectSlot(startTime) {
     selfBook.start.value = startTime;
     calculateEndTime();
@@ -213,8 +218,10 @@
 
   function renderAvailableSlots(result) {
     availableSlots = Array.isArray(result.available_slots) ? result.available_slots : [];
+    const serviceDuration = result.service?.duration_minutes;
+    const stepMinutes = result.service?.slot_step_minutes;
     scheduleHint.textContent = result.schedule
-      ? `Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.`
+      ? `Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.${serviceDuration ? ` Servicio: ${serviceDuration} min.` : ''}${stepMinutes ? ` Inicios cada ${stepMinutes} min.` : ''}`
       : 'El colaborador no tiene horario configurado para este día.';
 
     if (!availableSlots.length) {
@@ -352,6 +359,14 @@
 
       const result = await request(`${getApiBase()}/agenda-events/availability/?${params.toString()}`);
       renderAvailableSlots(result);
+      if (selfBook.start.value) {
+        const stillAvailable = availableSlots.some((slot) => slot.start_time === selfBook.start.value);
+        if (!stillAvailable) {
+          selfBook.start.value = '';
+          selfBook.end.value = '';
+          renderSummary();
+        }
+      }
     } catch (error) {
       resetAvailableSlots('Sin consulta.');
       notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo consultar disponibilidad').catch(() => null);
@@ -392,7 +407,17 @@
       setExtraFieldsVisible(false);
       resetAvailableSlots('Sin consulta.');
     } catch (error) {
-      await notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo agendar la cita');
+      const message = normalizeErrorMessage(error);
+      if (isConflictErrorMessage(message)) {
+        await checkAvailability();
+        await notifyUser(
+          `${message} Actualicé los horarios disponibles para que elijas otro espacio libre.`,
+          'warning',
+          'Horario recién ocupado'
+        );
+        return;
+      }
+      await notifyUser(message, 'error', 'No se pudo agendar la cita');
     }
   });
 
