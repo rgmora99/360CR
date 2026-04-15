@@ -1,6 +1,7 @@
 (function initFacturacion() {
   const $ = (id) => document.getElementById(id);
   const state = { customers: [], products: [], lines: [], organizations: [], selectedCustomer: null };
+  const BILLING_PREFILL_KEY = 'cr360.billing.prefill';
 
   const apiBase = () => '/api';
   const orgId = () => {
@@ -36,6 +37,18 @@
     if (window.appAlerts?.toast) {
       window.appAlerts.toast(msg, error ? 'error' : 'success');
     }
+  }
+
+  function getBillingPrefill() {
+    try {
+      return JSON.parse(sessionStorage.getItem(BILLING_PREFILL_KEY) || 'null');
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function clearBillingPrefill() {
+    sessionStorage.removeItem(BILLING_PREFILL_KEY);
   }
 
   function syncInstallmentsUI() {
@@ -83,6 +96,63 @@
         .join('') ||
       '<option value="">Sin clientes activos</option>';
     updateCustomerMeta();
+  }
+
+  function ensurePrefillLine(productId) {
+    const parsedId = Number(productId);
+    if (!parsedId || state.lines.some((line) => Number(line.product) === parsedId)) {
+      return false;
+    }
+    const productDetail = state.products.find((item) => item.id === parsedId);
+    if (!productDetail) {
+      return false;
+    }
+    state.lines.push({ product: parsedId, quantity: 1, discount_percent: 0 });
+    renderLines();
+    return true;
+  }
+
+  async function applyBillingPrefill() {
+    const prefill = getBillingPrefill();
+    if (!prefill) return;
+
+    if (Number(prefill.organizationId) && Number(prefill.organizationId) !== orgId()) {
+      $('organization-id').value = String(prefill.organizationId);
+      window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
+      await Promise.all([loadCustomers(), loadProducts()]);
+    }
+
+    if (prefill.customerId) {
+      const customerId = Number(prefill.customerId);
+      const found = state.customers.find((item) => item.id === customerId);
+      if (found) {
+        $('customer-select').value = String(customerId);
+        updateCustomerMeta();
+      }
+    }
+
+    let lineAdded = false;
+    if (prefill.serviceId) {
+      lineAdded = ensurePrefillLine(prefill.serviceId);
+    }
+
+    if (prefill.notes) {
+      const currentNotes = $('notes').value.trim();
+      $('notes').value = currentNotes ? `${currentNotes}\n${prefill.notes}` : prefill.notes;
+    }
+
+    const parts = [];
+    if (prefill.customerId && state.customers.find((item) => item.id === Number(prefill.customerId))) {
+      parts.push('cliente');
+    }
+    if (lineAdded) {
+      parts.push('servicio');
+    } else if (prefill.serviceId) {
+      parts.push('servicio pendiente de validar manualmente');
+    }
+    parts.push('notas');
+    setFeedback(`Datos precargados desde Agenda: ${parts.join(', ')}.`, false);
+    clearBillingPrefill();
   }
 
   function updateCustomerMeta() {
@@ -275,5 +345,7 @@
     window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
     Promise.all([loadCustomers($('customer-search').value.trim()), loadProducts()]).catch((e) => setFeedback(e.message, true));
   });
-  Promise.all([loadCustomers(), loadProducts()]).catch((e) => setFeedback(e.message, true));
+  Promise.all([loadCustomers(), loadProducts()])
+    .then(() => applyBillingPrefill())
+    .catch((e) => setFeedback(e.message, true));
 })();

@@ -1,5 +1,6 @@
 (function initAgendaModule() {
   const $ = (id) => document.getElementById(id);
+  const BILLING_PREFILL_KEY = 'cr360.billing.prefill';
 
   const searchInput = $('search');
   const statusFilter = $('status-filter');
@@ -145,19 +146,41 @@
 
     filtered.forEach((item) => {
       const tr = document.createElement('tr');
+      const canInvoice = Boolean(item.service) && item.status !== 'cancelled';
       tr.innerHTML = `
         <td>${item.title}</td>
         <td>${item.service_name || getServiceName(item.service)}</td>
         <td>${item.collaborator_email || getCollaboratorName(item.collaborator)}</td>
         <td>${formatDate(item.starts_at)}</td>
-        <td>${item.status}</td>
+        <td>${item.status_display || item.status}</td>
         <td>
           <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
           <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
+          ${canInvoice ? `<button class="btn btn-secondary" data-action="invoice" data-id="${item.id}">Facturar</button>` : ''}
         </td>
       `;
       eventsBody.appendChild(tr);
     });
+  }
+
+  function persistBillingPrefill(target) {
+    const payload = {
+      source: 'agenda',
+      organizationId: getOrganizationId(),
+      eventId: target.id,
+      customerId: target.customer || null,
+      serviceId: target.service || null,
+      title: target.title || '',
+      startsAt: target.starts_at || '',
+      collaboratorEmail: target.collaborator_email || getCollaboratorName(target.collaborator),
+      notes: [
+        `Facturación generada desde Agenda.`,
+        target.title ? `Evento: ${target.title}` : '',
+        target.starts_at ? `Fecha cita: ${formatDate(target.starts_at)}` : '',
+        target.collaborator_email ? `Colaborador: ${target.collaborator_email}` : '',
+      ].filter(Boolean).join(' '),
+    };
+    sessionStorage.setItem(BILLING_PREFILL_KEY, JSON.stringify(payload));
   }
 
   async function ensureDefaultEventTypes() {
@@ -384,6 +407,11 @@
       } catch (error) {
         setFeedback(`No se pudo eliminar: ${error.message}`, true);
       }
+    }
+
+    if (action === 'invoice') {
+      persistBillingPrefill(target);
+      window.location.href = '/facturacion.html';
     }
   });
 
