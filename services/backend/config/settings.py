@@ -80,7 +80,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = "es"
-TIME_ZONE = "UTC"
+TIME_ZONE = os.getenv("APP_TIME_ZONE", "America/Costa_Rica")
 USE_I18N = True
 USE_TZ = True
 
