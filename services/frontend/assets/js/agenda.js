@@ -146,7 +146,7 @@
 
     filtered.forEach((item) => {
       const tr = document.createElement('tr');
-      const canInvoice = Boolean(item.service) && item.status !== 'cancelled';
+      const canInvoice = Boolean(item.service) && item.status !== 'cancelled' && !item.invoice;
       tr.innerHTML = `
         <td>${item.title}</td>
         <td>${item.service_name || getServiceName(item.service)}</td>
@@ -157,6 +157,7 @@
           <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
           <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
           ${canInvoice ? `<button class="btn btn-secondary" data-action="invoice" data-id="${item.id}">Facturar</button>` : ''}
+          ${item.invoice_number ? `<span class="table-inline-note">Facturada: ${item.invoice_number}</span>` : ''}
         </td>
       `;
       eventsBody.appendChild(tr);

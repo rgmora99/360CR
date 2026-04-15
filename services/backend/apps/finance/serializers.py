@@ -179,6 +179,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
     loyalty_awarded_points = serializers.IntegerField(read_only=True, default=0)
     loyalty_redeemed_points = serializers.IntegerField(read_only=True, default=0)
+    agenda_event = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -205,15 +206,24 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "status",
             "email_sent_at",
             "notes",
+            "agenda_event",
             "items",
             "loyalty_awarded_points",
             "loyalty_redeemed_points",
         ]
 
+    def get_agenda_event(self, obj):
+        try:
+            agenda_event = obj.agenda_event
+        except Invoice.agenda_event.RelatedObjectDoesNotExist:
+            return None
+        return agenda_event.id
+
 
 class InvoiceCreateSerializer(serializers.Serializer):
     organization = serializers.IntegerField()
     customer = serializers.IntegerField()
+    agenda_event = serializers.IntegerField(required=False, allow_null=True)
     document_type = serializers.ChoiceField(choices=Invoice.DOCUMENT_CHOICES, default=Invoice.DOCUMENT_INVOICE)
     sale_condition = serializers.RegexField(r"^\d{2}$")
     payment_method = serializers.ChoiceField(choices=Invoice.PAYMENT_METHOD_CHOICES)
@@ -227,6 +237,8 @@ class InvoiceCreateSerializer(serializers.Serializer):
     items = InvoiceItemWriteSerializer(many=True)
 
     def validate(self, attrs):
+        from apps.agenda.models import AgendaEvent
+
         request = self.context.get("request")
         organization = Organization.objects.filter(id=attrs["organization"]).first()
         if not organization:
@@ -259,6 +271,31 @@ class InvoiceCreateSerializer(serializers.Serializer):
         if len(consecutive_base) != 10:
             raise serializers.ValidationError("Error interno generando consecutivo base.")
 
+        agenda_event_id = attrs.get("agenda_event")
+        if agenda_event_id:
+            agenda_event = (
+                AgendaEvent.objects.select_related("customer", "invoice")
+                .filter(id=agenda_event_id, organization_id=attrs["organization"])
+                .first()
+            )
+            if not agenda_event:
+                raise serializers.ValidationError({"agenda_event": "La cita seleccionada no existe en la organización activa."})
+            if agenda_event.invoice_id:
+                raise serializers.ValidationError(
+                    {"agenda_event": f"Esta cita ya está asociada a la factura {agenda_event.invoice.invoice_number}."}
+                )
+            if agenda_event.status == AgendaEvent.STATUS_CANCELLED:
+                raise serializers.ValidationError({"agenda_event": "No se puede facturar una cita cancelada."})
+            if agenda_event.service_id and not any(int(item["product"]) == agenda_event.service_id for item in attrs["items"]):
+                raise serializers.ValidationError(
+                    {"agenda_event": "La factura debe incluir el servicio de la cita para poder asociarla correctamente."}
+                )
+            if agenda_event.customer_id and agenda_event.customer_id != attrs["customer"]:
+                raise serializers.ValidationError(
+                    {"agenda_event": "La cita pertenece a otro cliente. Ajusta el cliente o factura la cita correcta."}
+                )
+            attrs["agenda_event_instance"] = agenda_event
+
         return attrs
 
     def _get_next_invoice_sequence(self, organization_id, document_type):
@@ -279,6 +316,8 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        agenda_event = validated_data.pop("agenda_event_instance", None)
+        validated_data.pop("agenda_event", None)
         organization_id = validated_data["organization"]
         invoice = None
         for attempt in range(MAX_CREATE_RETRIES):
@@ -391,6 +430,11 @@ class InvoiceCreateSerializer(serializers.Serializer):
                 invoice=invoice,
             )
         )
+
+        if agenda_event:
+            agenda_event.invoice = invoice
+            agenda_event.save(update_fields=["invoice", "updated_at"])
+
         return invoice
 
     def _redeem_loyalty_points_for_invoice(self, organization_id, customer_id, invoice):

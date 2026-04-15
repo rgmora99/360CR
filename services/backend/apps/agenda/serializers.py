@@ -47,6 +47,7 @@ class AgendaEventSerializer(serializers.ModelSerializer):
     service_name = serializers.CharField(source="service.name", read_only=True)
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    invoice_number = serializers.CharField(source="invoice.invoice_number", read_only=True)
 
     class Meta:
         model = AgendaEvent
@@ -61,6 +62,8 @@ class AgendaEventSerializer(serializers.ModelSerializer):
             "customer",
             "customer_name",
             "supplier",
+            "invoice",
+            "invoice_number",
             "title",
             "description",
             "starts_at",

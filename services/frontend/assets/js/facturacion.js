@@ -1,6 +1,6 @@
 (function initFacturacion() {
   const $ = (id) => document.getElementById(id);
-  const state = { customers: [], products: [], lines: [], organizations: [], selectedCustomer: null };
+  const state = { customers: [], products: [], lines: [], organizations: [], selectedCustomer: null, prefillAgendaEventId: null };
   const BILLING_PREFILL_KEY = 'cr360.billing.prefill';
 
   const apiBase = () => '/api';
@@ -115,6 +115,8 @@
   async function applyBillingPrefill() {
     const prefill = getBillingPrefill();
     if (!prefill) return;
+
+    state.prefillAgendaEventId = Number(prefill.eventId) || null;
 
     if (Number(prefill.organizationId) && Number(prefill.organizationId) !== orgId()) {
       $('organization-id').value = String(prefill.organizationId);
@@ -307,6 +309,7 @@
       const payload = {
         organization: orgId(),
         customer: customerId,
+        agenda_event: state.prefillAgendaEventId,
         document_type: $('document-type').value,
         sale_condition: $('sale-condition').value,
         payment_method: paymentMethod,
@@ -330,6 +333,7 @@
           : '';
       setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".${loyaltyMsg}`);
       state.lines = [];
+      state.prefillAgendaEventId = null;
       $('pay-with-points').checked = false;
       renderLines();
       await loadProducts();
