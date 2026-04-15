@@ -115,7 +115,6 @@
           { key: 'compras-registrar', label: 'Registrar compra', href: '/compras.html' },
           { key: 'compras-listado', label: 'Listado de compras', href: '/compras-listado.html' },
           { key: 'bandeja-facturas', label: 'Bandeja facturas', href: '/bandeja-facturas.html' },
-          { key: 'historico-facturas', label: 'Histórico facturas', href: '/historico-facturas.html' },
           { key: 'impuestos', label: 'Impuestos RTS', href: '/impuestos.html' },
         ],
       },
