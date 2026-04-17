@@ -2,14 +2,12 @@
   const searchInput = document.getElementById('search');
   const suppliersBody = document.getElementById('suppliers-body');
   const feedback = document.getElementById('feedback');
-
   const supplierForm = document.getElementById('supplier-form');
-  const formTitle = document.getElementById('form-title');
-  const cancelEditButton = document.getElementById('cancel-edit');
+  const editModal = document.getElementById('supplier-edit-modal');
+  const editForm = document.getElementById('supplier-edit-form');
+  const editCloseButton = document.getElementById('supplier-edit-close');
+  const editCancelButton = document.getElementById('supplier-edit-cancel');
 
-  const legalNameLabel = document.getElementById('legal-name-label');
-  const taxIdLabel = document.getElementById('tax-id-label');
-  const tradeNameWrapper = document.getElementById('trade-name-wrapper');
   const suppliersPager = window.TablePaginator?.create({
     key: 'suppliers',
     tableBody: suppliersBody,
@@ -18,41 +16,65 @@
     rowRenderer: renderSupplierRow,
   });
 
-  const fields = {
-    id: document.getElementById('supplier-id'),
-    type: document.getElementById('supplier-type'),
-    code: document.getElementById('code'),
-    legalName: document.getElementById('legal-name'),
-    tradeName: document.getElementById('trade-name'),
-    taxId: document.getElementById('tax-id'),
-    status: document.getElementById('status'),
-    email: document.getElementById('email'),
-    phone: document.getElementById('phone'),
-    creditLimit: document.getElementById('credit-limit'),
-    paymentTermsDays: document.getElementById('payment-terms-days'),
-    notes: document.getElementById('notes'),
-  };
+  const createFields = createFieldRefs('');
+  const editFields = createFieldRefs('edit-');
+  const createLabels = createLabelRefs('');
+  const editLabels = createLabelRefs('edit-');
 
   let suppliers = [];
   let supplierTypes = [];
   let suppliersLoaded = false;
-  let padronTypingTimer = null;
-  const EDIT_SESSION_KEY = 'cr360.suppliers.edit-id';
+  let createTypingTimer = null;
+  let editTypingTimer = null;
+
+  function createFieldRefs(prefix) {
+    return {
+      id: document.getElementById(`${prefix}supplier-id`) || document.getElementById(`${prefix}id`) || document.getElementById(`${prefix}supplier-id`),
+      type: document.getElementById(`${prefix}supplier-type`),
+      code: document.getElementById(`${prefix}code`),
+      legalName: document.getElementById(`${prefix}legal-name`),
+      tradeName: document.getElementById(`${prefix}trade-name`),
+      taxId: document.getElementById(`${prefix}tax-id`),
+      status: document.getElementById(`${prefix}status`),
+      email: document.getElementById(`${prefix}email`),
+      phone: document.getElementById(`${prefix}phone`),
+      creditLimit: document.getElementById(`${prefix}credit-limit`),
+      paymentTermsDays: document.getElementById(`${prefix}payment-terms-days`),
+      notes: document.getElementById(`${prefix}notes`),
+    };
+  }
+
+  function createLabelRefs(prefix) {
+    return {
+      legalNameLabel: document.getElementById(`${prefix}legal-name-label`),
+      taxIdLabel: document.getElementById(`${prefix}tax-id-label`),
+      tradeNameWrapper: document.getElementById(`${prefix}trade-name-wrapper`),
+    };
+  }
 
   function renderSupplierRow(item) {
     const typeCode = getTypeCode(item.supplier_type) || '-';
     return `
       <tr>
-        <td>${item.code}</td>
-        <td>${formatSupplierType(typeCode)}</td>
-        <td>${item.legal_name}</td>
-        <td><span class="status status-${item.status}">${formatSupplierStatus(item.status)}</span></td>
+        <td>${escapeHtml(item.code)}</td>
+        <td>${escapeHtml(formatSupplierType(typeCode))}</td>
+        <td>${escapeHtml(item.legal_name)}</td>
+        <td><span class="status status-${item.status}">${escapeHtml(formatSupplierStatus(item.status))}</span></td>
         <td>
           <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
           <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
         </td>
       </tr>
     `;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
   }
 
   function getApiBase() {
@@ -69,6 +91,7 @@
   }
 
   function setFeedback(message, isError) {
+    if (!feedback) return;
     feedback.textContent = message;
     feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
     if (window.appAlerts?.toast) {
@@ -77,10 +100,7 @@
   }
 
   function toFriendlyFieldName(field) {
-    const labels = {
-      email: 'Correo',
-      phone: 'Teléfono',
-    };
+    const labels = { email: 'Correo', phone: 'Teléfono' };
     return labels[field] || field;
   }
 
@@ -88,15 +108,10 @@
     if (!payload) return '';
     if (typeof payload === 'string') return payload;
     if (payload.detail) return payload.detail;
-
-    const entries = Object.entries(payload)
+    return Object.entries(payload)
       .filter(([, value]) => value !== undefined && value !== null)
-      .map(([field, value]) => {
-        const messages = Array.isArray(value) ? value.join(', ') : String(value);
-        return `${toFriendlyFieldName(field)}: ${messages}`;
-      });
-
-    return entries.join(' | ');
+      .map(([field, value]) => `${toFriendlyFieldName(field)}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
+      .join(' | ');
   }
 
   function nextSupplierCode() {
@@ -112,33 +127,26 @@
     return type?.code || '';
   }
 
-  function refreshPersonKindLabels() {
-    if (!legalNameLabel || !taxIdLabel || !tradeNameWrapper || !fields.type) {
-      return;
-    }
+  function syncFormLabels(fields, labels) {
+    if (!fields?.type || !labels.legalNameLabel || !labels.taxIdLabel || !labels.tradeNameWrapper) return;
     const isLegal = getTypeCode(fields.type.value) !== 'fisico';
-    legalNameLabel.firstChild.textContent = isLegal ? 'Razón social' : 'Nombre completo';
-    taxIdLabel.firstChild.textContent = isLegal ? 'Cédula jurídica' : 'Cédula física';
-    tradeNameWrapper.style.display = isLegal ? 'grid' : 'none';
+    labels.legalNameLabel.firstChild.textContent = isLegal ? 'Razón social' : 'Nombre completo';
+    labels.taxIdLabel.firstChild.textContent = isLegal ? 'Cédula jurídica' : 'Cédula física';
+    labels.tradeNameWrapper.style.display = isLegal ? 'grid' : 'none';
   }
 
-  function isPhysicalSupplier() {
+  function isPhysicalSupplier(fields) {
     return getTypeCode(fields.type.value) === 'fisico';
   }
 
-  function isLegalSupplier() {
-    return !isPhysicalSupplier();
+  function isLegalSupplier(fields) {
+    return !isPhysicalSupplier(fields);
   }
 
-  async function syncSupplierNameFromPadron() {
-    if (!window.CedulaPadron || !isPhysicalSupplier()) {
-      return;
-    }
-
+  async function syncSupplierNameFromPadron(fields) {
+    if (!window.CedulaPadron || !isPhysicalSupplier(fields)) return;
     const taxId = fields.taxId.value.trim();
-    if (!taxId) {
-      return;
-    }
+    if (!taxId) return;
     const normalizedTaxId = window.CedulaPadron.normalizeCedula(taxId);
     if (normalizedTaxId.length < 9) return;
 
@@ -160,24 +168,17 @@
     }
   }
 
-  async function syncSupplierNameFromTaxRegistry() {
-    if (!isLegalSupplier()) {
-      return;
-    }
-
+  async function syncSupplierNameFromTaxRegistry(fields) {
+    if (!isLegalSupplier(fields)) return;
     const normalizedTaxId = String(fields.taxId.value || '').replace(/\D/g, '');
-    if (normalizedTaxId.length !== 10) {
-      return;
-    }
+    if (normalizedTaxId.length !== 10) return;
 
     try {
       const record = await request(`${getApiBase()}/suppliers/tax-registry/?tax_id=${normalizedTaxId}`);
       if (!record) return;
-
       if (!fields.legalName.value.trim()) {
         fields.legalName.value = record.nombre || '';
       }
-
       const status = record?.situacion?.estado || 'Sin estado';
       const administration = record?.situacion?.administracionTributaria || 'Sin administración';
       setFeedback(`Razón social validada en Hacienda. Estado: ${status}. Administración: ${administration}.`);
@@ -192,7 +193,6 @@
       credentials: 'include',
       ...options,
     });
-
     const contentType = response.headers.get('content-type') || '';
     const bodyText = await response.text();
 
@@ -200,48 +200,48 @@
       if (contentType.includes('application/json')) {
         let detail = bodyText;
         try {
-          const parsed = JSON.parse(bodyText);
-          detail = formatApiError(parsed) || bodyText;
+          detail = formatApiError(JSON.parse(bodyText)) || bodyText;
         } catch (_error) {
           detail = bodyText;
         }
         throw new Error(detail || 'Error inesperado del servidor.');
       }
-
       if (bodyText.startsWith('<!doctype html') || bodyText.startsWith('<html')) {
-        throw new Error('La respuesta no es JSON. Verifica API base (ej: http://localhost:8000/api).');
+        throw new Error('La respuesta no es JSON. Verifica API base.');
       }
-
       throw new Error(bodyText || 'Error inesperado del servidor.');
     }
 
-    if (response.status === 204 || !bodyText) {
-      return null;
-    }
-
+    if (response.status === 204 || !bodyText) return null;
     if (!contentType.includes('application/json')) {
       throw new Error('El endpoint respondió contenido no JSON. Revisa API base.');
     }
-
     return JSON.parse(bodyText);
   }
 
-  function resetForm() {
-    if (!supplierForm) {
-      return;
-    }
-    supplierForm.reset();
-    fields.id.value = '';
-    fields.code.value = nextSupplierCode();
-    fields.creditLimit.value = '0';
-    fields.paymentTermsDays.value = '0';
-    formTitle.textContent = 'Nuevo proveedor';
-    refreshPersonKindLabels();
+  function populateTypeSelect(select) {
+    if (!select) return;
+    select.innerHTML = supplierTypes.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
   }
 
-  function buildPayload() {
-    const personKind = getTypeCode(fields.type.value) === 'fisico' ? 'individual' : 'legal';
+  function resetCreateForm() {
+    if (!supplierForm) return;
+    supplierForm.reset();
+    createFields.code.value = nextSupplierCode();
+    createFields.creditLimit.value = '0';
+    createFields.paymentTermsDays.value = '0';
+    syncFormLabels(createFields, createLabels);
+  }
 
+  function resetEditForm() {
+    if (!editForm) return;
+    editForm.reset();
+    if (editFields.id) editFields.id.value = '';
+    syncFormLabels(editFields, editLabels);
+  }
+
+  function buildPayload(fields) {
+    const personKind = getTypeCode(fields.type.value) === 'fisico' ? 'individual' : 'legal';
     return {
       organization: getOrganizationId(),
       supplier_type: Number(fields.type.value),
@@ -258,7 +258,6 @@
     };
   }
 
-
   function formatSupplierType(typeCode) {
     if (typeCode === 'fisico') return 'Persona física';
     if (typeCode === 'juridico') return 'Persona jurídica';
@@ -271,150 +270,167 @@
   }
 
   function renderTable() {
-    if (!suppliersBody || !searchInput) {
-      return;
-    }
+    if (!suppliersBody || !searchInput) return;
     const term = searchInput.value.trim().toLowerCase();
-
-    const filtered = suppliers.filter((item) => {
-      const haystack = `${item.code} ${item.legal_name} ${item.email || ''}`.toLowerCase();
-      return haystack.includes(term);
-    });
-
+    const filtered = suppliers.filter((item) => `${item.code} ${item.legal_name} ${item.email || ''}`.toLowerCase().includes(term));
     if (suppliersPager) {
       suppliersPager.update(filtered);
       return;
     }
-
-    suppliersBody.innerHTML =
-      filtered.map((item) => renderSupplierRow(item)).join('') || '<tr><td colspan="5">No hay proveedores para mostrar.</td></tr>';
+    suppliersBody.innerHTML = filtered.map((item) => renderSupplierRow(item)).join('') || '<tr><td colspan="5">No hay proveedores para mostrar.</td></tr>';
   }
 
   async function ensureDefaultSupplierTypes() {
-    if (supplierTypes.length > 0) {
-      return;
-    }
-
+    if (supplierTypes.length > 0) return;
     const defaults = [
       { code: 'juridico', name: 'Persona jurídica' },
       { code: 'fisico', name: 'Persona física' },
     ];
-
     for (const item of defaults) {
-      await request(`${getApiBase()}/supplier-types/`, {
-        method: 'POST',
-        body: JSON.stringify(item),
-      }).catch(() => null);
+      await request(`${getApiBase()}/supplier-types/`, { method: 'POST', body: JSON.stringify(item) }).catch(() => null);
     }
   }
 
   async function loadSupplierTypes() {
     await ensureDefaultSupplierTypes();
     supplierTypes = await request(`${getApiBase()}/supplier-types/`);
-
-    if (fields.type) {
-      fields.type.innerHTML = supplierTypes.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
-    }
-
     if (!supplierTypes.length) {
       throw new Error('No hay tipos de proveedor configurados.');
     }
-
-    refreshPersonKindLabels();
+    populateTypeSelect(createFields.type);
+    populateTypeSelect(editFields.type);
+    syncFormLabels(createFields, createLabels);
+    syncFormLabels(editFields, editLabels);
   }
 
   async function loadSuppliers() {
     try {
       const organizationId = getOrganizationId();
       const data = await request(`${getApiBase()}/suppliers/?organization_id=${organizationId}`);
-      suppliers = data;
+      suppliers = Array.isArray(data) ? data : [];
       renderTable();
-      if (fields.id && fields.code && !fields.id.value) {
-        fields.code.value = nextSupplierCode();
+      if (supplierForm && createFields.code && !createFields.code.value) {
+        createFields.code.value = nextSupplierCode();
       }
-      openPendingEdit();
       suppliersLoaded = true;
-      setFeedback(`Mostrando ${data.length} proveedor${data.length === 1 ? '' : 'es'} en la lista.`);
+      setFeedback(`Mostrando ${suppliers.length} proveedor${suppliers.length === 1 ? '' : 'es'} en la lista.`);
     } catch (error) {
       suppliersLoaded = false;
       setFeedback(`Error al cargar proveedores: ${error.message}`, true);
     }
   }
 
-  function fillForm(supplier) {
-    if (!supplierForm) {
-      return;
+  function fillEditForm(supplier) {
+    if (!editForm) return;
+    editFields.id.value = supplier.id;
+    editFields.type.value = String(supplier.supplier_type);
+    syncFormLabels(editFields, editLabels);
+    editFields.code.value = supplier.code;
+    editFields.legalName.value = supplier.legal_name;
+    editFields.tradeName.value = supplier.trade_name || '';
+    editFields.taxId.value = supplier.tax_id || '';
+    editFields.status.value = supplier.status;
+    editFields.email.value = supplier.email || '';
+    editFields.phone.value = supplier.phone || '';
+    editFields.creditLimit.value = supplier.credit_limit;
+    editFields.paymentTermsDays.value = supplier.payment_terms_days;
+    editFields.notes.value = supplier.notes || '';
+  }
+
+  function openEditModal(supplier) {
+    if (!editModal || !supplier) return;
+    fillEditForm(supplier);
+    editModal.classList.remove('hidden');
+    editModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+  }
+
+  function closeEditModal() {
+    if (!editModal) return;
+    editModal.classList.add('hidden');
+    editModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('modal-open');
+    resetEditForm();
+  }
+
+  async function saveSupplier(fields, isEdit) {
+    await syncSupplierNameFromPadron(fields);
+    await syncSupplierNameFromTaxRegistry(fields);
+    const payload = buildPayload(fields);
+    const id = fields.id?.value;
+
+    if (isEdit) {
+      await request(`${getApiBase()}/suppliers/${id}/`, { method: 'PUT', body: JSON.stringify(payload) });
+      setFeedback('Proveedor actualizado correctamente.');
+    } else {
+      await request(`${getApiBase()}/suppliers/`, { method: 'POST', body: JSON.stringify(payload) });
+      setFeedback('Proveedor creado correctamente.');
     }
-    fields.id.value = supplier.id;
-    fields.type.value = supplier.supplier_type;
-    refreshPersonKindLabels();
-    fields.code.value = supplier.code;
-    fields.legalName.value = supplier.legal_name;
-    fields.tradeName.value = supplier.trade_name || '';
-    fields.taxId.value = supplier.tax_id || '';
-    fields.status.value = supplier.status;
-    fields.email.value = supplier.email || '';
-    fields.phone.value = supplier.phone || '';
-    fields.creditLimit.value = supplier.credit_limit;
-    fields.paymentTermsDays.value = supplier.payment_terms_days;
-    fields.notes.value = supplier.notes || '';
-    formTitle.textContent = `Editar proveedor #${supplier.id}`;
+  }
+
+  function registerTaxListeners(fields, labels, timerName) {
+    fields.type?.addEventListener('change', () => {
+      syncFormLabels(fields, labels);
+      syncSupplierNameFromPadron(fields).catch(() => null);
+      syncSupplierNameFromTaxRegistry(fields).catch(() => null);
+    });
+
+    fields.taxId?.addEventListener('blur', () => {
+      syncSupplierNameFromPadron(fields).catch(() => null);
+      syncSupplierNameFromTaxRegistry(fields).catch(() => null);
+    });
+
+    fields.taxId?.addEventListener('input', () => {
+      if (timerName === 'create' && createTypingTimer) clearTimeout(createTypingTimer);
+      if (timerName === 'edit' && editTypingTimer) clearTimeout(editTypingTimer);
+      const timer = setTimeout(() => {
+        syncSupplierNameFromPadron(fields).catch(() => null);
+        syncSupplierNameFromTaxRegistry(fields).catch(() => null);
+      }, 250);
+      if (timerName === 'create') createTypingTimer = timer;
+      if (timerName === 'edit') editTypingTimer = timer;
+    });
   }
 
   supplierForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
-
     try {
-      await syncSupplierNameFromPadron();
-      await syncSupplierNameFromTaxRegistry();
-      const id = fields.id.value;
-      const payload = buildPayload();
-      const isEdit = Boolean(id);
-
-      if (isEdit) {
-        await request(`${getApiBase()}/suppliers/${id}/`, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
-        setFeedback('Proveedor actualizado correctamente.');
-      } else {
-        await request(`${getApiBase()}/suppliers/`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        setFeedback('Proveedor creado correctamente.');
-      }
-
-      resetForm();
+      await saveSupplier(createFields, false);
+      resetCreateForm();
       await loadSuppliers();
     } catch (error) {
       setFeedback(`No se pudo guardar: ${error.message}`, true);
     }
   });
 
-  cancelEditButton?.addEventListener('click', resetForm);
+  editForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await saveSupplier(editFields, true);
+      closeEditModal();
+      await loadSuppliers();
+    } catch (error) {
+      setFeedback(`No se pudo guardar: ${error.message}`, true);
+    }
+  });
+
+  editCloseButton?.addEventListener('click', closeEditModal);
+  editCancelButton?.addEventListener('click', closeEditModal);
+  editModal?.addEventListener('click', (event) => {
+    if (event.target === editModal) closeEditModal();
+  });
 
   suppliersBody?.addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-action]');
-    if (!button) {
-      return;
-    }
+    if (!button) return;
 
     const id = Number(button.dataset.id);
     const action = button.dataset.action;
     const target = suppliers.find((item) => item.id === id);
-
-    if (!target) {
-      return;
-    }
+    if (!target) return;
 
     if (action === 'edit') {
-      if (!supplierForm) {
-        sessionStorage.setItem(EDIT_SESSION_KEY, String(id));
-        window.location.href = '/suppliers.html';
-        return;
-      }
-      fillForm(target);
+      openEditModal(target);
       return;
     }
 
@@ -422,9 +438,7 @@
       const shouldDelete = window.appAlerts?.confirm
         ? await window.appAlerts.confirm(`¿Desea eliminar al proveedor ${target.legal_name}?`, 'Eliminar proveedor')
         : window.confirm(`¿Desea eliminar al proveedor ${target.legal_name}?`);
-      if (!shouldDelete) {
-        return;
-      }
+      if (!shouldDelete) return;
 
       try {
         await request(`${getApiBase()}/suppliers/${id}/`, { method: 'DELETE' });
@@ -436,45 +450,25 @@
     }
   });
 
-  fields.type?.addEventListener('change', () => {
-    refreshPersonKindLabels();
-    syncSupplierNameFromPadron().catch(() => null);
-    syncSupplierNameFromTaxRegistry().catch(() => null);
-  });
-  fields.taxId?.addEventListener('blur', () => {
-    syncSupplierNameFromPadron().catch(() => null);
-    syncSupplierNameFromTaxRegistry().catch(() => null);
-  });
-  fields.taxId?.addEventListener('input', () => {
-    if (padronTypingTimer) clearTimeout(padronTypingTimer);
-    padronTypingTimer = setTimeout(() => {
-      syncSupplierNameFromPadron().catch(() => null);
-      syncSupplierNameFromTaxRegistry().catch(() => null);
-    }, 250);
-  });
   searchInput?.addEventListener('input', renderTable);
-
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && editModal && !editModal.classList.contains('hidden')) {
+      closeEditModal();
+    }
+  });
   window.addEventListener('focus', () => {
     if (!suppliersLoaded) return;
     loadSuppliers();
   });
 
-  function openPendingEdit() {
-    if (!supplierForm) {
-      return;
-    }
-    const pendingId = Number(sessionStorage.getItem(EDIT_SESSION_KEY) || 0);
-    if (!pendingId) {
-      return;
-    }
-    const target = suppliers.find((item) => item.id === pendingId);
-    sessionStorage.removeItem(EDIT_SESSION_KEY);
-    if (target) {
-      fillForm(target);
-    }
-  }
+  registerTaxListeners(createFields, createLabels, 'create');
+  registerTaxListeners(editFields, editLabels, 'edit');
 
   loadSupplierTypes()
-    .then(loadSuppliers)
+    .then(() => {
+      resetCreateForm();
+      resetEditForm();
+      return loadSuppliers();
+    })
     .catch((error) => setFeedback(`Error inicial: ${error.message}`, true));
 })();

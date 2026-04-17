@@ -45,15 +45,18 @@ textarea {
   padding: 0.65rem;
 }
 
-.grid {
+.management-stack {
   display: grid;
-  grid-template-columns: 1fr 1.2fr;
   gap: 1rem;
+}
+
+.form-card--full {
+  width: 100%;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
@@ -61,6 +64,7 @@ textarea {
   margin-top: 0.9rem;
   display: flex;
   gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .table-wrap {
@@ -114,9 +118,60 @@ td .btn {
   margin-right: 0.35rem;
 }
 
-@media (max-width: 1200px) {
-  .grid {
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 8, 18, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.modal-card {
+  width: min(960px, 100%);
+  max-height: min(90vh, 980px);
+  overflow: auto;
+  border-radius: 22px;
+  padding: 22px;
+  border: 1px solid rgba(122, 162, 255, 0.16);
+  background: linear-gradient(180deg, rgba(18, 28, 49, 0.96), rgba(11, 18, 34, 0.98));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.modal-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.modal-card__header h2 {
+  margin: 0.45rem 0 0;
+}
+
+.modal-close {
+  align-self: center;
+}
+
+.hidden {
+  display: none !important;
+}
+
+body.modal-open {
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .modal-backdrop {
+    padding: 14px;
+  }
+
+  .modal-card__header {
     grid-template-columns: 1fr;
+    display: grid;
   }
 }
 
