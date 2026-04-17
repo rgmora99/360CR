@@ -12,6 +12,13 @@
   const legalNameLabel = document.getElementById('legal-name-label');
   const taxIdLabel = document.getElementById('tax-id-label');
   const tradeNameWrapper = document.getElementById('trade-name-wrapper');
+  const customersPager = window.TablePaginator?.create({
+    key: 'customers',
+    tableBody: customersBody,
+    totalColumns: 5,
+    emptyMessage: 'No hay clientes para mostrar.',
+    rowRenderer: renderCustomerRow,
+  });
 
   const fields = {
     id: document.getElementById('customer-id'),
@@ -34,6 +41,23 @@
   let customersLoaded = false;
   let padronTypingTimer = null;
   const SESSION_KEY = 'cr360.session';
+  const EDIT_SESSION_KEY = 'cr360.customers.edit-id';
+
+  function renderCustomerRow(item) {
+    const typeCode = getTypeCode(item.customer_type) || '-';
+    return `
+      <tr>
+        <td>${item.code}</td>
+        <td>${formatCustomerType(typeCode)}</td>
+        <td>${item.legal_name}</td>
+        <td><span class="status status-${item.status}">${formatCustomerStatus(item.status)}</span></td>
+        <td>
+          <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
+          <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
+        </td>
+      </tr>
+    `;
+  }
 
   function getActiveOrganizationFromSession() {
     try {
@@ -148,6 +172,9 @@
   }
 
   function syncFormLabelsFromType(typeId) {
+    if (!legalNameLabel || !taxIdLabel || !tradeNameWrapper) {
+      return;
+    }
     const code = getTypeCode(typeId);
     const isLegal = code !== 'fisico';
     legalNameLabel.firstChild.textContent = isLegal ? 'Razón social' : 'Nombre completo';
@@ -156,7 +183,7 @@
   }
 
   function isPhysicalCustomer() {
-    return getTypeCode(fields.type.value) === 'fisico';
+    return getTypeCode(fields.type?.value) === 'fisico';
   }
 
   function isLegalCustomer() {
@@ -314,6 +341,9 @@
   }
 
   function resetForm() {
+    if (!customerForm) {
+      return;
+    }
     customerForm.reset();
     fields.id.value = '';
     fields.code.value = nextCustomerCode();
@@ -401,6 +431,9 @@
   }
 
   function renderTable() {
+    if (!customersBody || !searchInput) {
+      return;
+    }
     const term = searchInput.value.trim().toLowerCase();
 
     const filtered = customers.filter((item) => {
@@ -408,28 +441,12 @@
       return haystack.includes(term);
     });
 
-    customersBody.innerHTML = '';
-
-    if (!filtered.length) {
-      customersBody.innerHTML = '<tr><td colspan="5">No hay clientes para mostrar.</td></tr>';
+    if (customersPager) {
+      customersPager.update(filtered);
       return;
     }
 
-    filtered.forEach((item) => {
-      const tr = document.createElement('tr');
-      const typeCode = getTypeCode(item.customer_type) || '-';
-      tr.innerHTML = `
-        <td>${item.code}</td>
-        <td>${formatCustomerType(typeCode)}</td>
-        <td>${item.legal_name}</td>
-        <td><span class="status status-${item.status}">${formatCustomerStatus(item.status)}</span></td>
-        <td>
-          <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
-          <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
-        </td>
-      `;
-      customersBody.appendChild(tr);
-    });
+    customersBody.innerHTML = filtered.map((item) => renderCustomerRow(item)).join('') || '<tr><td colspan="5">No hay clientes para mostrar.</td></tr>';
   }
 
   async function loadCustomerTypes() {
@@ -441,13 +458,15 @@
       customerTypes = await request(apiUrl('/customer-types/'));
     }
 
-    fields.type.innerHTML = customerTypes.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
+    if (fields.type) {
+      fields.type.innerHTML = customerTypes.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
+    }
 
     if (!customerTypes.length) {
       throw new Error('No hay tipos de cliente configurados y no se pudieron crear automáticamente.');
     }
 
-    syncFormLabelsFromType(fields.type.value);
+    syncFormLabelsFromType(fields.type?.value);
   }
 
   async function loadCustomers() {
@@ -456,9 +475,10 @@
       const data = await request(apiUrl(`/customers/?organization_id=${organizationId}`));
       customers = data;
       renderTable();
-      if (!fields.id.value) {
+      if (fields.id && fields.code && !fields.id.value) {
         fields.code.value = nextCustomerCode();
       }
+      openPendingEdit();
       customersLoaded = true;
       setFeedback(`Mostrando ${data.length} cliente${data.length === 1 ? '' : 's'} de la organización seleccionada.`);
     } catch (error) {
@@ -469,6 +489,9 @@
   }
 
   function fillForm(customer) {
+    if (!customerForm) {
+      return;
+    }
     fields.id.value = customer.id;
     fields.type.value = customer.customer_type;
     syncFormLabelsFromType(customer.customer_type);
@@ -485,7 +508,7 @@
     formTitle.textContent = `Editar cliente #${customer.id}`;
   }
 
-  customerForm.addEventListener('submit', async (event) => {
+  customerForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     try {
@@ -518,9 +541,9 @@
     }
   });
 
-  cancelEditButton.addEventListener('click', resetForm);
+  cancelEditButton?.addEventListener('click', resetForm);
 
-  customersBody.addEventListener('click', async (event) => {
+  customersBody?.addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-action]');
     if (!button) {
       return;
@@ -535,6 +558,11 @@
     }
 
     if (action === 'edit') {
+      if (!customerForm) {
+        sessionStorage.setItem(EDIT_SESSION_KEY, String(id));
+        window.location.href = '/customers.html';
+        return;
+      }
       fillForm(target);
       return;
     }
@@ -558,16 +586,16 @@
     }
   });
 
-  fields.type.addEventListener('change', () => {
+  fields.type?.addEventListener('change', () => {
     syncFormLabelsFromType(fields.type.value);
     syncCustomerNameFromPadron().catch(() => null);
     syncCustomerNameFromTaxRegistry().catch(() => null);
   });
-  fields.taxId.addEventListener('blur', () => {
+  fields.taxId?.addEventListener('blur', () => {
     syncCustomerNameFromPadron().catch(() => null);
     syncCustomerNameFromTaxRegistry().catch(() => null);
   });
-  fields.taxId.addEventListener('input', () => {
+  fields.taxId?.addEventListener('input', () => {
     const normalizedTaxId = window.CedulaPadron?.normalizeCedula(fields.taxId.value) || fields.taxId.value.replace(/\D/g, '');
 
     if (padronTypingTimer) clearTimeout(padronTypingTimer);
@@ -581,13 +609,28 @@
       syncCustomerNameFromTaxRegistry().catch(() => null);
     }, 250);
   });
-  searchInput.addEventListener('input', renderTable);
-  organizationIdInput.addEventListener('change', loadCustomers);
+  searchInput?.addEventListener('input', renderTable);
+  organizationIdInput?.addEventListener('change', loadCustomers);
 
   window.addEventListener('focus', () => {
     if (!customersLoaded) return;
     loadCustomers();
   });
+
+  function openPendingEdit() {
+    if (!customerForm) {
+      return;
+    }
+    const pendingId = Number(sessionStorage.getItem(EDIT_SESSION_KEY) || 0);
+    if (!pendingId) {
+      return;
+    }
+    const target = customers.find((item) => item.id === pendingId);
+    sessionStorage.removeItem(EDIT_SESSION_KEY);
+    if (target) {
+      fillForm(target);
+    }
+  }
 
   logInfo('Inicializando módulo clientes', { apiBase: getApiBase(), organizationId: organizationIdInput.value });
 

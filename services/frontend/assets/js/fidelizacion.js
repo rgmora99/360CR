@@ -72,6 +72,75 @@
     rewards: [],
     entries: [],
   };
+  const programsPager = window.TablePaginator?.create({
+    key: 'loyalty-programs',
+    tableBody: dom.programsBody,
+    totalColumns: 4,
+    emptyMessage: 'No hay programas en esta organizacion.',
+    rowRenderer: (program) => `
+      <tr>
+        <td>${program.code}</td>
+        <td>${program.name}</td>
+        <td>${program.is_active ? 'Si' : 'No'}</td>
+        <td>
+          <button class="btn btn-secondary" data-program-edit="${program.id}" type="button">Editar</button>
+          <button class="btn btn-secondary" data-program-delete="${program.id}" type="button">Eliminar</button>
+        </td>
+      </tr>
+    `,
+  });
+  const membersPager = window.TablePaginator?.create({
+    key: 'loyalty-members',
+    tableBody: dom.membersBody,
+    totalColumns: 4,
+    emptyMessage: 'Sin miembros en el programa.',
+    rowRenderer: (member) => `
+      <tr>
+        <td>${member.customer_name || '-'}</td>
+        <td>${member.member_code}</td>
+        <td>${member.available_points}</td>
+        <td>
+          <button class="btn btn-secondary" data-member-edit="${member.id}" type="button">Editar</button>
+          <button class="btn btn-secondary" data-member-delete="${member.id}" type="button">Eliminar</button>
+        </td>
+      </tr>
+    `,
+  });
+  const rewardsPager = window.TablePaginator?.create({
+    key: 'loyalty-rewards',
+    tableBody: dom.rewardsBody,
+    totalColumns: 4,
+    emptyMessage: 'Sin recompensas configuradas.',
+    rowRenderer: (reward) => `
+      <tr>
+        <td>${reward.name}</td>
+        <td>${reward.points_cost}</td>
+        <td>${reward.is_unlimited_stock ? 'Ilimitado' : reward.stock}</td>
+        <td>
+          <button class="btn btn-secondary" data-reward-edit="${reward.id}" type="button">Editar</button>
+          <button class="btn btn-secondary" data-reward-delete="${reward.id}" type="button">Eliminar</button>
+        </td>
+      </tr>
+    `,
+  });
+  const entriesPager = window.TablePaginator?.create({
+    key: 'loyalty-entries',
+    tableBody: dom.entriesBody,
+    totalColumns: 5,
+    emptyMessage: 'Sin movimientos para el programa seleccionado.',
+    rowRenderer: (entry) => {
+      const member = state.members.find((item) => item.id === entry.member);
+      return `
+        <tr>
+          <td>${new Date(entry.event_at).toLocaleString('es-CR')}</td>
+          <td>${member?.customer_name || `#${entry.member}`}</td>
+          <td>${entry.entry_type}</td>
+          <td>${entry.points}</td>
+          <td>${entry.source_reference || '-'}</td>
+        </tr>
+      `;
+    },
+  });
 
   const toBool = (value) => String(value) === 'true';
 
@@ -208,11 +277,18 @@
   function renderPrograms() {
     if (!state.programs.length) {
       dom.program.innerHTML = '<option value="">Sin programas</option>';
+      if (programsPager) {
+        programsPager.update([]);
+      }
       dom.programsBody.innerHTML = '<tr><td colspan="4">No hay programas en esta organización.</td></tr>';
       return;
     }
 
     dom.program.innerHTML = state.programs.map((program) => `<option value="${program.id}">${program.name} (${program.code})</option>`).join('');
+    if (programsPager) {
+      programsPager.update(state.programs);
+      return;
+    }
 
     dom.programsBody.innerHTML = state.programs
       .map(
@@ -246,6 +322,11 @@
     dom.accrueMember.innerHTML = memberOptions;
     dom.redeemMember.innerHTML = memberOptions;
 
+    if (membersPager) {
+      membersPager.update(state.members);
+      return;
+    }
+
     dom.membersBody.innerHTML = state.members.length
       ? state.members
           .map(
@@ -270,6 +351,11 @@
       ? state.rewards.map((item) => `<option value="${item.id}">${item.name} (${item.points_cost} pts)</option>`).join('')
       : '<option value="">Sin recompensas</option>';
 
+    if (rewardsPager) {
+      rewardsPager.update(state.rewards);
+      return;
+    }
+
     dom.rewardsBody.innerHTML = state.rewards.length
       ? state.rewards
           .map(
@@ -290,6 +376,11 @@
   }
 
   function renderEntries() {
+    if (entriesPager) {
+      entriesPager.update(state.entries);
+      return;
+    }
+
     dom.entriesBody.innerHTML = state.entries.length
       ? state.entries
           .map((entry) => {

@@ -10,6 +10,13 @@
   const legalNameLabel = document.getElementById('legal-name-label');
   const taxIdLabel = document.getElementById('tax-id-label');
   const tradeNameWrapper = document.getElementById('trade-name-wrapper');
+  const suppliersPager = window.TablePaginator?.create({
+    key: 'suppliers',
+    tableBody: suppliersBody,
+    totalColumns: 5,
+    emptyMessage: 'No hay proveedores para mostrar.',
+    rowRenderer: renderSupplierRow,
+  });
 
   const fields = {
     id: document.getElementById('supplier-id'),
@@ -30,6 +37,23 @@
   let supplierTypes = [];
   let suppliersLoaded = false;
   let padronTypingTimer = null;
+  const EDIT_SESSION_KEY = 'cr360.suppliers.edit-id';
+
+  function renderSupplierRow(item) {
+    const typeCode = getTypeCode(item.supplier_type) || '-';
+    return `
+      <tr>
+        <td>${item.code}</td>
+        <td>${formatSupplierType(typeCode)}</td>
+        <td>${item.legal_name}</td>
+        <td><span class="status status-${item.status}">${formatSupplierStatus(item.status)}</span></td>
+        <td>
+          <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
+          <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
+        </td>
+      </tr>
+    `;
+  }
 
   function getApiBase() {
     const value = '/api';
@@ -89,6 +113,9 @@
   }
 
   function refreshPersonKindLabels() {
+    if (!legalNameLabel || !taxIdLabel || !tradeNameWrapper || !fields.type) {
+      return;
+    }
     const isLegal = getTypeCode(fields.type.value) !== 'fisico';
     legalNameLabel.firstChild.textContent = isLegal ? 'Razón social' : 'Nombre completo';
     taxIdLabel.firstChild.textContent = isLegal ? 'Cédula jurídica' : 'Cédula física';
@@ -200,6 +227,9 @@
   }
 
   function resetForm() {
+    if (!supplierForm) {
+      return;
+    }
     supplierForm.reset();
     fields.id.value = '';
     fields.code.value = nextSupplierCode();
@@ -241,6 +271,9 @@
   }
 
   function renderTable() {
+    if (!suppliersBody || !searchInput) {
+      return;
+    }
     const term = searchInput.value.trim().toLowerCase();
 
     const filtered = suppliers.filter((item) => {
@@ -248,28 +281,13 @@
       return haystack.includes(term);
     });
 
-    suppliersBody.innerHTML = '';
-
-    if (!filtered.length) {
-      suppliersBody.innerHTML = '<tr><td colspan="5">No hay proveedores para mostrar.</td></tr>';
+    if (suppliersPager) {
+      suppliersPager.update(filtered);
       return;
     }
 
-    filtered.forEach((item) => {
-      const tr = document.createElement('tr');
-      const typeCode = getTypeCode(item.supplier_type) || '-';
-      tr.innerHTML = `
-        <td>${item.code}</td>
-        <td>${formatSupplierType(typeCode)}</td>
-        <td>${item.legal_name}</td>
-        <td><span class="status status-${item.status}">${formatSupplierStatus(item.status)}</span></td>
-        <td>
-          <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
-          <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
-        </td>
-      `;
-      suppliersBody.appendChild(tr);
-    });
+    suppliersBody.innerHTML =
+      filtered.map((item) => renderSupplierRow(item)).join('') || '<tr><td colspan="5">No hay proveedores para mostrar.</td></tr>';
   }
 
   async function ensureDefaultSupplierTypes() {
@@ -294,7 +312,9 @@
     await ensureDefaultSupplierTypes();
     supplierTypes = await request(`${getApiBase()}/supplier-types/`);
 
-    fields.type.innerHTML = supplierTypes.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
+    if (fields.type) {
+      fields.type.innerHTML = supplierTypes.map((item) => `<option value="${item.id}">${item.name}</option>`).join('');
+    }
 
     if (!supplierTypes.length) {
       throw new Error('No hay tipos de proveedor configurados.');
@@ -309,9 +329,10 @@
       const data = await request(`${getApiBase()}/suppliers/?organization_id=${organizationId}`);
       suppliers = data;
       renderTable();
-      if (!fields.id.value) {
+      if (fields.id && fields.code && !fields.id.value) {
         fields.code.value = nextSupplierCode();
       }
+      openPendingEdit();
       suppliersLoaded = true;
       setFeedback(`Mostrando ${data.length} proveedor${data.length === 1 ? '' : 'es'} en la lista.`);
     } catch (error) {
@@ -321,6 +342,9 @@
   }
 
   function fillForm(supplier) {
+    if (!supplierForm) {
+      return;
+    }
     fields.id.value = supplier.id;
     fields.type.value = supplier.supplier_type;
     refreshPersonKindLabels();
@@ -337,7 +361,7 @@
     formTitle.textContent = `Editar proveedor #${supplier.id}`;
   }
 
-  supplierForm.addEventListener('submit', async (event) => {
+  supplierForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     try {
@@ -368,9 +392,9 @@
     }
   });
 
-  cancelEditButton.addEventListener('click', resetForm);
+  cancelEditButton?.addEventListener('click', resetForm);
 
-  suppliersBody.addEventListener('click', async (event) => {
+  suppliersBody?.addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-action]');
     if (!button) {
       return;
@@ -385,6 +409,11 @@
     }
 
     if (action === 'edit') {
+      if (!supplierForm) {
+        sessionStorage.setItem(EDIT_SESSION_KEY, String(id));
+        window.location.href = '/suppliers.html';
+        return;
+      }
       fillForm(target);
       return;
     }
@@ -407,28 +436,43 @@
     }
   });
 
-  fields.type.addEventListener('change', () => {
+  fields.type?.addEventListener('change', () => {
     refreshPersonKindLabels();
     syncSupplierNameFromPadron().catch(() => null);
     syncSupplierNameFromTaxRegistry().catch(() => null);
   });
-  fields.taxId.addEventListener('blur', () => {
+  fields.taxId?.addEventListener('blur', () => {
     syncSupplierNameFromPadron().catch(() => null);
     syncSupplierNameFromTaxRegistry().catch(() => null);
   });
-  fields.taxId.addEventListener('input', () => {
+  fields.taxId?.addEventListener('input', () => {
     if (padronTypingTimer) clearTimeout(padronTypingTimer);
     padronTypingTimer = setTimeout(() => {
       syncSupplierNameFromPadron().catch(() => null);
       syncSupplierNameFromTaxRegistry().catch(() => null);
     }, 250);
   });
-  searchInput.addEventListener('input', renderTable);
+  searchInput?.addEventListener('input', renderTable);
 
   window.addEventListener('focus', () => {
     if (!suppliersLoaded) return;
     loadSuppliers();
   });
+
+  function openPendingEdit() {
+    if (!supplierForm) {
+      return;
+    }
+    const pendingId = Number(sessionStorage.getItem(EDIT_SESSION_KEY) || 0);
+    if (!pendingId) {
+      return;
+    }
+    const target = suppliers.find((item) => item.id === pendingId);
+    sessionStorage.removeItem(EDIT_SESSION_KEY);
+    if (target) {
+      fillForm(target);
+    }
+  }
 
   loadSupplierTypes()
     .then(loadSuppliers)

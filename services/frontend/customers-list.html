@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Eventos programados | 360CR</title>
+    <title>Listado de Clientes | 360CR</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/assets/css/base.css" />
     <link rel="stylesheet" href="/assets/css/components.css" />
     <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
-    <link rel="stylesheet" href="/assets/css/pages/agenda.css" />
+    <link rel="stylesheet" href="/assets/css/pages/customers.css" />
   </head>
   <body>
     <div class="dashboard-layout">
@@ -22,64 +22,42 @@
         <div class="page-wrap">
           <section class="module-header card">
             <div>
-              <p class="badge">Agenda</p>
-              <h1>Eventos programados</h1>
-              <p class="subtitle">Consulta, filtra, edita, elimina y factura citas desde una sola bandeja.</p>
+              <p class="badge">Clientes</p>
+              <h1>Listado de clientes</h1>
+              <p class="subtitle">Consulta, busca y pagina los clientes por organizacion sin mezclar el mantenimiento con el listado.</p>
             </div>
             <div class="quick-actions">
-              <a class="btn btn-primary" href="/agenda-crear.html">Crear evento</a>
+              <a class="btn btn-primary" href="/customers.html">Ir a gestion</a>
             </div>
           </section>
 
           <section class="card filters">
             <label>
+              Organizacion
+              <select id="organization-id"></select>
+            </label>
+            <label>
               Buscar
-              <input id="search" type="text" placeholder="Título o descripción" />
+              <input id="search" type="text" placeholder="Razon social, codigo o correo" />
             </label>
-            <label>
-              Estado
-              <select id="status-filter">
-                <option value="">Todos</option>
-                <option value="pending">Pendiente</option>
-                <option value="done">Completado</option>
-                <option value="cancelled">Cancelado</option>
-              </select>
-            </label>
-            <label>
-              Servicio
-              <select id="service-filter"></select>
-            </label>
-            <label>
-              Colaborador
-              <select id="collaborator-filter"></select>
-            </label>
-            <label>
-              Desde
-              <input id="date-from-filter" type="date" />
-            </label>
-            <label>
-              Hasta
-              <input id="date-to-filter" type="date" />
-            </label>
-            <button id="load-events" class="btn btn-primary" type="button">Aplicar filtros</button>
+            <p class="filters-hint">El listado responde al cambio de organizacion y conserva la paginacion elegida por el usuario.</p>
           </section>
 
           <section class="card">
-            <h2>Eventos programados</h2>
+            <h2>Clientes registrados</h2>
             <p class="subtitle" id="feedback">Sin datos cargados.</p>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Título</th>
-                    <th>Servicio</th>
-                    <th>Colaborador</th>
-                    <th>Inicio</th>
+                    <th>Codigo</th>
+                    <th>Tipo</th>
+                    <th>Razon social / Nombre</th>
                     <th>Estado</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
-                <tbody id="events-body"></tbody>
+                <tbody id="customers-body"></tbody>
               </table>
             </div>
           </section>
@@ -92,8 +70,9 @@
     <script src="/assets/js/navigation.js"></script>
     <script src="/assets/js/pagination.js"></script>
     <script>
-      window.renderSharedNavigation({ activeModule: 'agenda-eventos' });
+      window.renderSharedNavigation({ activeModule: 'clientes-listado' });
     </script>
-    <script src="/assets/js/agenda.js"></script>
+    <script src="/assets/js/cedula-padron.js"></script>
+    <script src="/assets/js/customers.js"></script>
   </body>
 </html>

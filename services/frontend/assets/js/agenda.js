@@ -12,6 +12,13 @@
   const loadButton = $('load-events');
   const eventsBody = $('events-body');
   const feedback = $('feedback');
+  const eventsPager = window.TablePaginator?.create({
+    key: 'agenda-events',
+    tableBody: eventsBody,
+    totalColumns: 6,
+    emptyMessage: 'No hay eventos para mostrar.',
+    rowRenderer: renderEventRow,
+  });
 
   const eventForm = $('event-form');
   const formTitle = $('form-title');
@@ -44,6 +51,25 @@
   let eventTypes = [];
   let services = [];
   let collaborators = [];
+
+  function renderEventRow(item) {
+    const canInvoice = Boolean(item.service) && item.status !== 'cancelled' && !item.invoice;
+    return `
+      <tr>
+        <td>${item.title}</td>
+        <td>${item.service_name || getServiceName(item.service)}</td>
+        <td>${item.collaborator_email || getCollaboratorName(item.collaborator)}</td>
+        <td>${formatDate(item.starts_at)}</td>
+        <td>${item.status_display || item.status}</td>
+        <td>
+          <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
+          <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
+          ${canInvoice ? `<button class="btn btn-secondary" data-action="invoice" data-id="${item.id}">Facturar</button>` : ''}
+          ${item.invoice ? `<button class="btn btn-secondary" data-action="view-invoice" data-id="${item.id}">Ver factura</button>` : ''}
+        </td>
+      </tr>
+    `;
+  }
 
   function getApiBase() {
     return '/api';
@@ -146,31 +172,12 @@
       return matchText && matchStatus && matchService && matchCollaborator;
     });
 
-    eventsBody.innerHTML = '';
-
-    if (!filtered.length) {
-      eventsBody.innerHTML = '<tr><td colspan="6">No hay eventos para mostrar.</td></tr>';
+    if (eventsPager) {
+      eventsPager.update(filtered);
       return;
     }
 
-    filtered.forEach((item) => {
-      const tr = document.createElement('tr');
-      const canInvoice = Boolean(item.service) && item.status !== 'cancelled' && !item.invoice;
-      tr.innerHTML = `
-        <td>${item.title}</td>
-        <td>${item.service_name || getServiceName(item.service)}</td>
-        <td>${item.collaborator_email || getCollaboratorName(item.collaborator)}</td>
-        <td>${formatDate(item.starts_at)}</td>
-        <td>${item.status_display || item.status}</td>
-        <td>
-          <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
-          <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
-          ${canInvoice ? `<button class="btn btn-secondary" data-action="invoice" data-id="${item.id}">Facturar</button>` : ''}
-          ${item.invoice ? `<button class="btn btn-secondary" data-action="view-invoice" data-id="${item.id}">Ver factura</button>` : ''}
-        </td>
-      `;
-      eventsBody.appendChild(tr);
-    });
+    eventsBody.innerHTML = filtered.map((item) => renderEventRow(item)).join('') || '<tr><td colspan="6">No hay eventos para mostrar.</td></tr>';
   }
 
   function persistBillingPrefill(target) {

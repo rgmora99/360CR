@@ -27,6 +27,21 @@
   let syncPollTimer = null;
   let syncStartedAt = 0;
   let currentRows = [];
+  const inboxPager = window.TablePaginator?.create({
+    key: `purchase-inbox-${pageMode}`,
+    tableBody: $('inbox-body'),
+    totalColumns: 8,
+    emptyMessage: pageMode === 'history' ? 'Sin facturas en historico.' : 'Sin facturas electronicas pendientes.',
+    rowRenderer: (invoice) => {
+      const currency = invoice.currency || 'CRC';
+      const detailButton = `<button class='btn btn-secondary' data-detail='${invoice.id}'>Ver detalles</button>`;
+      let actionButtons = detailButton;
+      if (pageMode === 'inbox') {
+        actionButtons = `<button class='btn btn-secondary' data-approve='${invoice.id}'>Aprobar</button> <button class='btn btn-secondary' data-reject='${invoice.id}'>Rechazar</button> ${detailButton}`;
+      }
+      return `<tr><td>${invoice.issue_date}</td><td>${escapeHtml(invoice.supplier_name)}</td><td>${escapeHtml(invoice.invoice_number)}</td><td>${formatMoney(invoice.subtotal, currency)}</td><td>${formatMoney(invoice.tax_total, currency)}</td><td>${formatMoney(invoice.total, currency)}</td><td>${escapeHtml(statusText(invoice))}</td><td>${actionButtons}</td></tr>`;
+    },
+  });
 
   const statusLabels = {
     pending: 'Pendiente',
@@ -316,7 +331,10 @@
     const query = status ? `&status=${encodeURIComponent(status)}` : '';
     const rows = await request(`/purchase-inbox/?organization_id=${orgId()}&bucket=${pageMode}${query}`);
     currentRows = rows;
-    $('inbox-body').innerHTML =
+    if (inboxPager) {
+      inboxPager.update(rows);
+    }
+    if (!inboxPager) $('inbox-body').innerHTML =
       rows
         .map((invoice) => {
           const currency = invoice.currency || 'CRC';

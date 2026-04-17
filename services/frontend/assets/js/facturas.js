@@ -9,6 +9,14 @@
   const modalExtra = $('invoice-detail-extra');
   const modalLines = $('invoice-detail-lines');
   const modalActions = $('invoice-detail-actions');
+  const invoicesPager = window.TablePaginator?.create({
+    key: 'invoices',
+    tableBody: $('invoices-body'),
+    totalColumns: 5,
+    emptyMessage: 'Sin facturas emitidas',
+    rowRenderer: (invoice) =>
+      `<tr><td>${invoice.invoice_number}</td><td>${invoice.customer_name}</td><td>${invoice.total}</td><td>${invoice.issue_date}</td><td><button class='btn btn-secondary' data-detail='${invoice.id}'>Ver detalles</button> <a class='btn btn-secondary' href='${apiBase()}/invoices/${invoice.id}/pdf/' target='_blank'>PDF</a> <button class='btn btn-secondary' data-mail='${invoice.id}'>Correo</button></td></tr>`,
+  });
   let currentInvoices = [];
   const documentTypeLabels = { '01': 'Factura electrónica', '03': 'Nota de crédito' };
   const paymentMethodLabels = { '01': 'Efectivo', '02': 'Tarjeta', '03': 'Transferencia', '04': 'A plazos' };
@@ -80,13 +88,17 @@
   async function loadInvoices() {
     const invoices = await request(`/invoices/?organization_id=${orgId()}`);
     currentInvoices = invoices;
-    $('invoices-body').innerHTML =
-      invoices
-        .map(
-          (invoice) =>
-            `<tr><td>${invoice.invoice_number}</td><td>${invoice.customer_name}</td><td>${invoice.total}</td><td>${invoice.issue_date}</td><td><button class='btn btn-secondary' data-detail='${invoice.id}'>Ver detalles</button> <a class='btn btn-secondary' href='${apiBase()}/invoices/${invoice.id}/pdf/' target='_blank'>PDF</a> <button class='btn btn-secondary' data-mail='${invoice.id}'>Correo</button></td></tr>`
-        )
-        .join('') || '<tr><td colspan="5">Sin facturas emitidas</td></tr>';
+    if (invoicesPager) {
+      invoicesPager.update(invoices);
+    } else {
+      $('invoices-body').innerHTML =
+        invoices
+          .map(
+            (invoice) =>
+              `<tr><td>${invoice.invoice_number}</td><td>${invoice.customer_name}</td><td>${invoice.total}</td><td>${invoice.issue_date}</td><td><button class='btn btn-secondary' data-detail='${invoice.id}'>Ver detalles</button> <a class='btn btn-secondary' href='${apiBase()}/invoices/${invoice.id}/pdf/' target='_blank'>PDF</a> <button class='btn btn-secondary' data-mail='${invoice.id}'>Correo</button></td></tr>`
+          )
+          .join('') || '<tr><td colspan="5">Sin facturas emitidas</td></tr>';
+    }
     feedback(`Mostrando ${invoices.length} factura(s) emitida(s).`);
 
     const requestedInvoiceId = getRequestedInvoiceId();

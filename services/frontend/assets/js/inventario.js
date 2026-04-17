@@ -2,6 +2,25 @@
   const $ = (id) => document.getElementById(id);
   const state = { products: [], organizations: [], suppliers: [] };
   const apiBase = () => '/api';
+  const productsPager = window.TablePaginator?.create({
+    key: 'products',
+    tableBody: $('products-body'),
+    totalColumns: 10,
+    emptyMessage: 'Sin productos',
+    rowRenderer: (p) =>
+      `<tr>
+        <td>${p.sku}</td>
+        <td><strong>${p.name}</strong><br><small>${p.description || '-'}</small></td>
+        <td>${p.physical_location || '-'}</td>
+        <td>${p.supplier_name || '-'}</td>
+        <td>${p.cost_price}</td>
+        <td>${p.unit_price}</td>
+        <td>${p.product_type === 'service' ? 'N/A' : p.stock}</td>
+        <td>${p.product_type === 'service' ? (p.service_duration_minutes > 0 ? `${p.service_duration_minutes} min` : 'No requiere') : 'N/A'}</td>
+        <td>${statusLabel(p.item_status)}</td>
+        <td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td>
+      </tr>`,
+  });
   function orgId() {
     const raw = ($('organization-id').value || window.AppSession?.getActiveOrganizationId?.() || '').toString().trim();
     const numeric = Number(raw.replace(/[^\d]/g, ''));
@@ -78,25 +97,29 @@
   async function loadProducts() {
     const data = await request(`/products/?organization_id=${orgId()}`);
     state.products = data;
-    $('products-body').innerHTML =
-      data
-        .map(
-          (p) =>
-            `<tr>
-              <td>${p.sku}</td>
-              <td><strong>${p.name}</strong><br><small>${p.description || '-'}</small></td>
-              <td>${p.physical_location || '-'}</td>
-              <td>${p.supplier_name || '-'}</td>
-              <td>${p.cost_price}</td>
-              <td>${p.unit_price}</td>
-              <td>${p.product_type === 'service' ? 'N/A' : p.stock}</td>
-              <td>${p.product_type === 'service' ? (p.service_duration_minutes > 0 ? `${p.service_duration_minutes} min` : 'No requiere') : 'N/A'}</td>
-              <td>${statusLabel(p.item_status)}</td>
-              <td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td>
-            </tr>`,
-        )
-        .join('') ||
-      '<tr><td colspan="10">Sin productos</td></tr>';
+    if (productsPager) {
+      productsPager.update(data);
+    } else {
+      $('products-body').innerHTML =
+        data
+          .map(
+            (p) =>
+              `<tr>
+                <td>${p.sku}</td>
+                <td><strong>${p.name}</strong><br><small>${p.description || '-'}</small></td>
+                <td>${p.physical_location || '-'}</td>
+                <td>${p.supplier_name || '-'}</td>
+                <td>${p.cost_price}</td>
+                <td>${p.unit_price}</td>
+                <td>${p.product_type === 'service' ? 'N/A' : p.stock}</td>
+                <td>${p.product_type === 'service' ? (p.service_duration_minutes > 0 ? `${p.service_duration_minutes} min` : 'No requiere') : 'N/A'}</td>
+                <td>${statusLabel(p.item_status)}</td>
+                <td><button class='btn btn-secondary' data-edit='${p.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${p.id}'>Eliminar</button></td>
+              </tr>`,
+          )
+          .join('') ||
+        '<tr><td colspan="10">Sin productos</td></tr>';
+    }
   }
 
   function renderLocations() {

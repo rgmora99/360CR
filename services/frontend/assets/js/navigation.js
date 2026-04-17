@@ -97,8 +97,22 @@
 
     const menuItems = [
       { key: 'inicio', label: 'Inicio', href: '/dashboard.html' },
-      { key: 'clientes', label: 'Clientes', href: '/customers.html' },
-      { key: 'proveedores', label: 'Proveedores', href: '/suppliers.html' },
+      {
+        key: 'clientes-menu',
+        label: 'Clientes',
+        children: [
+          { key: 'clientes-gestion', label: 'Gestion', href: '/customers.html' },
+          { key: 'clientes-listado', label: 'Listado', href: '/customers-list.html' },
+        ],
+      },
+      {
+        key: 'proveedores-menu',
+        label: 'Proveedores',
+        children: [
+          { key: 'proveedores-gestion', label: 'Gestion', href: '/suppliers.html' },
+          { key: 'proveedores-listado', label: 'Listado', href: '/suppliers-list.html' },
+        ],
+      },
       {
         key: 'agenda-menu',
         label: 'Agenda',

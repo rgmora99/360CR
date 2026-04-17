@@ -13,6 +13,26 @@
   const purchaseDetailExtra = $('purchase-detail-extra');
   const purchaseDetailLines = $('purchase-detail-lines');
   const purchaseDetailDocument = $('purchase-detail-document');
+  const purchasesPager = window.TablePaginator?.create({
+    key: 'purchases',
+    tableBody: $('purchases-body'),
+    totalColumns: 7,
+    emptyMessage: 'Sin compras registradas.',
+    rowRenderer: (item) => {
+      const currency = item.currency || 'CRC';
+      return `
+        <tr>
+          <td>${escapeHtml(item.issue_date)}</td>
+          <td>${escapeHtml(item.supplier_name)}</td>
+          <td>${escapeHtml(item.invoice_number)}</td>
+          <td>${escapeHtml(formatMoney(item.subtotal, currency))}</td>
+          <td>${escapeHtml(formatMoney(item.tax_total, currency))}</td>
+          <td>${escapeHtml(formatMoney(item.total, currency))}</td>
+          <td><button class="btn btn-secondary" data-detail="${item.id}">Ver detalles</button></td>
+        </tr>
+      `;
+    },
+  });
 
   function orgId() {
     const id = Number($('organization-id')?.value || window.AppSession?.getActiveOrganizationId?.());
@@ -79,23 +99,27 @@
       return matchesText && matchesFrom && matchesTo;
     });
 
-    $('purchases-body').innerHTML =
-      filtered
-        .map((item) => {
-          const currency = item.currency || 'CRC';
-          return `
-            <tr>
-              <td>${escapeHtml(item.issue_date)}</td>
-              <td>${escapeHtml(item.supplier_name)}</td>
-              <td>${escapeHtml(item.invoice_number)}</td>
-              <td>${escapeHtml(formatMoney(item.subtotal, currency))}</td>
-              <td>${escapeHtml(formatMoney(item.tax_total, currency))}</td>
-              <td>${escapeHtml(formatMoney(item.total, currency))}</td>
-              <td><button class="btn btn-secondary" data-detail="${item.id}">Ver detalles</button></td>
-            </tr>
-          `;
-        })
-        .join('') || '<tr><td colspan="7">Sin compras registradas.</td></tr>';
+    if (purchasesPager) {
+      purchasesPager.update(filtered);
+    } else {
+      $('purchases-body').innerHTML =
+        filtered
+          .map((item) => {
+            const currency = item.currency || 'CRC';
+            return `
+              <tr>
+                <td>${escapeHtml(item.issue_date)}</td>
+                <td>${escapeHtml(item.supplier_name)}</td>
+                <td>${escapeHtml(item.invoice_number)}</td>
+                <td>${escapeHtml(formatMoney(item.subtotal, currency))}</td>
+                <td>${escapeHtml(formatMoney(item.tax_total, currency))}</td>
+                <td>${escapeHtml(formatMoney(item.total, currency))}</td>
+                <td><button class="btn btn-secondary" data-detail="${item.id}">Ver detalles</button></td>
+              </tr>
+            `;
+          })
+          .join('') || '<tr><td colspan="7">Sin compras registradas.</td></tr>';
+    }
 
     setFeedback(`Mostrando ${filtered.length} compra(s) de ${state.purchases.length} registradas.`);
   }
