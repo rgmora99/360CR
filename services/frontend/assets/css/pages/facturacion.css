@@ -239,6 +239,33 @@
   margin-top: 10px;
 }
 
+.inventory-toolbar {
+  margin: 18px 0 12px;
+}
+
+.inventory-search-field {
+  display: grid;
+  gap: 6px;
+  max-width: 460px;
+  font-weight: 600;
+}
+
+.inventory-stock {
+  font-weight: 700;
+}
+
+.inventory-stock--low {
+  color: #ff7b7b;
+}
+
+.inventory-stock__hint {
+  display: block;
+  margin-top: 2px;
+  color: #ff7b7b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .hidden {
   display: none !important;
 }

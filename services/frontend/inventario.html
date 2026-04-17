@@ -24,7 +24,9 @@
             <p class="subtitle">CRUD de productos separado del módulo de facturación.</p>
           </section>
           <section class="card filters">
-            <label>Organización<input id="organization-id" type="number" min="1" value="1" /></label>
+            <label>Organización
+              <select id="organization-id" required></select>
+            </label>
             <a class="btn btn-secondary" href="/facturacion.html">Volver a Facturación</a>
           </section>
           <section class="card">
@@ -71,6 +73,11 @@
               </div>
               <div class="actions"><button class="btn btn-primary" type="submit">Guardar producto</button></div>
             </form>
+            <div class="inventory-toolbar">
+              <label class="inventory-search-field">Buscar producto
+                <input id="product-search" type="search" placeholder="Buscar por SKU, nombre, descripción, proveedor o ubicación" autocomplete="off" />
+              </label>
+            </div>
             <div class="table-wrap"><table><thead><tr><th>SKU</th><th>Nombre y descripción</th><th>Sucursal / ubicación</th><th>Proveedor</th><th>Costo</th><th>Precio</th><th>Stock</th><th>Duración</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="products-body"></tbody></table></div>
             <p id="feedback" class="subtitle"></p>
           </section>
