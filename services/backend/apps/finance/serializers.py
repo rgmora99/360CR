@@ -177,8 +177,8 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     items = InvoiceItemSerializer(many=True, read_only=True)
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
-    loyalty_awarded_points = serializers.IntegerField(read_only=True, default=0)
-    loyalty_redeemed_points = serializers.IntegerField(read_only=True, default=0)
+    loyalty_awarded_points = serializers.SerializerMethodField()
+    loyalty_redeemed_points = serializers.SerializerMethodField()
     agenda_event = serializers.SerializerMethodField()
 
     class Meta:
@@ -218,6 +218,25 @@ class InvoiceSerializer(serializers.ModelSerializer):
         except Invoice.agenda_event.RelatedObjectDoesNotExist:
             return None
         return agenda_event.id
+
+    def _get_loyalty_entries(self, obj):
+        return LoyaltyPointEntry.objects.filter(source_reference=obj.invoice_number)
+
+    def get_loyalty_awarded_points(self, obj):
+        awarded = (
+            self._get_loyalty_entries(obj)
+            .filter(entry_type=LoyaltyPointEntry.TYPE_EARN)
+            .values_list("points", flat=True)
+        )
+        return sum(int(points or 0) for points in awarded)
+
+    def get_loyalty_redeemed_points(self, obj):
+        redeemed = (
+            self._get_loyalty_entries(obj)
+            .filter(entry_type=LoyaltyPointEntry.TYPE_REDEEM)
+            .values_list("points", flat=True)
+        )
+        return abs(sum(int(points or 0) for points in redeemed))
 
 
 class InvoiceCreateSerializer(serializers.Serializer):
