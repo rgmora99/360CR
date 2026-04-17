@@ -103,14 +103,67 @@
         <header id="shared-topbar"></header>
         <div class="page-wrap">
           <section class="module-header card">
-            <h1>Listado de facturas emitidas</h1>
-            <p class="subtitle">Consulte, descargue PDF, reenvíe por correo y vea el detalle completo.</p>
+            <div>
+              <h1>Listado de facturas emitidas</h1>
+              <p class="subtitle">Vista mensual con filtros rápidos, resumen de ingresos y acceso completo al detalle de cada factura.</p>
+            </div>
           </section>
+
           <section class="card filters">
-            <label>Organización<select id="organization-id"></select></label>
-            <button class="btn btn-primary" id="reload" type="button">Recargar</button>
-            <a class="btn btn-secondary" href="/facturacion.html">Ir a Facturación</a>
+            <div class="invoice-filters-grid">
+              <label>Organización
+                <select id="organization-id"></select>
+              </label>
+              <label>Mes
+                <input id="month-filter" type="month" />
+              </label>
+              <label>Buscar
+                <input id="search-filter" type="text" placeholder="Número, cliente o notas" />
+              </label>
+              <label>Medio de pago
+                <select id="payment-filter">
+                  <option value="">Todos</option>
+                  <option value="01">Efectivo</option>
+                  <option value="02">Tarjeta</option>
+                  <option value="03">Transferencia</option>
+                  <option value="04">A plazos</option>
+                </select>
+              </label>
+              <label>Documento
+                <select id="document-filter">
+                  <option value="">Todos</option>
+                  <option value="01">Factura electrónica</option>
+                  <option value="03">Nota de crédito</option>
+                </select>
+              </label>
+              <label>Con puntos
+                <select id="points-filter">
+                  <option value="">Todos</option>
+                  <option value="with-points">Pagadas con puntos</option>
+                  <option value="without-points">Sin puntos</option>
+                </select>
+              </label>
+              <div class="invoice-filters-actions">
+                <button class="btn btn-primary" id="reload" type="button">Recargar</button>
+                <button class="btn btn-secondary" id="clear-filters" type="button">Limpiar filtros</button>
+                <a class="btn btn-secondary" href="/facturacion.html">Ir a Facturación</a>
+              </div>
+            </div>
           </section>
+
+          <section class="invoice-summary-grid">
+            <article class="card invoice-summary-card invoice-summary-card--primary">
+              <span class="invoice-summary-card__eyebrow">Ingreso del mes</span>
+              <strong id="month-income-total" class="invoice-summary-card__value">CRC 0.00</strong>
+              <p id="month-income-caption" class="subtitle">Calculado con los filtros actuales.</p>
+            </article>
+            <article class="card invoice-summary-card">
+              <span class="invoice-summary-card__eyebrow">Facturas visibles</span>
+              <strong id="month-income-count" class="invoice-summary-card__value">0</strong>
+              <p id="month-income-average" class="subtitle">Promedio: CRC 0.00</p>
+            </article>
+          </section>
+
           <section class="card">
             <div class="table-wrap"><table><thead><tr><th>Número</th><th>Cliente</th><th>Total</th><th>Fecha</th><th>Acciones</th></tr></thead><tbody id="invoices-body"></tbody></table></div>
             <p id="feedback" class="subtitle"></p>
