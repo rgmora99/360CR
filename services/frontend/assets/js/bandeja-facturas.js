@@ -347,13 +347,6 @@
         })
         .join('') ||
       `<tr><td colspan="8">${pageMode === 'history' ? 'Sin facturas en histórico.' : 'Sin facturas electrónicas pendientes.'}</td></tr>`;
-    if (showMessage) {
-      feedback(
-        pageMode === 'history'
-          ? `Mostrando ${rows.length} factura(s) en histórico.`
-          : `Mostrando ${rows.length} factura(s) en bandeja.`
-      );
-    }
   }
 
   if ($('inbox-body')) {

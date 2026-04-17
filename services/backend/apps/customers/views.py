@@ -12,6 +12,7 @@ from apps.customers.serializers import (
     CustomerSerializer,
     CustomerTypeSerializer,
     OrganizationSerializer,
+    get_next_customer_code,
 )
 from apps.tenants.models import Membership, Organization
 from apps.tenants.access import OrganizationScopedViewMixin
@@ -38,6 +39,12 @@ class CustomerViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     def perform_update(self, serializer):
         self.validate_organization_payload(serializer.validated_data["organization"].id)
         serializer.save()
+
+    @action(detail=False, methods=["get"], url_path="next-code")
+    def next_code(self, request):
+        selected_id = self.validate_organization_payload(request.query_params.get("organization_id"))
+        organization = Organization.objects.get(id=selected_id)
+        return Response({"code": get_next_customer_code(organization)})
 
     @action(detail=False, methods=["get"], url_path="tax-registry")
     def tax_registry(self, request):

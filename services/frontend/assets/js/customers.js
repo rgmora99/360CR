@@ -161,12 +161,27 @@
       .join(' | ');
   }
 
-  function nextCustomerCode() {
+  function nextCustomerCodeFallback() {
     const numbers = customers
-      .map((item) => Number(String(item.code || '').replace(/\D/g, '')))
+      .map((item) => {
+        const match = String(item.code || '').trim().toUpperCase().match(/^C(\d+)$/);
+        return match ? Number(match[1]) : NaN;
+      })
       .filter((value) => Number.isFinite(value) && value > 0);
     const next = (numbers.length ? Math.max(...numbers) : 0) + 1;
     return `C${String(next).padStart(6, '0')}`;
+  }
+
+  async function refreshCreateCode() {
+    if (!customerForm || !createFields.code) return;
+
+    try {
+      const organizationId = getOrganizationId();
+      const data = await request(apiUrl(`/customers/next-code/?organization_id=${organizationId}`));
+      createFields.code.value = data?.code || nextCustomerCodeFallback();
+    } catch (_error) {
+      createFields.code.value = nextCustomerCodeFallback();
+    }
   }
 
   function getTypeCode(typeId) {
@@ -307,7 +322,7 @@
   function resetCreateForm() {
     if (!customerForm) return;
     customerForm.reset();
-    createFields.code.value = nextCustomerCode();
+    createFields.code.value = '';
     createFields.creditLimit.value = '0';
     createFields.paymentTermsDays.value = '0';
     syncFormLabels(createFields, createLabels);
@@ -326,7 +341,6 @@
     return {
       organization: getOrganizationId(),
       customer_type: Number(fields.type.value),
-      code: fields.code.value.trim(),
       legal_name: fields.legalName.value.trim(),
       trade_name: isLegal ? fields.tradeName.value.trim() : '',
       tax_id: fields.taxId.value.trim(),
@@ -420,11 +434,8 @@
       const data = await request(apiUrl(`/customers/?organization_id=${organizationId}`));
       customers = Array.isArray(data) ? data : [];
       renderTable();
-      if (customerForm && createFields.code && !createFields.code.value) {
-        createFields.code.value = nextCustomerCode();
-      }
+      await refreshCreateCode();
       customersLoaded = true;
-      setFeedback(`Mostrando ${customers.length} cliente${customers.length === 1 ? '' : 's'} de la organización seleccionada.`);
     } catch (error) {
       logError('Error al cargar clientes', error.message);
       customersLoaded = false;

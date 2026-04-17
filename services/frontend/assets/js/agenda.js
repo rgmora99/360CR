@@ -348,7 +348,6 @@
 
       events = await request(`${getApiBase()}/agenda-events/?${params.toString()}`);
       renderTable();
-      setFeedback(`Se cargaron ${events.length} eventos de agenda.`);
     } catch (error) {
       setFeedback(`Error al cargar agenda: ${error.message}`, true);
     }

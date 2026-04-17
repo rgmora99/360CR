@@ -10,7 +10,9 @@ from apps.suppliers.serializers import (
     SupplierContactSerializer,
     SupplierSerializer,
     SupplierTypeSerializer,
+    get_next_supplier_code,
 )
+from apps.tenants.models import Organization
 from apps.tenants.access import OrganizationScopedViewMixin
 
 
@@ -35,6 +37,12 @@ class SupplierViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     def perform_update(self, serializer):
         self.validate_organization_payload(serializer.validated_data["organization"].id)
         serializer.save()
+
+    @action(detail=False, methods=["get"], url_path="next-code")
+    def next_code(self, request):
+        selected_id = self.validate_organization_payload(request.query_params.get("organization_id"))
+        organization = Organization.objects.get(id=selected_id)
+        return Response({"code": get_next_supplier_code(organization)})
 
     @action(detail=False, methods=["get"], url_path="tax-registry")
     def tax_registry(self, request):

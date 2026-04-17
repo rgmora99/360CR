@@ -184,7 +184,6 @@
           )
           .join('') || '<tr><td colspan="6">Sin facturas emitidas</td></tr>';
     }
-    feedback(`Mostrando ${filteredInvoices.length} factura(s) del mes filtrado.`);
   }
 
   async function loadInvoices() {

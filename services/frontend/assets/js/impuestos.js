@@ -36,7 +36,6 @@
     } else {
       $('tax-body').innerHTML = reports.map((r) => `<tr><td>${r.year}-Q${r.quarter}</td><td>CRC ${r.purchases_subtotal}</td><td>CRC ${r.purchases_tax}</td><td>CRC ${r.purchases_total}</td><td>CRC ${r.estimated_tax}</td><td>${r.due_date}</td></tr>`).join('') || '<tr><td colspan="6">Sin reportes.</td></tr>';
     }
-    feedback(`Mostrando ${reports.length} reporte(s).`);
   }
 
   $('tax-form').addEventListener('submit', async (event) => {

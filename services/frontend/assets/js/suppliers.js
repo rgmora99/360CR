@@ -114,12 +114,27 @@
       .join(' | ');
   }
 
-  function nextSupplierCode() {
+  function nextSupplierCodeFallback() {
     const numbers = suppliers
-      .map((item) => Number(String(item.code || '').replace(/\D/g, '')))
+      .map((item) => {
+        const match = String(item.code || '').trim().toUpperCase().match(/^P(\d+)$/);
+        return match ? Number(match[1]) : NaN;
+      })
       .filter((value) => Number.isFinite(value) && value > 0);
     const next = (numbers.length ? Math.max(...numbers) : 0) + 1;
     return `P${String(next).padStart(6, '0')}`;
+  }
+
+  async function refreshCreateCode() {
+    if (!supplierForm || !createFields.code) return;
+
+    try {
+      const organizationId = getOrganizationId();
+      const data = await request(`${getApiBase()}/suppliers/next-code/?organization_id=${organizationId}`);
+      createFields.code.value = data?.code || nextSupplierCodeFallback();
+    } catch (_error) {
+      createFields.code.value = nextSupplierCodeFallback();
+    }
   }
 
   function getTypeCode(typeId) {
@@ -227,7 +242,7 @@
   function resetCreateForm() {
     if (!supplierForm) return;
     supplierForm.reset();
-    createFields.code.value = nextSupplierCode();
+    createFields.code.value = '';
     createFields.creditLimit.value = '0';
     createFields.paymentTermsDays.value = '0';
     syncFormLabels(createFields, createLabels);
@@ -245,7 +260,6 @@
     return {
       organization: getOrganizationId(),
       supplier_type: Number(fields.type.value),
-      code: fields.code.value.trim(),
       legal_name: fields.legalName.value.trim(),
       trade_name: personKind === 'legal' ? fields.tradeName.value.trim() : '',
       tax_id: fields.taxId.value.trim(),
@@ -309,11 +323,8 @@
       const data = await request(`${getApiBase()}/suppliers/?organization_id=${organizationId}`);
       suppliers = Array.isArray(data) ? data : [];
       renderTable();
-      if (supplierForm && createFields.code && !createFields.code.value) {
-        createFields.code.value = nextSupplierCode();
-      }
+      await refreshCreateCode();
       suppliersLoaded = true;
-      setFeedback(`Mostrando ${suppliers.length} proveedor${suppliers.length === 1 ? '' : 'es'} en la lista.`);
     } catch (error) {
       suppliersLoaded = false;
       setFeedback(`Error al cargar proveedores: ${error.message}`, true);

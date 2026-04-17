@@ -152,7 +152,6 @@
     } else {
       $('receivables-body').innerHTML = filtered.map((item) => renderReceivableRow(item)).join('') || '<tr><td colspan="8">Sin cuentas por cobrar para mostrar.</td></tr>';
     }
-    feedback(`Mostrando ${filtered.length} cuenta(s) por cobrar del filtro actual.`);
   }
 
   async function loadReceivables() {

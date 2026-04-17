@@ -121,7 +121,6 @@
           .join('') || '<tr><td colspan="7">Sin compras registradas.</td></tr>';
     }
 
-    setFeedback(`Mostrando ${filtered.length} compra(s) de ${state.purchases.length} registradas.`);
   }
 
   function openPurchaseDetail(purchase) {
