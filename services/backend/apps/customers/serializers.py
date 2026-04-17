@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.db import IntegrityError
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -82,6 +83,8 @@ class CustomerTypeSerializer(serializers.ModelSerializer):
 
 
 class CustomerSerializer(serializers.ModelSerializer):
+    code = serializers.CharField(required=False, allow_blank=True)
+
     class Meta:
         model = Customer
         fields = [
@@ -116,6 +119,21 @@ class CustomerSerializer(serializers.ModelSerializer):
         }
         validators = []
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        organization = attrs.get("organization") or getattr(self.instance, "organization", None)
+        tax_id = (attrs.get("tax_id") if "tax_id" in attrs else getattr(self.instance, "tax_id", "")) or ""
+        normalized_tax_id = tax_id.strip()
+
+        if organization and normalized_tax_id:
+            queryset = Customer.objects.filter(organization=organization, tax_id=normalized_tax_id)
+            if self.instance:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError({"tax_id": "Ya existe un cliente con esa cédula en esta organización."})
+
+        return attrs
+
     def validate_email(self, value):
         return (value or "").strip()
 
@@ -125,7 +143,15 @@ class CustomerSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data = enrich_party_with_hacienda(validated_data, type_field_name="customer_type")
         validated_data["code"] = get_next_customer_code(validated_data["organization"])
-        return super().create(validated_data)
+        try:
+            return super().create(validated_data)
+        except IntegrityError as exc:
+            message = str(exc).lower()
+            if "uq_customer_org_tax_id" in message:
+                raise serializers.ValidationError({"tax_id": "Ya existe un cliente con esa cédula en esta organización."})
+            if "uq_customer_org_code" in message:
+                raise serializers.ValidationError({"code": "Ya existe un cliente con ese código en esta organización."})
+            raise serializers.ValidationError("No se pudo guardar el cliente porque ya existe un registro duplicado.")
 
     def update(self, instance, validated_data):
         validated_data = enrich_party_with_hacienda(validated_data, instance=instance, type_field_name="customer_type")

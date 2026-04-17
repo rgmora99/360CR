@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.db import IntegrityError
 from django.utils import timezone
 
 from apps.core.tax_registry import lookup_hacienda_taxpayer, normalize_tax_id
@@ -80,6 +81,8 @@ class SupplierTypeSerializer(serializers.ModelSerializer):
 
 
 class SupplierSerializer(serializers.ModelSerializer):
+    code = serializers.CharField(required=False, allow_blank=True)
+
     class Meta:
         model = Supplier
         fields = [
@@ -112,6 +115,22 @@ class SupplierSerializer(serializers.ModelSerializer):
             "email": {"required": False, "allow_blank": True},
             "phone": {"required": False, "allow_blank": True},
         }
+        validators = []
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        organization = attrs.get("organization") or getattr(self.instance, "organization", None)
+        tax_id = (attrs.get("tax_id") if "tax_id" in attrs else getattr(self.instance, "tax_id", "")) or ""
+        normalized_tax_id = tax_id.strip()
+
+        if organization and normalized_tax_id:
+            queryset = Supplier.objects.filter(organization=organization, tax_id=normalized_tax_id)
+            if self.instance:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError({"tax_id": "Ya existe un proveedor con esa cédula en esta organización."})
+
+        return attrs
 
     def validate_email(self, value):
         return (value or "").strip()
@@ -122,7 +141,15 @@ class SupplierSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data = enrich_party_with_hacienda(validated_data, type_field_name="supplier_type")
         validated_data["code"] = get_next_supplier_code(validated_data["organization"])
-        return super().create(validated_data)
+        try:
+            return super().create(validated_data)
+        except IntegrityError as exc:
+            message = str(exc).lower()
+            if "uq_supplier_org_tax_id" in message:
+                raise serializers.ValidationError({"tax_id": "Ya existe un proveedor con esa cédula en esta organización."})
+            if "uq_supplier_org_code" in message:
+                raise serializers.ValidationError({"code": "Ya existe un proveedor con ese código en esta organización."})
+            raise serializers.ValidationError("No se pudo guardar el proveedor porque ya existe un registro duplicado.")
 
     def update(self, instance, validated_data):
         validated_data = enrich_party_with_hacienda(validated_data, instance=instance, type_field_name="supplier_type")
