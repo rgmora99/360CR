@@ -30,27 +30,33 @@
             </div>
           </section>
 
-          <section class="card filters">
-            <div class="filters-grid">
-              <label>Organización
-                <select id="organization-id" required></select>
-              </label>
-              <label>Buscar cliente
-                <input id="customer-search" placeholder="Nombre, cédula o correo" minlength="2" maxlength="120" list="customer-suggestions" autocomplete="off" />
-                <datalist id="customer-suggestions"></datalist>
-              </label>
-              <div class="filters-actions">
-                <button class="btn btn-secondary" id="search-customer" type="button">Buscar</button>
-                <button class="btn btn-secondary" id="clear-filters" type="button">Limpiar</button>
-              </div>
-            </div>
-          </section>
-
           <section class="grid single-column">
             <article class="card">
-              <h2>Cliente</h2>
-              <select id="customer-select"></select>
-              <p id="customer-meta" class="subtitle"></p>
+              <div class="billing-section-header">
+                <div>
+                  <h2>Cliente</h2>
+                  <p class="subtitle">Busca por cédula para cargar los datos completos del cliente antes de facturar.</p>
+                </div>
+                <label class="organization-inline-field">Organización
+                  <select id="organization-id" required></select>
+                </label>
+              </div>
+
+              <div class="customer-lookup-card">
+                <div class="customer-lookup-grid">
+                  <label>Cédula del cliente
+                    <input id="customer-tax-id" placeholder="Ingresa la cédula del cliente" maxlength="50" autocomplete="off" />
+                  </label>
+                  <div class="customer-lookup-actions">
+                    <button class="btn btn-secondary" id="search-customer" type="button">Buscar cliente</button>
+                    <button class="btn btn-secondary" id="clear-customer" type="button">Limpiar</button>
+                  </div>
+                </div>
+                <label id="customer-select-wrap" class="customer-select-wrap hidden">Cliente encontrado
+                  <select id="customer-select"></select>
+                </label>
+                <p id="customer-meta" class="subtitle customer-meta-empty">No hay cliente seleccionado.</p>
+              </div>
 
               <h2>Nueva factura</h2>
               <div id="agenda-prefill-banner" class="card hidden">
@@ -86,11 +92,31 @@
                 </label>
                 <p id="points-payment-help" class="subtitle"></p>
 
-                <div class="line-add">
-                  <select id="line-product"></select>
-                  <input id="line-qty" type="number" min="0.001" max="999999" step="0.001" value="1" />
-                  <input id="line-discount" type="number" min="0" max="100" step="0.01" value="0" />
-                  <button class="btn btn-secondary" type="button" id="add-line">Agregar línea</button>
+                <div class="line-picker card">
+                  <div class="line-picker-header">
+                    <div>
+                      <h3>Agregar servicio o producto</h3>
+                      <p class="subtitle">Busca por código o nombre y luego confirma la línea con cantidad y descuento.</p>
+                    </div>
+                  </div>
+                  <div class="line-picker-grid">
+                    <label class="line-picker-search">Buscar producto
+                      <input id="line-product-search" type="text" placeholder="Ejemplo: ACR001 o Acrílico" autocomplete="off" />
+                    </label>
+                    <label class="line-picker-select">Lista de productos
+                      <select id="line-product" size="6"></select>
+                    </label>
+                    <label>Cantidad
+                      <input id="line-qty" type="number" min="0.001" max="999999" step="0.001" value="1" />
+                    </label>
+                    <label>Desc. %
+                      <input id="line-discount" type="number" min="0" max="100" step="0.01" value="0" />
+                    </label>
+                    <div class="line-picker-actions">
+                      <button class="btn btn-secondary" type="button" id="add-line">Agregar línea</button>
+                    </div>
+                  </div>
+                  <p id="line-product-meta" class="subtitle">Selecciona un producto para ver su detalle.</p>
                 </div>
                 <div class="table-wrap"><table><thead><tr><th>Producto</th><th>Cant.</th><th>Desc%</th><th>Subtotal</th><th></th></tr></thead><tbody id="lines-body"></tbody></table></div>
                 <p id="totals"></p>
