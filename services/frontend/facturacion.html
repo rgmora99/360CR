@@ -100,12 +100,14 @@
                     </div>
                   </div>
                   <div class="line-picker-grid">
-                    <label class="line-picker-search">Buscar producto
-                      <input id="line-product-search" type="text" placeholder="Ejemplo: ACR001 o Acrílico" autocomplete="off" />
-                    </label>
-                    <label class="line-picker-select">Lista de productos
-                      <select id="line-product" size="6"></select>
-                    </label>
+                    <div class="line-picker-product-stack">
+                      <label class="line-picker-search">Buscar producto
+                        <input id="line-product-search" type="text" placeholder="Ejemplo: ACR001 o Acrílico" autocomplete="off" />
+                      </label>
+                      <label class="line-picker-select">Producto o servicio
+                        <select id="line-product"></select>
+                      </label>
+                    </div>
                     <label>Cantidad
                       <input id="line-qty" type="number" min="0.001" max="999999" step="0.001" value="1" />
                     </label>

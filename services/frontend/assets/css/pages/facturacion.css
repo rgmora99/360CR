@@ -97,18 +97,20 @@
 
 .line-picker-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 1.4fr) minmax(320px, 1.8fr) minmax(120px, 0.7fr) minmax(120px, 0.7fr) auto;
+  grid-template-columns: minmax(360px, 2fr) minmax(120px, 0.7fr) minmax(120px, 0.7fr) auto;
   gap: 12px;
   align-items: end;
+}
+
+.line-picker-product-stack {
+  display: grid;
+  gap: 10px;
+  align-self: stretch;
 }
 
 .line-picker-search,
 .line-picker-select {
   align-self: stretch;
-}
-
-.line-picker-select select {
-  min-height: 168px;
 }
 
 .line-picker-actions {
@@ -130,6 +132,10 @@
 @media (max-width: 1100px) {
   .line-picker-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .line-picker-product-stack {
+    grid-column: 1 / -1;
   }
 
   .line-picker-actions {
