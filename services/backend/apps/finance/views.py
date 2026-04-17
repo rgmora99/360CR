@@ -23,6 +23,7 @@ from apps.customers.models import Customer
 from apps.finance.models import Invoice, Product, Purchase, PurchaseInboxInvoice, TaxReport
 from apps.finance.serializers import (
     InvoiceCreateSerializer,
+    InvoiceReceivablePaymentCreateSerializer,
     InvoiceSerializer,
     ProductSerializer,
     PurchaseCreateSerializer,
@@ -789,7 +790,12 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Invoice.objects.select_related("customer", "organization").prefetch_related("items", "items__product")
+        queryset = Invoice.objects.select_related("customer", "organization").prefetch_related(
+            "items",
+            "items__product",
+            "receivable_payments",
+            "receivable_payments__created_by",
+        )
         return self.scope_queryset(queryset)
 
     def create(self, request, *args, **kwargs):
@@ -852,6 +858,58 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                 }
             )
         return Response(data)
+
+    @action(detail=False, methods=["get"], url_path="accounts-receivable")
+    def accounts_receivable(self, request):
+        queryset = (
+            self.get_queryset()
+            .filter(payment_method=Invoice.PAYMENT_INSTALLMENTS, sale_condition="02")
+            .order_by("-issue_date", "-id")
+        )
+        status_filter = (request.query_params.get("status") or "").strip().lower()
+        search = (request.query_params.get("q") or "").strip().lower()
+        invoices = list(queryset)
+        serialized = InvoiceSerializer(invoices, many=True).data
+
+        if search:
+            serialized = [
+                invoice
+                for invoice in serialized
+                if search in f"{invoice.get('invoice_number', '')} {invoice.get('customer_name', '')} {invoice.get('notes', '')}".lower()
+            ]
+
+        if status_filter:
+            serialized = [invoice for invoice in serialized if (invoice.get("receivable_status") or "") == status_filter]
+
+        return Response(serialized)
+
+    @action(detail=True, methods=["post"], url_path="receivable-payments")
+    def receivable_payments(self, request, pk=None):
+        invoice = self.get_object()
+        serializer = InvoiceReceivablePaymentCreateSerializer(data=request.data, context={"request": request, "invoice": invoice})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        invoice.refresh_from_db()
+        refreshed = (
+            Invoice.objects.select_related("customer", "organization")
+            .prefetch_related("items", "items__product", "receivable_payments", "receivable_payments__created_by")
+            .get(id=invoice.id)
+        )
+        return Response(InvoiceSerializer(refreshed).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["delete"], url_path=r"receivable-payments/(?P<payment_id>[^/.]+)")
+    def delete_receivable_payment(self, request, pk=None, payment_id=None):
+        invoice = self.get_object()
+        payment = invoice.receivable_payments.filter(id=payment_id).first()
+        if not payment:
+            return Response({"detail": "El abono indicado no existe para esta factura."}, status=404)
+        payment.delete()
+        refreshed = (
+            Invoice.objects.select_related("customer", "organization")
+            .prefetch_related("items", "items__product", "receivable_payments", "receivable_payments__created_by")
+            .get(id=invoice.id)
+        )
+        return Response(InvoiceSerializer(refreshed).data)
 
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):

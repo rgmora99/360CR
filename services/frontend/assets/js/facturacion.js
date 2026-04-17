@@ -516,7 +516,11 @@
           ? ` Se acreditaron ${awarded} puntos al cliente.`
           : '';
 
-      setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".${loyaltyMsg}`, false);
+      const receivableMsg =
+        paymentMethod === '04'
+          ? ' La cuenta quedó disponible en "Cuentas x cobrar" para registrar abonos y controlar vencimientos.'
+          : '';
+      setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".${loyaltyMsg}${receivableMsg}`, false);
       state.lines = [];
       state.prefillAgendaEventId = null;
       $('pay-with-points').checked = false;

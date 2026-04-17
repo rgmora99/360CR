@@ -11,6 +11,7 @@ from apps.customers.models import Customer
 from apps.finance.models import (
     Invoice,
     InvoiceItem,
+    InvoiceReceivablePayment,
     Product,
     Purchase,
     PurchaseInboxInvoice,
@@ -27,6 +28,112 @@ def money(value):
 
 
 MAX_CREATE_RETRIES = 3
+
+
+def build_installment_amounts(total, installment_count):
+    count = max(int(installment_count or 1), 1)
+    normalized_total = money(Decimal(total or 0))
+    base_amount = money(normalized_total / Decimal(count))
+    amounts = [base_amount for _ in range(count)]
+    distributed = sum(amounts, Decimal("0.00"))
+    remainder = money(normalized_total - distributed)
+    index = 0
+    while remainder != Decimal("0.00"):
+        step = Decimal("0.01") if remainder > 0 else Decimal("-0.01")
+        amounts[index] = money(amounts[index] + step)
+        remainder = money(remainder - step)
+        index = (index + 1) % count
+    return amounts
+
+
+def build_receivable_summary(invoice):
+    if invoice.payment_method != Invoice.PAYMENT_INSTALLMENTS or invoice.sale_condition != "02":
+        return {
+            "amount_paid": Decimal("0.00"),
+            "amount_due": Decimal("0.00"),
+            "payment_count": 0,
+            "next_due_date": None,
+            "final_due_date": None,
+            "days_overdue": 0,
+            "is_overdue": False,
+            "status": "not_applicable",
+            "overdue_installments": 0,
+            "paid_percent": Decimal("0.00"),
+            "installment_plan": [],
+        }
+
+    today = timezone.localdate()
+    issue_date = timezone.localdate(invoice.issue_date)
+    payments = list(invoice.receivable_payments.all())
+    total_paid = money(sum((payment.amount for payment in payments), Decimal("0.00")))
+    total_amount = money(invoice.total or Decimal("0.00"))
+    amount_due = money(max(total_amount - total_paid, Decimal("0.00")))
+    installment_amounts = build_installment_amounts(total_amount, invoice.installment_count)
+    remaining_paid = total_paid
+    installment_plan = []
+    next_due_date = None
+    overdue_installments = 0
+    days_overdue = 0
+
+    for index, amount in enumerate(installment_amounts, start=1):
+        due_date = issue_date + timedelta(days=(invoice.installment_interval_days or 30) * index)
+        paid_amount = money(min(amount, remaining_paid))
+        remaining_paid = money(max(remaining_paid - paid_amount, Decimal("0.00")))
+        pending_amount = money(max(amount - paid_amount, Decimal("0.00")))
+        if pending_amount == Decimal("0.00"):
+            status = "paid"
+        elif paid_amount > Decimal("0.00"):
+            status = "partial"
+        elif due_date < today:
+            status = "overdue"
+        elif due_date == today:
+            status = "due_today"
+        else:
+            status = "pending"
+
+        if pending_amount > Decimal("0.00") and next_due_date is None:
+            next_due_date = due_date
+        if status == "overdue":
+            overdue_installments += 1
+            days_overdue = max(days_overdue, (today - due_date).days)
+
+        installment_plan.append(
+            {
+                "number": index,
+                "due_date": due_date,
+                "amount": amount,
+                "paid_amount": paid_amount,
+                "pending_amount": pending_amount,
+                "status": status,
+            }
+        )
+
+    if amount_due == Decimal("0.00"):
+        status = "paid"
+    elif overdue_installments > 0:
+        status = "overdue"
+    elif total_paid > Decimal("0.00"):
+        status = "partial"
+    else:
+        status = "pending"
+
+    paid_percent = Decimal("0.00")
+    if total_amount > Decimal("0.00"):
+        paid_percent = money((total_paid / total_amount) * Decimal("100"))
+
+    return {
+        "amount_paid": total_paid,
+        "amount_due": amount_due,
+        "payment_count": len(payments),
+        "next_due_date": next_due_date,
+        "final_due_date": installment_plan[-1]["due_date"] if installment_plan else None,
+        "days_overdue": days_overdue,
+        "is_overdue": overdue_installments > 0,
+        "status": status,
+        "overdue_installments": overdue_installments,
+        "paid_percent": paid_percent,
+        "installment_plan": installment_plan,
+    }
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -180,6 +287,18 @@ class InvoiceSerializer(serializers.ModelSerializer):
     loyalty_awarded_points = serializers.SerializerMethodField()
     loyalty_redeemed_points = serializers.SerializerMethodField()
     agenda_event = serializers.SerializerMethodField()
+    receivable_payments = serializers.SerializerMethodField()
+    receivable_amount_paid = serializers.SerializerMethodField()
+    receivable_amount_due = serializers.SerializerMethodField()
+    receivable_payment_count = serializers.SerializerMethodField()
+    receivable_next_due_date = serializers.SerializerMethodField()
+    receivable_final_due_date = serializers.SerializerMethodField()
+    receivable_days_overdue = serializers.SerializerMethodField()
+    receivable_is_overdue = serializers.SerializerMethodField()
+    receivable_status = serializers.SerializerMethodField()
+    receivable_overdue_installments = serializers.SerializerMethodField()
+    receivable_paid_percent = serializers.SerializerMethodField()
+    receivable_installment_plan = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
@@ -210,6 +329,18 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "items",
             "loyalty_awarded_points",
             "loyalty_redeemed_points",
+            "receivable_payments",
+            "receivable_amount_paid",
+            "receivable_amount_due",
+            "receivable_payment_count",
+            "receivable_next_due_date",
+            "receivable_final_due_date",
+            "receivable_days_overdue",
+            "receivable_is_overdue",
+            "receivable_status",
+            "receivable_overdue_installments",
+            "receivable_paid_percent",
+            "receivable_installment_plan",
         ]
 
     def get_agenda_event(self, obj):
@@ -221,6 +352,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     def _get_loyalty_entries(self, obj):
         return LoyaltyPointEntry.objects.filter(source_reference=obj.invoice_number)
+
+    def _get_receivable_summary(self, obj):
+        cache_attr = "_receivable_summary_cache"
+        summary = getattr(obj, cache_attr, None)
+        if summary is None:
+            summary = build_receivable_summary(obj)
+            setattr(obj, cache_attr, summary)
+        return summary
 
     def get_loyalty_awarded_points(self, obj):
         awarded = (
@@ -237,6 +376,86 @@ class InvoiceSerializer(serializers.ModelSerializer):
             .values_list("points", flat=True)
         )
         return abs(sum(int(points or 0) for points in redeemed))
+
+    def get_receivable_payments(self, obj):
+        payments = obj.receivable_payments.all()
+        return [
+            {
+                "id": payment.id,
+                "amount": payment.amount,
+                "payment_date": payment.payment_date,
+                "reference": payment.reference,
+                "notes": payment.notes,
+                "created_at": payment.created_at,
+                "created_by": getattr(payment.created_by, "email", "") or getattr(payment.created_by, "username", "") or "",
+            }
+            for payment in payments
+        ]
+
+    def get_receivable_amount_paid(self, obj):
+        return self._get_receivable_summary(obj)["amount_paid"]
+
+    def get_receivable_amount_due(self, obj):
+        return self._get_receivable_summary(obj)["amount_due"]
+
+    def get_receivable_payment_count(self, obj):
+        return self._get_receivable_summary(obj)["payment_count"]
+
+    def get_receivable_next_due_date(self, obj):
+        return self._get_receivable_summary(obj)["next_due_date"]
+
+    def get_receivable_final_due_date(self, obj):
+        return self._get_receivable_summary(obj)["final_due_date"]
+
+    def get_receivable_days_overdue(self, obj):
+        return self._get_receivable_summary(obj)["days_overdue"]
+
+    def get_receivable_is_overdue(self, obj):
+        return self._get_receivable_summary(obj)["is_overdue"]
+
+    def get_receivable_status(self, obj):
+        return self._get_receivable_summary(obj)["status"]
+
+    def get_receivable_overdue_installments(self, obj):
+        return self._get_receivable_summary(obj)["overdue_installments"]
+
+    def get_receivable_paid_percent(self, obj):
+        return self._get_receivable_summary(obj)["paid_percent"]
+
+    def get_receivable_installment_plan(self, obj):
+        return self._get_receivable_summary(obj)["installment_plan"]
+
+
+class InvoiceReceivablePaymentCreateSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
+    payment_date = serializers.DateField(default=timezone.localdate)
+    reference = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        invoice = self.context["invoice"]
+        summary = build_receivable_summary(invoice)
+        if summary["status"] == "not_applicable":
+            raise serializers.ValidationError("La factura seleccionada no pertenece a cuentas por cobrar.")
+        if summary["amount_due"] <= Decimal("0.00"):
+            raise serializers.ValidationError("La factura ya no tiene saldo pendiente.")
+        if attrs["amount"] > summary["amount_due"]:
+            raise serializers.ValidationError(
+                f"El abono supera el saldo pendiente. Saldo actual: {summary['amount_due']}."
+            )
+        return attrs
+
+    def create(self, validated_data):
+        invoice = self.context["invoice"]
+        request = self.context.get("request")
+        return InvoiceReceivablePayment.objects.create(
+            invoice=invoice,
+            amount=validated_data["amount"],
+            payment_date=validated_data["payment_date"],
+            reference=validated_data.get("reference", "").strip(),
+            notes=validated_data.get("notes", "").strip(),
+            created_by=request.user if request and request.user.is_authenticated else None,
+        )
 
 
 class InvoiceCreateSerializer(serializers.Serializer):

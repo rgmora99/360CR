@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
@@ -175,6 +176,22 @@ class InvoiceItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.invoice_id} - {self.line_number}"
+
+
+class InvoiceReceivablePayment(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="receivable_payments")
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    payment_date = models.DateField()
+    reference = models.CharField(max_length=80, blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-payment_date", "-id"]
+
+    def __str__(self) -> str:
+        return f"{self.invoice.invoice_number} - {self.amount}"
 
 
 class Purchase(models.Model):

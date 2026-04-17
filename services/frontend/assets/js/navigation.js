@@ -127,6 +127,7 @@
         children: [
           { key: 'facturacion-listado', label: 'Listado de facturas', href: '/facturas.html' },
           { key: 'facturacion-registrar', label: 'Registrar factura', href: '/facturacion.html' },
+          { key: 'facturacion-cxc', label: 'Cuentas x cobrar', href: '/cuentas-cobrar.html' },
         ],
       },
       {

@@ -17,10 +17,10 @@
   const invoicesPager = window.TablePaginator?.create({
     key: 'invoices',
     tableBody: $('invoices-body'),
-    totalColumns: 5,
+    totalColumns: 6,
     emptyMessage: 'Sin facturas emitidas',
     rowRenderer: (invoice) =>
-      `<tr><td>${escapeHtml(invoice.invoice_number)}</td><td>${escapeHtml(invoice.customer_name)}</td><td>${formatMoney(invoice.total, invoice.currency)}</td><td>${formatDate(invoice.issue_date)}</td><td><button class='btn btn-secondary' data-detail='${invoice.id}'>Ver detalles</button> <a class='btn btn-secondary' href='${apiBase()}/invoices/${invoice.id}/pdf/' target='_blank'>PDF</a> <button class='btn btn-secondary' data-mail='${invoice.id}'>Correo</button></td></tr>`,
+      `<tr><td>${escapeHtml(invoice.invoice_number)}</td><td>${escapeHtml(invoice.customer_name)}</td><td>${formatMoney(invoice.total, invoice.currency)}</td><td>${renderPendingBalance(invoice)}</td><td>${formatDate(invoice.issue_date)}</td><td><button class='btn btn-secondary' data-detail='${invoice.id}'>Ver detalles</button> <a class='btn btn-secondary' href='${apiBase()}/invoices/${invoice.id}/pdf/' target='_blank'>PDF</a> <button class='btn btn-secondary' data-mail='${invoice.id}'>Correo</button></td></tr>`,
   });
   let currentInvoices = [];
   const documentTypeLabels = { '01': 'Factura electrónica', '03': 'Nota de crédito' };
@@ -98,6 +98,18 @@
     });
   }
 
+  function receivableStatusLabel(status) {
+    const labels = { pending: 'Pendiente', partial: 'Parcial', overdue: 'Vencida', paid: 'Pagada', due_today: 'Vence hoy' };
+    return labels[status] || '-';
+  }
+
+  function renderPendingBalance(invoice) {
+    if (invoice.payment_method !== '04') return 'N/A';
+    const toneClass = invoice.receivable_is_overdue ? 'receivable-highlight' : '';
+    const status = receivableStatusLabel(invoice.receivable_status);
+    return `<span class="${toneClass}">${escapeHtml(formatMoney(invoice.receivable_amount_due, invoice.currency))}</span><br /><small>${escapeHtml(status)}</small>`;
+  }
+
   function renderMeta(container, entries) {
     container.innerHTML = entries
       .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
@@ -168,9 +180,9 @@
         filteredInvoices
           .map(
             (invoice) =>
-              `<tr><td>${escapeHtml(invoice.invoice_number)}</td><td>${escapeHtml(invoice.customer_name)}</td><td>${formatMoney(invoice.total, invoice.currency)}</td><td>${formatDate(invoice.issue_date)}</td><td><button class='btn btn-secondary' data-detail='${invoice.id}'>Ver detalles</button> <a class='btn btn-secondary' href='${apiBase()}/invoices/${invoice.id}/pdf/' target='_blank'>PDF</a> <button class='btn btn-secondary' data-mail='${invoice.id}'>Correo</button></td></tr>`,
+              `<tr><td>${escapeHtml(invoice.invoice_number)}</td><td>${escapeHtml(invoice.customer_name)}</td><td>${formatMoney(invoice.total, invoice.currency)}</td><td>${renderPendingBalance(invoice)}</td><td>${formatDate(invoice.issue_date)}</td><td><button class='btn btn-secondary' data-detail='${invoice.id}'>Ver detalles</button> <a class='btn btn-secondary' href='${apiBase()}/invoices/${invoice.id}/pdf/' target='_blank'>PDF</a> <button class='btn btn-secondary' data-mail='${invoice.id}'>Correo</button></td></tr>`,
           )
-          .join('') || '<tr><td colspan="5">Sin facturas emitidas</td></tr>';
+          .join('') || '<tr><td colspan="6">Sin facturas emitidas</td></tr>';
     }
     feedback(`Mostrando ${filteredInvoices.length} factura(s) del mes filtrado.`);
   }
@@ -211,6 +223,10 @@
       ['Régimen fiscal', taxRegimeLabels[invoice.tax_regime] || invoice.tax_regime],
       ['Cuotas', invoice.installment_count],
       ['Intervalo cuotas', invoice.installment_interval_days],
+      ['Saldo pendiente', formatMoney(invoice.receivable_amount_due, invoice.currency)],
+      ['Abonado', formatMoney(invoice.receivable_amount_paid, invoice.currency)],
+      ['Estado CxC', receivableStatusLabel(invoice.receivable_status)],
+      ['Próximo vencimiento', invoice.receivable_next_due_date || 'N/D'],
       ['Correo enviado', invoice.email_sent_at || 'Pendiente'],
       ['Notas', invoice.notes || 'Sin notas'],
       ['Puntos otorgados', `${invoice.loyalty_awarded_points || 0} pts`],
@@ -233,6 +249,7 @@
     modalActions.innerHTML = `
       <a class="btn btn-secondary" href="${apiBase()}/invoices/${invoice.id}/pdf/" target="_blank">Descargar PDF</a>
       <button class="btn btn-secondary" data-send-mail="${invoice.id}">Enviar por correo</button>
+      ${invoice.payment_method === '04' ? `<a class="btn btn-secondary" href="/cuentas-cobrar.html?invoice_id=${invoice.id}">Abrir CxC</a>` : ''}
     `;
     modal.classList.add('is-open');
     modal.setAttribute('aria-hidden', 'false');
