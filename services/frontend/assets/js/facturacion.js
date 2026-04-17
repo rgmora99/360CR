@@ -332,28 +332,48 @@
   function syncPointsPaymentUI() {
     const checkbox = $('pay-with-points');
     const help = $('points-payment-help');
+    const panel = $('points-payment-panel');
     const customer = state.selectedCustomer;
     const availablePoints = Number(customer?.loyalty?.available_points || 0);
     const subtotal = calculateSubtotal();
+    const requiredPoints = Math.round(subtotal);
+
+    $('points-customer-name').textContent = customer?.legal_name || 'Sin cliente seleccionado';
+    $('points-available').textContent = `${availablePoints} pts`;
+    $('points-required').textContent = `${requiredPoints || 0} pts`;
+    $('points-result').textContent = 'Pendiente';
+    panel.classList.remove('is-active', 'is-warning', 'is-disabled');
 
     if (!customer?.loyalty?.program_name) {
       checkbox.checked = false;
       checkbox.disabled = true;
+      panel.classList.add('is-disabled');
       help.textContent = customer ? 'El cliente seleccionado no tiene membresía activa.' : 'Selecciona un cliente para validar puntos.';
+      $('points-result').textContent = 'No disponible';
       return;
     }
 
     if (!subtotal) {
       checkbox.checked = false;
       checkbox.disabled = true;
+      panel.classList.add('is-disabled');
       help.textContent = `Disponible: ${availablePoints} pts. Agrega líneas para validar pago con puntos.`;
+      $('points-result').textContent = 'Sin líneas';
       return;
     }
 
-    const requiredPoints = Math.round(subtotal);
     const hasEnough = availablePoints >= requiredPoints;
     checkbox.disabled = !hasEnough;
     if (!hasEnough) checkbox.checked = false;
+    if (checkbox.checked && hasEnough) {
+      panel.classList.add('is-active');
+      $('points-result').textContent = 'Canje aplicado';
+      help.textContent = `Se descontarán ${requiredPoints} pts y esta compra no acumulará puntos nuevos.`;
+      return;
+    }
+
+    panel.classList.add(hasEnough ? 'is-warning' : 'is-disabled');
+    $('points-result').textContent = hasEnough ? 'Disponible para usar' : 'Saldo insuficiente';
     help.textContent = hasEnough
       ? `Disponible: ${availablePoints} pts. Requeridos aprox.: ${requiredPoints} pts.`
       : `Disponible: ${availablePoints} pts. Requiere aprox. ${requiredPoints} pts para cubrir la factura.`;
@@ -491,7 +511,7 @@
       const awarded = Number(invoice.loyalty_awarded_points || 0);
       const redeemed = Number(invoice.loyalty_redeemed_points || 0);
       const loyaltyMsg = redeemed
-        ? ` Se cobraron ${redeemed} puntos de fidelización.`
+        ? ` Se cobraron ${redeemed} puntos de fidelización y la compra no acumuló puntos nuevos.`
         : awarded
           ? ` Se acreditaron ${awarded} puntos al cliente.`
           : '';

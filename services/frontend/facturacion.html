@@ -86,11 +86,37 @@
                   <label>Moneda<input id="currency" value="CRC" maxlength="3" /></label>
                 </div>
                 <label>Notas<textarea id="notes" rows="3" maxlength="500" placeholder="Detalle interno de la factura (máx. 500 caracteres)"></textarea></label>
-                <label class="checkbox-inline">
-                  <input id="pay-with-points" type="checkbox" />
-                  Pagar con puntos de fidelización (1 punto = 1 CRC)
-                </label>
-                <p id="points-payment-help" class="subtitle"></p>
+                <section id="points-payment-panel" class="points-payment-panel is-disabled" aria-live="polite">
+                  <div class="points-payment-panel__header">
+                    <div>
+                      <h3>Pagar con puntos de fidelización</h3>
+                      <p class="subtitle">Usa puntos disponibles del cliente para cubrir la factura. 1 punto = 1 CRC.</p>
+                    </div>
+                    <label class="points-payment-toggle">
+                      <input id="pay-with-points" type="checkbox" />
+                      <span>Aplicar puntos</span>
+                    </label>
+                  </div>
+                  <div class="points-payment-panel__stats">
+                    <div class="points-stat">
+                      <span class="points-stat__label">Cliente</span>
+                      <strong id="points-customer-name">Sin cliente seleccionado</strong>
+                    </div>
+                    <div class="points-stat">
+                      <span class="points-stat__label">Disponibles</span>
+                      <strong id="points-available">0 pts</strong>
+                    </div>
+                    <div class="points-stat">
+                      <span class="points-stat__label">Requeridos</span>
+                      <strong id="points-required">0 pts</strong>
+                    </div>
+                    <div class="points-stat">
+                      <span class="points-stat__label">Resultado</span>
+                      <strong id="points-result">Pendiente</strong>
+                    </div>
+                  </div>
+                  <p id="points-payment-help" class="subtitle points-payment-panel__help"></p>
+                </section>
 
                 <div class="line-picker card">
                   <div class="line-picker-header">

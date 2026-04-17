@@ -144,6 +144,29 @@
 
   const toBool = (value) => String(value) === 'true';
 
+  function entryTypeLabel(value) {
+    const labels = {
+      earn: 'Acumulacion',
+      redeem: 'Canje',
+      adjustment: 'Ajuste',
+      expiration: 'Expiracion',
+      reservation: 'Reserva',
+      release: 'Liberacion',
+    };
+    return labels[value] || value || '-';
+  }
+
+  function entryReferenceLabel(entry) {
+    const metadata = entry?.source_metadata || {};
+    if (entry.entry_type === 'redeem' && metadata.invoice_id) {
+      return `Factura ${entry.source_reference || metadata.invoice_id} · Pago con puntos`;
+    }
+    if (entry.entry_type === 'earn' && metadata.invoice_id) {
+      return `Factura ${entry.source_reference || metadata.invoice_id} · Acumulacion`;
+    }
+    return entry.source_reference || '-';
+  }
+
   function notify(message, type = 'info') {
     if (window.appAlerts?.toast) window.appAlerts.toast(message, type);
   }
@@ -383,18 +406,18 @@
 
     dom.entriesBody.innerHTML = state.entries.length
       ? state.entries
-          .map((entry) => {
-            const member = state.members.find((item) => item.id === entry.member);
-            return `
-              <tr>
-                <td>${new Date(entry.event_at).toLocaleString('es-CR')}</td>
-                <td>${member?.customer_name || `#${entry.member}`}</td>
-                <td>${entry.entry_type}</td>
-                <td>${entry.points}</td>
-                <td>${entry.source_reference || '-'}</td>
-              </tr>
-            `;
-          })
+            .map((entry) => {
+              const member = state.members.find((item) => item.id === entry.member);
+              return `
+                <tr>
+                  <td>${new Date(entry.event_at).toLocaleString('es-CR')}</td>
+                  <td>${member?.customer_name || `#${entry.member}`}</td>
+                  <td>${entryTypeLabel(entry.entry_type)}</td>
+                  <td>${entry.points}</td>
+                  <td>${entryReferenceLabel(entry)}</td>
+                </tr>
+              `;
+            })
           .join('')
       : '<tr><td colspan="5">Sin movimientos para el programa seleccionado.</td></tr>';
   }

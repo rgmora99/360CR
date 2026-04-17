@@ -468,7 +468,14 @@ class InvoiceCreateSerializer(serializers.Serializer):
             entry_type=LoyaltyPointEntry.TYPE_REDEEM,
             points=-points_to_use,
             source_reference=invoice.invoice_number,
-            source_metadata={"invoice_id": invoice.id, "invoice_total": str(invoice.total), "payment_with_points": True},
+            source_metadata={
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "invoice_total": str(invoice.total),
+                "payment_with_points": True,
+                "awards_blocked": True,
+                "reason": "invoice_paid_with_points",
+            },
             event_at=timezone.now(),
         )
         member.available_points -= points_to_use
@@ -521,7 +528,13 @@ class InvoiceCreateSerializer(serializers.Serializer):
             entry_type=LoyaltyPointEntry.TYPE_EARN,
             points=awarded_points,
             source_reference=invoice.invoice_number,
-            source_metadata={"invoice_id": invoice.id, "invoice_total": str(invoice.total), "tier_multiplier": str(multiplier)},
+            source_metadata={
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "invoice_total": str(invoice.total),
+                "tier_multiplier": str(multiplier),
+                "payment_with_points": False,
+            },
             event_at=timezone.now(),
             expires_at=expires_at,
         )
