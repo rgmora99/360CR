@@ -1,4 +1,5 @@
 (function initSuppliersModule() {
+  const SESSION_KEY = 'cr360.session';
   const searchInput = document.getElementById('search');
   const suppliersBody = document.getElementById('suppliers-body');
   const feedback = document.getElementById('feedback');
@@ -77,13 +78,30 @@
       .replaceAll("'", '&#39;');
   }
 
+  function getActiveOrganizationFromSession() {
+    try {
+      const session = JSON.parse(localStorage.getItem(SESSION_KEY) || '{}');
+      return Number(session?.active_organization_id) || null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function logInfo(message, payload) {
+    console.info(`[Proveedores] ${message}`, payload || '');
+  }
+
+  function logError(message, payload) {
+    console.error(`[Proveedores] ${message}`, payload || '');
+  }
+
   function getApiBase() {
     const value = '/api';
     return value.endsWith('/') ? value.slice(0, -1) : value;
   }
 
   function getOrganizationId() {
-    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.() || getActiveOrganizationFromSession());
     if (!organizationId || organizationId < 1) {
       throw new Error('No hay organización activa. Selecciona una organización en la barra superior.');
     }
@@ -91,9 +109,10 @@
   }
 
   function setFeedback(message, isError) {
-    if (!feedback) return;
-    feedback.textContent = message;
-    feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    if (feedback) {
+      feedback.textContent = message;
+      feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    }
     if (window.appAlerts?.toast) {
       window.appAlerts.toast(message, isError ? 'error' : 'success');
     }
@@ -165,21 +184,26 @@
     const normalizedTaxId = window.CedulaPadron.normalizeCedula(taxId);
     if (normalizedTaxId.length < 9) return;
 
-    const record = await window.CedulaPadron.resolveByCedula(taxId);
-    if (!record) {
-      setFeedback(`La cédula ${taxId} no existe en el padrón electoral.`, true);
-      return;
-    }
+    try {
+      const record = await window.CedulaPadron.resolveByCedula(taxId);
+      if (!record) {
+        setFeedback(`La cédula ${taxId} no existe en el padrón electoral.`, true);
+        return;
+      }
 
-    if (!fields.legalName.value.trim()) {
-      fields.legalName.value = record.fullName;
-      setFeedback(`Nombre autocompletado desde padrón para la cédula ${taxId}.`);
-      return;
-    }
+      if (!fields.legalName.value.trim()) {
+        fields.legalName.value = record.fullName;
+        setFeedback(`Nombre autocompletado desde padrón para la cédula ${taxId}.`);
+        return;
+      }
 
-    const isSameName = window.CedulaPadron.compareName(fields.legalName.value, record);
-    if (isSameName === false) {
-      setFeedback(`La cédula ${taxId} corresponde a "${record.fullName}". Verifica el nombre ingresado.`, true);
+      const isSameName = window.CedulaPadron.compareName(fields.legalName.value, record);
+      if (isSameName === false) {
+        setFeedback(`La cédula ${taxId} corresponde a "${record.fullName}". Verifica el nombre ingresado.`, true);
+      }
+    } catch (error) {
+      logError('Error validando cédula contra padrón.', { taxId: normalizedTaxId, message: error?.message || error });
+      setFeedback('No se pudo validar la cédula en este momento. Revisa la consola para más detalle.', true);
     }
   }
 
@@ -198,18 +222,23 @@
       const administration = record?.situacion?.administracionTributaria || 'Sin administración';
       setFeedback(`Razón social validada en Hacienda. Estado: ${status}. Administración: ${administration}.`);
     } catch (error) {
-      console.info('[Proveedores] No se pudo consultar Hacienda para persona jurídica.', error?.message || error);
+      logInfo('No se pudo consultar Hacienda para persona jurídica.', error?.message || error);
     }
   }
 
   async function request(url, options) {
+    const method = options?.method || 'GET';
+    logInfo(`Request ${method} ${url}`);
+
     const response = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
       credentials: 'include',
       ...options,
     });
     const contentType = response.headers.get('content-type') || '';
     const bodyText = await response.text();
+
+    logInfo(`Response ${response.status} ${method} ${url}`, { contentType, preview: bodyText.slice(0, 180) });
 
     if (!response.ok) {
       if (contentType.includes('application/json')) {
@@ -326,6 +355,7 @@
       await refreshCreateCode();
       suppliersLoaded = true;
     } catch (error) {
+      logError('Error al cargar proveedores', error.message);
       suppliersLoaded = false;
       setFeedback(`Error al cargar proveedores: ${error.message}`, true);
     }
@@ -410,6 +440,7 @@
       resetCreateForm();
       await loadSuppliers();
     } catch (error) {
+      logError('No se pudo guardar proveedor', error.message);
       setFeedback(`No se pudo guardar: ${error.message}`, true);
     }
   });
@@ -421,6 +452,7 @@
       closeEditModal();
       await loadSuppliers();
     } catch (error) {
+      logError('No se pudo actualizar proveedor', error.message);
       setFeedback(`No se pudo guardar: ${error.message}`, true);
     }
   });
@@ -456,6 +488,7 @@
         setFeedback('Proveedor eliminado correctamente.');
         await loadSuppliers();
       } catch (error) {
+        logError('No se pudo eliminar proveedor', error.message);
         setFeedback(`No se pudo eliminar: ${error.message}`, true);
       }
     }
@@ -475,11 +508,16 @@
   registerTaxListeners(createFields, createLabels, 'create');
   registerTaxListeners(editFields, editLabels, 'edit');
 
+  logInfo('Inicializando módulo proveedores', { apiBase: getApiBase(), organizationId: getActiveOrganizationFromSession() });
+
   loadSupplierTypes()
     .then(() => {
       resetCreateForm();
       resetEditForm();
       return loadSuppliers();
     })
-    .catch((error) => setFeedback(`Error inicial: ${error.message}`, true));
+    .catch((error) => {
+      logError('Error inicial módulo proveedores', error.message);
+      setFeedback(`Error inicial: ${error.message}`, true);
+    });
 })();

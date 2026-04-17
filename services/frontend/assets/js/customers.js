@@ -138,9 +138,10 @@
   }
 
   function setFeedback(message, isError) {
-    if (!feedback) return;
-    feedback.textContent = message;
-    feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    if (feedback) {
+      feedback.textContent = message;
+      feedback.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    }
     if (window.appAlerts?.toast) {
       window.appAlerts.toast(message, isError ? 'error' : 'success');
     }
