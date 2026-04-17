@@ -52,6 +52,10 @@
   margin-bottom: 14px;
 }
 
+.receivable-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .invoice-summary-card {
   padding: 18px;
 }
@@ -427,6 +431,10 @@
   }
 
   .invoice-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .receivable-summary-grid {
     grid-template-columns: 1fr;
   }
 

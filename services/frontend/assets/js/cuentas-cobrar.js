@@ -224,6 +224,9 @@
               <div>
                 <strong>${escapeHtml(payment.created_by || 'Usuario interno')}</strong><br />
                 <span>${escapeHtml(formatDateTime(payment.created_at))}</span>
+                <div class="actions">
+                  <a class="btn btn-secondary" href="/api/invoices/${invoice.id}/receivable-payments/${payment.id}/receipt/?organization_id=${invoice.organization}" target="_blank">Comprobante</a>
+                </div>
               </div>
             </div>
           `,
@@ -262,10 +265,11 @@
         reference: $('receivable-payment-reference').value.trim(),
         notes: $('receivable-payment-notes').value.trim(),
       };
-      const updatedInvoice = await request(`/invoices/${invoiceId}/receivable-payments/?organization_id=${orgId()}`, {
+      const paymentResult = await request(`/invoices/${invoiceId}/receivable-payments/?organization_id=${orgId()}`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+      const updatedInvoice = paymentResult?.invoice || paymentResult;
       const index = allReceivables.findIndex((item) => Number(item.id) === invoiceId);
       if (index >= 0) {
         allReceivables[index] = updatedInvoice;
@@ -276,6 +280,9 @@
       renderPayments(updatedInvoice);
       renderTable();
       feedback('Abono registrado correctamente.');
+      if (paymentResult?.receipt_url) {
+        window.open(paymentResult.receipt_url, '_blank', 'noopener');
+      }
     } catch (error) {
       feedback(error.message, true);
     }

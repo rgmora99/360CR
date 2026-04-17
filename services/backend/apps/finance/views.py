@@ -22,6 +22,7 @@ from apps.configuration.models import OrganizationEmailInbox
 from apps.customers.models import Customer
 from apps.finance.models import Invoice, Product, Purchase, PurchaseInboxInvoice, TaxReport
 from apps.finance.serializers import (
+    build_receivable_summary,
     InvoiceCreateSerializer,
     InvoiceReceivablePaymentCreateSerializer,
     InvoiceSerializer,
@@ -768,6 +769,113 @@ def generate_invoice_pdf(invoice):
     return pdf
 
 
+def generate_receivable_payment_receipt_pdf(invoice, payment):
+    summary = build_receivable_summary(invoice)
+    blue = (0.11, 0.47, 0.78)
+    light_blue = (0.93, 0.96, 1)
+    gray = (0.35, 0.35, 0.35)
+    dark_gray = (0.2, 0.2, 0.2)
+    page_width = 612
+    page_height = 792
+    left_margin = 40
+    right_margin = 40
+    content_width = page_width - left_margin - right_margin
+    content_ops = []
+
+    _add_text(content_ops, left_margin, page_height - 58, "COMPROBANTE DE ABONO", font="F2", size=18, color=blue)
+    _add_text(content_ops, left_margin, page_height - 78, "360CR · Cuentas por cobrar", font="F2", size=11, color=gray)
+    _add_rect(content_ops, left_margin, page_height - 92, content_width, 1.4, fill=blue)
+
+    header_box_w = 230
+    header_box_h = 64
+    header_box_x = page_width - right_margin - header_box_w
+    header_box_y = page_height - 112
+    _add_rect(content_ops, header_box_x, header_box_y, header_box_w, header_box_h, fill=light_blue, stroke=blue)
+    _add_text(content_ops, header_box_x + 10, header_box_y + 44, f"FACTURA: {invoice.invoice_number}", font="F2", size=10, color=dark_gray)
+    _add_text(content_ops, header_box_x + 10, header_box_y + 28, f"ABONO ID: {payment.id}", size=9, color=gray)
+    _add_text(content_ops, header_box_x + 10, header_box_y + 12, f"FECHA: {payment.payment_date.strftime('%Y-%m-%d')}", size=9, color=gray)
+
+    top_y = page_height - 220
+    block_height = 112
+    block_gap = 20
+    block_width = (page_width - left_margin - right_margin - block_gap) / 2
+
+    _add_rect(content_ops, left_margin, top_y, block_width, block_height, fill=light_blue, stroke=blue)
+    _add_rect(content_ops, left_margin + block_width + block_gap, top_y, block_width, block_height, fill=light_blue, stroke=blue)
+    _add_rect(content_ops, left_margin, top_y + block_height - 20, block_width, 20, fill=blue)
+    _add_rect(content_ops, left_margin + block_width + block_gap, top_y + block_height - 20, block_width, 20, fill=blue)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 14, "CLIENTE", font="F2", size=10, color=(1, 1, 1))
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 14, "DETALLE DEL ABONO", font="F2", size=10, color=(1, 1, 1))
+
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 36, invoice.customer.legal_name[:52], font="F2", size=10, color=dark_gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 54, f"ID: {invoice.customer.tax_id or 'No registrado'}", size=9, color=gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 72, f"Correo: {invoice.customer.email or 'No registrado'}", size=9, color=gray)
+    _add_text(content_ops, left_margin + 8, top_y + block_height - 90, f"Telefono: {invoice.customer.phone or 'No registrado'}", size=9, color=gray)
+
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 36, f"Monto abonado: {payment.amount}", font="F2", size=10, color=dark_gray)
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 54, f"Referencia: {payment.reference or 'Sin referencia'}", size=9, color=gray)
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 72, f"Saldo pendiente: {summary['amount_due']}", size=9, color=gray)
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 90, f"Abonado acumulado: {summary['amount_paid']}", size=9, color=gray)
+
+    table_top = top_y - 44
+    row_height = 24
+    table_width = page_width - left_margin - right_margin
+    label_width = 170
+    rows = [
+        ("Factura", invoice.invoice_number),
+        ("Fecha del abono", payment.payment_date.strftime("%Y-%m-%d")),
+        ("Monto pagado", str(payment.amount)),
+        ("Saldo restante", str(summary["amount_due"])),
+        ("Estado actual", summary["status"]),
+        ("Proximo vencimiento", summary["next_due_date"].strftime("%Y-%m-%d") if summary["next_due_date"] else "N/D"),
+        ("Notas", payment.notes or "Sin notas"),
+    ]
+
+    y = table_top
+    _add_rect(content_ops, left_margin, y, table_width, row_height, fill=blue, stroke=blue)
+    _add_text(content_ops, left_margin + 8, y + 7, "CAMPO", font="F2", size=10, color=(1, 1, 1))
+    _add_text(content_ops, left_margin + label_width + 12, y + 7, "VALOR", font="F2", size=10, color=(1, 1, 1))
+    y -= row_height
+
+    for label, value in rows:
+        _add_rect(content_ops, left_margin, y, table_width, row_height, stroke=(0.75, 0.85, 0.95), line_width=0.7)
+        content_ops.append(f"{left_margin + label_width} {y} m {left_margin + label_width} {y + row_height} l S")
+        _add_text(content_ops, left_margin + 8, y + 7, label[:30], font="F2", size=9, color=gray)
+        _add_text(content_ops, left_margin + label_width + 12, y + 7, str(value)[:74], size=9, color=dark_gray)
+        y -= row_height
+
+    footer_y = max(y - 30, 54)
+    _add_rect(content_ops, left_margin, footer_y + 20, content_width, 1.2, fill=blue)
+    _add_text(content_ops, left_margin, footer_y, "Comprobante generado automaticamente tras registrar el abono.", font="F2", size=12, color=blue)
+    _add_text(content_ops, left_margin, footer_y - 14, "Este documento resume lo pagado y el saldo pendiente al momento de su emision.", size=9, color=gray)
+
+    stream = "\n".join(content_ops).encode("latin-1", errors="replace")
+
+    objects = []
+    objects.append(b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n")
+    objects.append(b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n")
+    objects.append(
+        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >> endobj\n"
+    )
+    objects.append(b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n")
+    objects.append(b"5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj\n")
+    objects.append(f"6 0 obj << /Length {len(stream)} >> stream\n".encode() + stream + b"\nendstream endobj\n")
+
+    pdf = b"%PDF-1.4\n"
+    offsets = []
+    for obj in objects:
+        offsets.append(len(pdf))
+        pdf += obj
+    xref_start = len(pdf)
+    pdf += f"xref\n0 {len(objects)+1}\n".encode()
+    pdf += b"0000000000 65535 f \n"
+    for off in offsets:
+        pdf += f"{off:010} 00000 n \n".encode()
+    pdf += f"trailer << /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref_start}\n%%EOF".encode()
+    return pdf
+
+
 class ProductViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
@@ -888,14 +996,21 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         invoice = self.get_object()
         serializer = InvoiceReceivablePaymentCreateSerializer(data=request.data, context={"request": request, "invoice": invoice})
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        payment = serializer.save()
         invoice.refresh_from_db()
         refreshed = (
             Invoice.objects.select_related("customer", "organization")
             .prefetch_related("items", "items__product", "receivable_payments", "receivable_payments__created_by")
             .get(id=invoice.id)
         )
-        return Response(InvoiceSerializer(refreshed).data, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "invoice": InvoiceSerializer(refreshed).data,
+                "payment_id": payment.id,
+                "receipt_url": f"/api/invoices/{invoice.id}/receivable-payments/{payment.id}/receipt/?organization_id={invoice.organization_id}",
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["delete"], url_path=r"receivable-payments/(?P<payment_id>[^/.]+)")
     def delete_receivable_payment(self, request, pk=None, payment_id=None):
@@ -910,6 +1025,17 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             .get(id=invoice.id)
         )
         return Response(InvoiceSerializer(refreshed).data)
+
+    @action(detail=True, methods=["get"], url_path=r"receivable-payments/(?P<payment_id>[^/.]+)/receipt")
+    def receivable_payment_receipt(self, request, pk=None, payment_id=None):
+        invoice = self.get_object()
+        payment = invoice.receivable_payments.filter(id=payment_id).first()
+        if not payment:
+            return Response({"detail": "El abono indicado no existe para esta factura."}, status=404)
+        pdf = generate_receivable_payment_receipt_pdf(invoice, payment)
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="abono-{invoice.invoice_number}-{payment.id}.pdf"'
+        return response
 
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):
