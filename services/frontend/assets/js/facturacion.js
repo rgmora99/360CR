@@ -10,6 +10,15 @@
     prefillAgendaEventId: null,
   };
   const BILLING_PREFILL_KEY = 'cr360.billing.prefill';
+  const PAYMENT_INSTALLMENTS = '05';
+  const CREDIT_SALE_CONDITION = '02';
+  const PAYMENT_METHOD_OPTIONS = [
+    { value: '01', label: 'Efectivo' },
+    { value: '02', label: 'Tarjeta' },
+    { value: '03', label: 'Transferencia' },
+    { value: '04', label: 'SINPE Móvil' },
+    { value: PAYMENT_INSTALLMENTS, label: 'A plazos', creditOnly: true },
+  ];
 
   const apiBase = () => '/api';
   const orgId = () => {
@@ -65,10 +74,13 @@
       .replaceAll("'", '&#39;');
   }
 
-  function setFeedback(msg, error) {
-    $('feedback').textContent = msg;
+  function setFeedback(msg, error, options = {}) {
+    const silentPrefixes = ['Cliente cargado correctamente:', 'Línea agregada:', 'LÃ­nea agregada:', 'Cliente limpiado.'];
+    const shouldSilence = !error && silentPrefixes.some((prefix) => String(msg || '').startsWith(prefix));
+    const { showInline = !shouldSilence, showToast = !shouldSilence } = options;
+    $('feedback').textContent = showInline ? msg : '';
     $('feedback').style.color = error ? '#ff6b6b' : 'var(--muted)';
-    if (window.appAlerts?.toast) {
+    if (showToast && window.appAlerts?.toast) {
       window.appAlerts.toast(msg, error ? 'error' : 'success');
     }
   }
@@ -118,7 +130,23 @@
   }
 
   function syncInstallmentsUI() {
-    const isInstallments = $('payment-method').value === '04';
+    const saleCondition = $('sale-condition').value;
+    const paymentSelect = $('payment-method');
+    const selectedValue = paymentSelect.value;
+    const availableOptions = PAYMENT_METHOD_OPTIONS.filter((option) => saleCondition === CREDIT_SALE_CONDITION || !option.creditOnly);
+
+    paymentSelect.innerHTML = availableOptions
+      .map((option) => `<option value="${option.value}">${escapeHtml(option.label)}</option>`)
+      .join('');
+
+    const nextValue = availableOptions.some((option) => option.value === selectedValue)
+      ? selectedValue
+      : saleCondition === CREDIT_SALE_CONDITION
+        ? PAYMENT_INSTALLMENTS
+        : '01';
+    paymentSelect.value = nextValue;
+
+    const isInstallments = paymentSelect.value === PAYMENT_INSTALLMENTS;
     $('installments-count-wrap').classList.toggle('hidden', !isInstallments);
     $('installments-interval-wrap').classList.toggle('hidden', !isInstallments);
   }
@@ -190,9 +218,12 @@
     $('customer-meta').textContent = `${customer.legal_name} · Cédula: ${customer.tax_id || 'sin cédula'} · ${customer.email || 'sin correo'} · ${customer.phone || 'sin teléfono'}${loyaltyText}`;
     const credit = customer.credit || null;
     if (credit) {
+      const daysText = Number(credit.payment_terms_days || 0) > 0
+        ? `plazo ${Number(credit.payment_terms_days)} días`
+        : 'sin días de pago configurados';
       const creditText = credit.approved
-        ? ` · Crédito aprobado: disponible CRC ${Number(credit.available || 0).toFixed(2)} de ${Number(credit.limit || 0).toFixed(2)}`
-        : ' · Crédito no aprobado';
+        ? ` · Crédito aprobado: disponible CRC ${Number(credit.available || 0).toFixed(2)} de ${Number(credit.limit || 0).toFixed(2)} · ${daysText}`
+        : ` · Crédito no aprobado · límite CRC ${Number(credit.limit || 0).toFixed(2)} · ${daysText}`;
       $('customer-meta').textContent = `${$('customer-meta').textContent}${creditText}`;
     }
     $('customer-meta').classList.remove('customer-meta-empty');
@@ -215,7 +246,7 @@
     }
 
     selectCustomer(exactMatch);
-    setFeedback(`Cliente cargado correctamente: ${exactMatch.legal_name}.`, false);
+    setFeedback(`Cliente cargado correctamente: ${exactMatch.legal_name}.`, false, { showInline: false, showToast: false });
   }
 
   function clearCustomerSelection() {
@@ -287,7 +318,7 @@
     parts.push('notas');
 
     setAgendaPrefillBanner(prefill, customerFound, lineAdded);
-    setFeedback(`Datos precargados desde Agenda: ${parts.join(', ')}.`, false);
+    setFeedback(`Datos precargados desde Agenda: ${parts.join(', ')}.`, false, { showToast: false });
     clearBillingPrefill();
   }
 
@@ -453,6 +484,7 @@
     selectCustomer(customer);
   });
 
+  $('sale-condition').addEventListener('change', syncInstallmentsUI);
   $('payment-method').addEventListener('change', syncInstallmentsUI);
 
   $('pay-with-points').addEventListener('change', () => {
@@ -506,18 +538,21 @@
       const paymentMethod = $('payment-method').value;
       const installmentCount = Number($('installment-count').value || 1);
       const installmentIntervalDays = Number($('installment-interval-days').value || 30);
-      if (paymentMethod === '04' && installmentCount < 2) return setFeedback('Para pago a plazos usa al menos 2 cuotas.', true);
-      if (paymentMethod === '04' && $('sale-condition').value !== '02') {
+      if (paymentMethod === PAYMENT_INSTALLMENTS && installmentCount < 2) return setFeedback('Para pago a plazos usa al menos 2 cuotas.', true);
+      if (paymentMethod === PAYMENT_INSTALLMENTS && $('sale-condition').value !== CREDIT_SALE_CONDITION) {
         return setFeedback('Para pago a plazos debes seleccionar condición de venta: Crédito.', true);
       }
-      if ($('sale-condition').value === '02' && paymentMethod !== '04') {
+      if ($('sale-condition').value === CREDIT_SALE_CONDITION && paymentMethod !== PAYMENT_INSTALLMENTS) {
         return setFeedback('Para facturar a crédito debes usar método de pago: A plazos.', true);
       }
 
       const currentCustomer = state.selectedCustomer;
-      if (($('sale-condition').value === '02' || paymentMethod === '04') && currentCustomer?.credit) {
+      if (($('sale-condition').value === CREDIT_SALE_CONDITION || paymentMethod === PAYMENT_INSTALLMENTS) && currentCustomer?.credit) {
         if (!currentCustomer.credit.approved) {
           return setFeedback('El cliente no tiene aprobado el límite de crédito.', true);
+        }
+        if (Number(currentCustomer.credit.payment_terms_days || 0) <= 0) {
+          return setFeedback('El cliente no tiene días de pago configurados para ventas a crédito.', true);
         }
         if (Number(currentCustomer.credit.available || 0) <= 0) {
           return setFeedback('El cliente no tiene crédito disponible para esta compra.', true);
@@ -536,8 +571,8 @@
         sale_condition: $('sale-condition').value,
         payment_method: paymentMethod,
         tax_regime: $('tax-regime').value,
-        installment_count: paymentMethod === '04' ? installmentCount : 1,
-        installment_interval_days: paymentMethod === '04' ? installmentIntervalDays : 30,
+        installment_count: paymentMethod === PAYMENT_INSTALLMENTS ? installmentCount : 1,
+        installment_interval_days: paymentMethod === PAYMENT_INSTALLMENTS ? installmentIntervalDays : 30,
         currency,
         exchange_rate: 1,
         notes: $('notes').value.trim(),
@@ -555,7 +590,7 @@
           : '';
 
       const receivableMsg =
-        paymentMethod === '04'
+        paymentMethod === PAYMENT_INSTALLMENTS
           ? ' La cuenta quedó disponible en "Cuentas x cobrar" para registrar abonos y controlar vencimientos.'
           : '';
       setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".${loyaltyMsg}${receivableMsg}`, false);

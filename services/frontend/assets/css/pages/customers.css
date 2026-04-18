@@ -35,6 +35,31 @@ label {
   font-size: 0.9rem;
 }
 
+.credit-config-toggle {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(122, 162, 255, 0.22);
+  background: rgba(26, 39, 68, 0.55);
+  color: var(--txt);
+  font-weight: 600;
+}
+
+.credit-config-toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.credit-config-hint {
+  margin: 0.15rem 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
 input,
 select,
 textarea {

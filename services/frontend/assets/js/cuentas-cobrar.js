@@ -178,7 +178,7 @@
       ['Cuotas vencidas', String(invoice.receivable_overdue_installments || 0)],
       ['Cuotas totales', String(invoice.installment_count || 0)],
       ['Intervalo', `${invoice.installment_interval_days || 0} días`],
-      ['Método', invoice.payment_method === '04' ? 'A plazos' : invoice.payment_method],
+      ['Método', invoice.payment_method === '05' ? 'A plazos' : invoice.payment_method],
       ['Avance cobrado', `${Number(invoice.receivable_paid_percent || 0).toFixed(2)}%`],
     ]
       .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)

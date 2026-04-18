@@ -694,8 +694,10 @@ def generate_invoice_pdf(invoice):
     _add_text(content_ops, left_margin + 8, top_y + block_height - 70, f"Correo: {invoice.customer.email or 'No registrado'}", size=9, color=gray)
     _add_text(content_ops, left_margin + 8, top_y + block_height - 88, f"Telefono: {invoice.customer.phone or 'No registrado'}", size=9, color=gray)
 
-    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 34, f"Condicion venta: {invoice.sale_condition}", size=9, color=gray)
-    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 52, f"Medio pago: {invoice.payment_method}", size=9, color=gray)
+    sale_condition_label = "Crédito" if invoice.sale_condition == "02" else "Contado"
+    payment_method_label = dict(Invoice.PAYMENT_METHOD_CHOICES).get(invoice.payment_method, invoice.payment_method)
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 34, f"Condicion venta: {sale_condition_label}", size=9, color=gray)
+    _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 52, f"Medio pago: {payment_method_label}", size=9, color=gray)
     _add_text(content_ops, left_margin + block_width + block_gap + 8, top_y + block_height - 70, f"Regimen fiscal: {invoice.tax_regime}", size=9, color=gray)
     if invoice.payment_method == Invoice.PAYMENT_INSTALLMENTS:
         installments = f"{invoice.installment_count} cuotas cada {invoice.installment_interval_days} dias"

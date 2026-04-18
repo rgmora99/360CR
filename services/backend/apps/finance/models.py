@@ -110,11 +110,13 @@ class Invoice(models.Model):
     PAYMENT_CASH = "01"
     PAYMENT_CARD = "02"
     PAYMENT_TRANSFER = "03"
-    PAYMENT_INSTALLMENTS = "04"
+    PAYMENT_SINPE_MOVIL = "04"
+    PAYMENT_INSTALLMENTS = "05"
     PAYMENT_METHOD_CHOICES = [
         (PAYMENT_CASH, "Efectivo"),
         (PAYMENT_CARD, "Tarjeta"),
         (PAYMENT_TRANSFER, "Transferencia"),
+        (PAYMENT_SINPE_MOVIL, "SINPE Móvil"),
         (PAYMENT_INSTALLMENTS, "A plazos"),
     ]
 

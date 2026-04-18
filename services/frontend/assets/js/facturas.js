@@ -24,7 +24,7 @@
   });
   let currentInvoices = [];
   const documentTypeLabels = { '01': 'Factura electrónica', '03': 'Nota de crédito' };
-  const paymentMethodLabels = { '01': 'Efectivo', '02': 'Tarjeta', '03': 'Transferencia', '04': 'A plazos' };
+  const paymentMethodLabels = { '01': 'Efectivo', '02': 'Tarjeta', '03': 'Transferencia', '04': 'SINPE Móvil', '05': 'A plazos' };
   const taxRegimeLabels = { simplified: 'Régimen simplificado', general: 'Régimen general' };
   const statusLabels = { draft: 'Borrador', issued: 'Emitida', void: 'Anulada' };
 
@@ -104,7 +104,7 @@
   }
 
   function renderPendingBalance(invoice) {
-    if (invoice.payment_method !== '04') return 'N/A';
+    if (invoice.payment_method !== '05') return 'N/A';
     const toneClass = invoice.receivable_is_overdue ? 'receivable-highlight' : '';
     const status = receivableStatusLabel(invoice.receivable_status);
     return `<span class="${toneClass}">${escapeHtml(formatMoney(invoice.receivable_amount_due, invoice.currency))}</span><br /><small>${escapeHtml(status)}</small>`;
@@ -248,7 +248,7 @@
     modalActions.innerHTML = `
       <a class="btn btn-secondary" href="${apiBase()}/invoices/${invoice.id}/pdf/" target="_blank">Descargar PDF</a>
       <button class="btn btn-secondary" data-send-mail="${invoice.id}">Enviar por correo</button>
-      ${invoice.payment_method === '04' ? `<a class="btn btn-secondary" href="/cuentas-cobrar.html?invoice_id=${invoice.id}">Abrir CxC</a>` : ''}
+      ${invoice.payment_method === '05' ? `<a class="btn btn-secondary" href="/cuentas-cobrar.html?invoice_id=${invoice.id}">Abrir CxC</a>` : ''}
     `;
     modal.classList.add('is-open');
     modal.setAttribute('aria-hidden', 'false');
