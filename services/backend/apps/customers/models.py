@@ -41,6 +41,7 @@ class Customer(models.Model):
     tax_is_omitted = models.BooleanField(null=True, blank=True)
     tax_activities = models.JSONField(default=list, blank=True)
     tax_last_sync_at = models.DateTimeField(null=True, blank=True)
+    credit_approved = models.BooleanField(default=False)
     credit_limit = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     payment_terms_days = models.PositiveIntegerField(default=0)
     notes = models.TextField(blank=True)

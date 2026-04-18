@@ -42,6 +42,7 @@
       status: document.getElementById(`${prefix}status`),
       email: document.getElementById(`${prefix}email`),
       phone: document.getElementById(`${prefix}phone`),
+      creditApproved: document.getElementById(`${prefix}credit-approved`),
       creditLimit: document.getElementById(`${prefix}credit-limit`),
       paymentTermsDays: document.getElementById(`${prefix}payment-terms-days`),
       notes: document.getElementById(`${prefix}notes`),
@@ -324,6 +325,7 @@
     if (!customerForm) return;
     customerForm.reset();
     createFields.code.value = '';
+    if (createFields.creditApproved) createFields.creditApproved.checked = false;
     createFields.creditLimit.value = '0';
     createFields.paymentTermsDays.value = '0';
     syncFormLabels(createFields, createLabels);
@@ -333,6 +335,7 @@
     if (!editForm) return;
     editForm.reset();
     if (editFields.id) editFields.id.value = '';
+    if (editFields.creditApproved) editFields.creditApproved.checked = false;
     syncFormLabels(editFields, editLabels);
   }
 
@@ -348,6 +351,7 @@
       status: fields.status.value,
       email: fields.email.value.trim(),
       phone: fields.phone.value.trim(),
+      credit_approved: Boolean(fields.creditApproved?.checked),
       credit_limit: Number(fields.creditLimit.value || 0),
       payment_terms_days: Number(fields.paymentTermsDays.value || 0),
       notes: fields.notes.value.trim(),
@@ -456,6 +460,7 @@
     editFields.status.value = customer.status;
     editFields.email.value = customer.email || '';
     editFields.phone.value = customer.phone || '';
+    if (editFields.creditApproved) editFields.creditApproved.checked = Boolean(customer.credit_approved);
     editFields.creditLimit.value = customer.credit_limit;
     editFields.paymentTermsDays.value = customer.payment_terms_days;
     editFields.notes.value = customer.notes || '';

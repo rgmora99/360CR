@@ -136,6 +136,40 @@ def build_receivable_summary(invoice):
     }
 
 
+def build_customer_credit_summary(customer, organization_id, pending_invoice_total=Decimal("0.00"), exclude_invoice_id=None):
+    invoices = (
+        Invoice.objects.filter(
+            organization_id=organization_id,
+            customer_id=customer.id,
+            status=Invoice.STATUS_ISSUED,
+            sale_condition="02",
+            payment_method=Invoice.PAYMENT_INSTALLMENTS,
+        )
+        .exclude(id=exclude_invoice_id)
+        .prefetch_related("receivable_payments")
+    )
+
+    current_balance = Decimal("0.00")
+    for invoice in invoices:
+        current_balance += build_receivable_summary(invoice)["amount_due"]
+
+    approved_limit = money(customer.credit_limit or Decimal("0.00"))
+    current_balance = money(current_balance)
+    pending_total = money(Decimal(pending_invoice_total or Decimal("0.00")))
+    available_credit = money(max(approved_limit - current_balance, Decimal("0.00")))
+    projected_available_credit = money(max(available_credit - pending_total, Decimal("0.00")))
+
+    return {
+        "approved": bool(customer.credit_approved),
+        "limit": approved_limit,
+        "used": current_balance,
+        "available": available_credit,
+        "payment_terms_days": int(customer.payment_terms_days or 0),
+        "pending_invoice_total": pending_total,
+        "projected_available": projected_available_credit,
+    }
+
+
 class ProductSerializer(serializers.ModelSerializer):
     sku = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     supplier_name = serializers.CharField(source="supplier.legal_name", read_only=True)
@@ -474,6 +508,104 @@ class InvoiceCreateSerializer(serializers.Serializer):
     use_loyalty_points = serializers.BooleanField(required=False, default=False)
     items = InvoiceItemWriteSerializer(many=True)
 
+    def _is_credit_sale(self, attrs):
+        return attrs["sale_condition"] == "02" or attrs["payment_method"] == Invoice.PAYMENT_INSTALLMENTS
+
+    def _build_invoice_lines(self, organization_id, tax_regime, items):
+        prepared_lines = []
+        subtotal = Decimal("0.00")
+        discount_total = Decimal("0.00")
+        tax_total = Decimal("0.00")
+
+        for index, item in enumerate(items, start=1):
+            product = Product.objects.select_for_update().filter(id=item["product"], organization_id=organization_id, is_active=True).first()
+            if not product:
+                raise serializers.ValidationError(f"Producto inválido en la línea {index}.")
+
+            quantity = item["quantity"]
+            if quantity <= 0:
+                raise serializers.ValidationError(f"Cantidad inválida en la línea {index}.")
+            if product.product_type == Product.TYPE_PHYSICAL and quantity != quantity.to_integral_value():
+                raise serializers.ValidationError(
+                    f"La línea {index} usa cantidad decimal ({quantity}), pero el inventario maneja unidades enteras."
+                )
+            if product.product_type == Product.TYPE_PHYSICAL and quantity > product.stock:
+                raise serializers.ValidationError(f"Stock insuficiente para {product.name}.")
+
+            unit_price = item.get("unit_price") or product.unit_price
+            line_subtotal = money(quantity * unit_price)
+            discount_percent = item.get("discount_percent", Decimal("0.00"))
+            discount_amount = money(line_subtotal * (discount_percent / Decimal("100")))
+            taxable = line_subtotal - discount_amount
+            applied_tax_rate = Decimal("0.00") if tax_regime == Invoice.REGIME_SIMPLIFIED else product.tax_rate
+            line_tax = money(taxable * (applied_tax_rate / Decimal("100")))
+            line_total = money(taxable + line_tax)
+
+            prepared_lines.append(
+                {
+                    "product": product,
+                    "line_number": index,
+                    "description": product.name,
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "discount_percent": discount_percent,
+                    "tax_rate": applied_tax_rate,
+                    "subtotal": line_subtotal,
+                    "discount_amount": discount_amount,
+                    "tax_amount": line_tax,
+                    "total": line_total,
+                }
+            )
+            subtotal += line_subtotal
+            discount_total += discount_amount
+            tax_total += line_tax
+
+        return {
+            "lines": prepared_lines,
+            "subtotal": money(subtotal),
+            "discount_total": money(discount_total),
+            "tax_total": money(tax_total),
+            "total": money(subtotal - discount_total + tax_total),
+        }
+
+    def _validate_customer_credit(self, customer, organization_id, invoice_total):
+        if not customer.credit_approved:
+            raise serializers.ValidationError(
+                {"customer": "El cliente no tiene aprobado el límite de crédito. Activa la aprobación del crédito antes de facturar."}
+            )
+        if money(customer.credit_limit or Decimal("0.00")) <= Decimal("0.00"):
+            raise serializers.ValidationError(
+                {"customer": "El cliente no tiene un límite de crédito válido. Configura un monto mayor a 0 antes de facturar a crédito."}
+            )
+        if int(customer.payment_terms_days or 0) <= 0:
+            raise serializers.ValidationError(
+                {"customer": "El cliente no tiene días de pago configurados para compras a crédito."}
+            )
+
+        credit = build_customer_credit_summary(
+            customer=customer,
+            organization_id=organization_id,
+            pending_invoice_total=invoice_total,
+        )
+        if credit["available"] <= Decimal("0.00"):
+            raise serializers.ValidationError(
+                {
+                    "customer": (
+                        f"El cliente no tiene crédito disponible. Límite aprobado: {credit['limit']}, "
+                        f"saldo comprometido: {credit['used']}."
+                    )
+                }
+            )
+        if invoice_total > credit["available"]:
+            raise serializers.ValidationError(
+                {
+                    "customer": (
+                        f"La factura excede el crédito disponible del cliente. Total factura: {invoice_total}, "
+                        f"disponible: {credit['available']}, límite aprobado: {credit['limit']}."
+                    )
+                }
+            )
+
     def validate(self, attrs):
         from apps.agenda.models import AgendaEvent
 
@@ -497,11 +629,16 @@ class InvoiceCreateSerializer(serializers.Serializer):
         if customer.status != Customer.STATUS_ACTIVE:
             raise serializers.ValidationError("Solo se puede facturar clientes activos.")
 
-        if attrs["payment_method"] == Invoice.PAYMENT_INSTALLMENTS:
-            if attrs["installment_count"] < 2:
-                raise serializers.ValidationError("La facturación a plazos requiere al menos 2 cuotas.")
+        is_credit_sale = self._is_credit_sale(attrs)
+        if is_credit_sale:
             if attrs["sale_condition"] != "02":
-                raise serializers.ValidationError("Para pago a plazos, la condición de venta debe ser crédito (02).")
+                raise serializers.ValidationError({"sale_condition": "Para facturar a crédito, la condición de venta debe ser crédito (02)."})
+            if attrs["payment_method"] != Invoice.PAYMENT_INSTALLMENTS:
+                raise serializers.ValidationError({"payment_method": "Para facturar a crédito, el método de pago debe ser a plazos."})
+            if attrs["installment_count"] < 2:
+                raise serializers.ValidationError({"installment_count": "La facturación a crédito requiere al menos 2 cuotas."})
+            if attrs.get("use_loyalty_points"):
+                raise serializers.ValidationError({"use_loyalty_points": "No se puede combinar pago con puntos en una factura a crédito."})
         else:
             attrs["installment_count"] = 1
 
@@ -557,6 +694,19 @@ class InvoiceCreateSerializer(serializers.Serializer):
         agenda_event = validated_data.pop("agenda_event_instance", None)
         validated_data.pop("agenda_event", None)
         organization_id = validated_data["organization"]
+        customer = Customer.objects.select_for_update().get(id=validated_data["customer"], organization_id=organization_id)
+        invoice_breakdown = self._build_invoice_lines(
+            organization_id=organization_id,
+            tax_regime=validated_data["tax_regime"],
+            items=validated_data["items"],
+        )
+        if self._is_credit_sale(validated_data):
+            self._validate_customer_credit(
+                customer=customer,
+                organization_id=organization_id,
+                invoice_total=invoice_breakdown["total"],
+            )
+
         invoice = None
         for attempt in range(MAX_CREATE_RETRIES):
             try:
@@ -570,7 +720,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
                 invoice = Invoice.objects.create(
                     organization_id=organization_id,
-                    customer_id=validated_data["customer"],
+                    customer_id=customer.id,
                     invoice_number=invoice_number,
                     document_type=validated_data["document_type"],
                     consecutive_number=consecutive_number,
@@ -593,61 +743,30 @@ class InvoiceCreateSerializer(serializers.Serializer):
         if invoice is None:
             raise serializers.ValidationError({"invoice_number": "No fue posible generar un número de factura único. Intente nuevamente."})
 
-        subtotal = Decimal("0.00")
-        discount_total = Decimal("0.00")
-        tax_total = Decimal("0.00")
-
-        for index, item in enumerate(validated_data["items"], start=1):
-            product = Product.objects.select_for_update().filter(id=item["product"], organization_id=organization_id, is_active=True).first()
-            if not product:
-                raise serializers.ValidationError(f"Producto inválido en la línea {index}.")
-
-            quantity = item["quantity"]
-            if quantity <= 0:
-                raise serializers.ValidationError(f"Cantidad inválida en la línea {index}.")
-            if product.product_type == Product.TYPE_PHYSICAL and quantity != quantity.to_integral_value():
-                raise serializers.ValidationError(
-                    f"La línea {index} usa cantidad decimal ({quantity}), pero el inventario maneja unidades enteras."
-                )
-
-            if product.product_type == Product.TYPE_PHYSICAL and quantity > product.stock:
-                raise serializers.ValidationError(f"Stock insuficiente para {product.name}.")
-
-            unit_price = item.get("unit_price") or product.unit_price
-            line_subtotal = money(quantity * unit_price)
-            discount_amount = money(line_subtotal * (item.get("discount_percent", Decimal("0.00")) / Decimal("100")))
-            taxable = line_subtotal - discount_amount
-            applied_tax_rate = Decimal("0.00") if invoice.tax_regime == Invoice.REGIME_SIMPLIFIED else product.tax_rate
-            line_tax = money(taxable * (applied_tax_rate / Decimal("100")))
-            line_total = taxable + line_tax
-
+        for line in invoice_breakdown["lines"]:
             InvoiceItem.objects.create(
                 invoice=invoice,
-                product=product,
-                line_number=index,
-                description=product.name,
-                quantity=quantity,
-                unit_price=unit_price,
-                discount_percent=item.get("discount_percent", Decimal("0.00")),
-                tax_rate=applied_tax_rate,
-                subtotal=line_subtotal,
-                discount_amount=discount_amount,
-                tax_amount=line_tax,
-                total=line_total,
+                product=line["product"],
+                line_number=line["line_number"],
+                description=line["description"],
+                quantity=line["quantity"],
+                unit_price=line["unit_price"],
+                discount_percent=line["discount_percent"],
+                tax_rate=line["tax_rate"],
+                subtotal=line["subtotal"],
+                discount_amount=line["discount_amount"],
+                tax_amount=line["tax_amount"],
+                total=line["total"],
             )
 
-            if product.product_type == Product.TYPE_PHYSICAL:
-                product.stock -= int(quantity)
-                product.save(update_fields=["stock"])
+            if line["product"].product_type == Product.TYPE_PHYSICAL:
+                line["product"].stock -= int(line["quantity"])
+                line["product"].save(update_fields=["stock"])
 
-            subtotal += line_subtotal
-            discount_total += discount_amount
-            tax_total += line_tax
-
-        invoice.subtotal = money(subtotal)
-        invoice.discount_total = money(discount_total)
-        invoice.tax_total = money(tax_total)
-        invoice.total = money(subtotal - discount_total + tax_total)
+        invoice.subtotal = invoice_breakdown["subtotal"]
+        invoice.discount_total = invoice_breakdown["discount_total"]
+        invoice.tax_total = invoice_breakdown["tax_total"]
+        invoice.total = invoice_breakdown["total"]
         invoice.save(update_fields=["subtotal", "discount_total", "tax_total", "total"])
 
         redeemed_points = 0

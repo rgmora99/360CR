@@ -34,7 +34,16 @@
     const text = await response.text();
     const contentType = response.headers.get('content-type') || '';
     console.info(`${logPrefix} ${method} ${url} -> ${response.status}`, { contentType, bodyPreview: text.slice(0, 180) });
-    if (!response.ok) throw new Error(text || 'Error de API');
+    if (!response.ok) {
+      if (contentType.includes('application/json')) {
+        try {
+          throw new Error(formatApiError(JSON.parse(text)) || 'Error de API');
+        } catch (error) {
+          if (error instanceof Error) throw error;
+        }
+      }
+      throw new Error(text || 'Error de API');
+    }
     if (!text) return null;
     try {
       return JSON.parse(text);
@@ -62,6 +71,15 @@
     if (window.appAlerts?.toast) {
       window.appAlerts.toast(msg, error ? 'error' : 'success');
     }
+  }
+
+  function formatApiError(payload) {
+    if (!payload) return '';
+    if (typeof payload === 'string') return payload;
+    if (payload.detail) return payload.detail;
+    return Object.entries(payload)
+      .map(([field, value]) => `${field}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
+      .join(' | ');
   }
 
   function getBillingPrefill() {
@@ -170,6 +188,13 @@
       ? ` · Fidelización: ${customer.loyalty.program_name} (${customer.loyalty.available_points} pts)`
       : ' · Sin membresía de fidelización';
     $('customer-meta').textContent = `${customer.legal_name} · Cédula: ${customer.tax_id || 'sin cédula'} · ${customer.email || 'sin correo'} · ${customer.phone || 'sin teléfono'}${loyaltyText}`;
+    const credit = customer.credit || null;
+    if (credit) {
+      const creditText = credit.approved
+        ? ` · Crédito aprobado: disponible CRC ${Number(credit.available || 0).toFixed(2)} de ${Number(credit.limit || 0).toFixed(2)}`
+        : ' · Crédito no aprobado';
+      $('customer-meta').textContent = `${$('customer-meta').textContent}${creditText}`;
+    }
     $('customer-meta').classList.remove('customer-meta-empty');
     syncPointsPaymentUI();
   }
@@ -484,6 +509,19 @@
       if (paymentMethod === '04' && installmentCount < 2) return setFeedback('Para pago a plazos usa al menos 2 cuotas.', true);
       if (paymentMethod === '04' && $('sale-condition').value !== '02') {
         return setFeedback('Para pago a plazos debes seleccionar condición de venta: Crédito.', true);
+      }
+      if ($('sale-condition').value === '02' && paymentMethod !== '04') {
+        return setFeedback('Para facturar a crédito debes usar método de pago: A plazos.', true);
+      }
+
+      const currentCustomer = state.selectedCustomer;
+      if (($('sale-condition').value === '02' || paymentMethod === '04') && currentCustomer?.credit) {
+        if (!currentCustomer.credit.approved) {
+          return setFeedback('El cliente no tiene aprobado el límite de crédito.', true);
+        }
+        if (Number(currentCustomer.credit.available || 0) <= 0) {
+          return setFeedback('El cliente no tiene crédito disponible para esta compra.', true);
+        }
       }
 
       const currency = $('currency').value.trim().toUpperCase();

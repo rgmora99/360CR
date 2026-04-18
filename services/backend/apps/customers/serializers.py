@@ -106,6 +106,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             "tax_is_omitted",
             "tax_activities",
             "tax_last_sync_at",
+            "credit_approved",
             "credit_limit",
             "payment_terms_days",
             "notes",
