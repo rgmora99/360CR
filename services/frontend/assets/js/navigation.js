@@ -74,12 +74,16 @@
     pageOrganizationField.setAttribute('aria-hidden', 'true');
     pageOrganizationField.setAttribute('tabindex', '-1');
 
-    const fieldContainer =
+    const safeContainer =
       pageOrganizationField.closest('.organization-inline-field') ||
-      pageOrganizationField.closest('label') ||
-      pageOrganizationField.parentElement;
+      pageOrganizationField.closest('label');
 
-    fieldContainer?.classList.add('organization-control-hidden');
+    if (safeContainer) {
+      safeContainer.classList.add('organization-control-hidden');
+      return;
+    }
+
+    pageOrganizationField.classList.add('organization-control-hidden');
   }
 
   function showPendingOrganizationToast() {
