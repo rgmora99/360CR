@@ -12,7 +12,7 @@
   const suppliersPager = window.TablePaginator?.create({
     key: 'suppliers',
     tableBody: suppliersBody,
-    totalColumns: 5,
+    totalColumns: 6,
     emptyMessage: 'No hay proveedores para mostrar.',
     rowRenderer: renderSupplierRow,
   });
@@ -59,6 +59,7 @@
       <tr>
         <td>${escapeHtml(item.code)}</td>
         <td>${escapeHtml(formatSupplierType(typeCode))}</td>
+        <td>${escapeHtml(item.tax_id || '-')}</td>
         <td>${escapeHtml(item.legal_name)}</td>
         <td><span class="status status-${item.status}">${escapeHtml(formatSupplierStatus(item.status))}</span></td>
         <td>
@@ -312,15 +313,15 @@
     return labels[status] || status || '-';
   }
 
-  function renderTable() {
+  function renderTable(resetPage = false) {
     if (!suppliersBody) return;
     const term = searchInput?.value.trim().toLowerCase() || '';
-    const filtered = suppliers.filter((item) => `${item.code} ${item.legal_name} ${item.email || ''}`.toLowerCase().includes(term));
+    const filtered = suppliers.filter((item) => `${item.code} ${item.tax_id || ''} ${item.legal_name} ${item.email || ''} ${item.phone || ''}`.toLowerCase().includes(term));
     if (suppliersPager) {
-      suppliersPager.update(filtered);
+      suppliersPager.update(filtered, { resetPage });
       return;
     }
-    suppliersBody.innerHTML = filtered.map((item) => renderSupplierRow(item)).join('') || '<tr><td colspan="5">No hay proveedores para mostrar.</td></tr>';
+    suppliersBody.innerHTML = filtered.map((item) => renderSupplierRow(item)).join('') || '<tr><td colspan="6">No hay proveedores para mostrar.</td></tr>';
   }
 
   async function ensureDefaultSupplierTypes() {
@@ -494,7 +495,7 @@
     }
   });
 
-  searchInput?.addEventListener('input', renderTable);
+  searchInput?.addEventListener('input', () => renderTable(true));
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && editModal && !editModal.classList.contains('hidden')) {
       closeEditModal();

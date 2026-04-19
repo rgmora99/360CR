@@ -14,7 +14,7 @@
   const customersPager = window.TablePaginator?.create({
     key: 'customers',
     tableBody: customersBody,
-    totalColumns: 5,
+    totalColumns: 6,
     emptyMessage: 'No hay clientes para mostrar.',
     rowRenderer: renderCustomerRow,
   });
@@ -63,6 +63,7 @@
       <tr>
         <td>${escapeHtml(item.code)}</td>
         <td>${escapeHtml(formatCustomerType(typeCode))}</td>
+        <td>${escapeHtml(item.tax_id || '-')}</td>
         <td>${escapeHtml(item.legal_name)}</td>
         <td><span class="status status-${item.status}">${escapeHtml(formatCustomerStatus(item.status))}</span></td>
         <td>
@@ -405,15 +406,15 @@
     return labels[status] || status || '-';
   }
 
-  function renderTable() {
+  function renderTable(resetPage = false) {
     if (!customersBody) return;
     const term = searchInput?.value.trim().toLowerCase() || '';
-    const filtered = customers.filter((item) => `${item.code} ${item.legal_name} ${item.email || ''}`.toLowerCase().includes(term));
+    const filtered = customers.filter((item) => `${item.code} ${item.tax_id || ''} ${item.legal_name} ${item.email || ''} ${item.phone || ''}`.toLowerCase().includes(term));
     if (customersPager) {
-      customersPager.update(filtered);
+      customersPager.update(filtered, { resetPage });
       return;
     }
-    customersBody.innerHTML = filtered.map((item) => renderCustomerRow(item)).join('') || '<tr><td colspan="5">No hay clientes para mostrar.</td></tr>';
+    customersBody.innerHTML = filtered.map((item) => renderCustomerRow(item)).join('') || '<tr><td colspan="6">No hay clientes para mostrar.</td></tr>';
   }
 
   async function loadCustomerTypes() {
@@ -588,7 +589,7 @@
     }
   });
 
-  searchInput?.addEventListener('input', renderTable);
+  searchInput?.addEventListener('input', () => renderTable(true));
   organizationIdInput?.addEventListener('change', loadCustomers);
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && editModal && !editModal.classList.contains('hidden')) {

@@ -205,8 +205,11 @@
     });
 
     return {
-      update(nextItems) {
+      update(nextItems, updateOptions = {}) {
         items = Array.isArray(nextItems) ? nextItems.slice() : [];
+        if (updateOptions?.resetPage) {
+          currentPage = 1;
+        }
         renderRows();
       },
       refresh() {

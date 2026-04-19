@@ -23,6 +23,7 @@ from apps.customers.models import Customer
 from apps.finance.models import Invoice, Product, Purchase, PurchaseInboxInvoice, TaxReport
 from apps.finance.serializers import (
     build_customer_credit_summary,
+    build_customer_shipping_summary,
     build_receivable_summary,
     InvoiceCreateSerializer,
     InvoiceReceivablePaymentCreateSerializer,
@@ -958,6 +959,7 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                     "email": customer.email,
                     "phone": customer.phone,
                     "credit": build_customer_credit_summary(customer, organization_id_int),
+                    "shipping": build_customer_shipping_summary(customer),
                     "loyalty": (
                         {
                             "member_id": member.id,

@@ -86,6 +86,40 @@
                   <label>Moneda<input id="currency" value="CRC" maxlength="3" /></label>
                 </div>
                 <label>Notas<textarea id="notes" rows="3" maxlength="500" placeholder="Detalle interno de la factura (máx. 500 caracteres)"></textarea></label>
+                <section id="shipment-panel" class="shipment-panel is-disabled" aria-live="polite">
+                  <div class="shipment-panel__header">
+                    <div>
+                      <h3>EnvÃ­o del producto</h3>
+                      <p class="subtitle">Activa esta opciÃ³n si el cliente necesita despacho o retiro coordinado.</p>
+                    </div>
+                    <div class="shipment-panel__actions">
+                      <label class="points-payment-toggle shipment-toggle">
+                        <input id="requires-shipment" type="checkbox" />
+                        <span>Solicitar envÃ­o</span>
+                      </label>
+                      <button id="configure-shipment" class="btn btn-secondary" type="button" disabled>Configurar envÃ­o</button>
+                    </div>
+                  </div>
+                  <div class="shipment-panel__summary">
+                    <div class="points-stat">
+                      <span class="points-stat__label">Estado</span>
+                      <strong id="shipment-status">No aplica</strong>
+                    </div>
+                    <div class="points-stat">
+                      <span class="points-stat__label">Medio</span>
+                      <strong id="shipment-method-summary">Sin definir</strong>
+                    </div>
+                    <div class="points-stat">
+                      <span class="points-stat__label">Destino</span>
+                      <strong id="shipment-destination-summary">Sin direcciÃ³n configurada</strong>
+                    </div>
+                    <div class="points-stat">
+                      <span class="points-stat__label">Referencia</span>
+                      <strong id="shipment-reference-summary">Pendiente</strong>
+                    </div>
+                  </div>
+                  <p id="shipment-help" class="subtitle points-payment-panel__help">Agrega productos fÃ­sicos para habilitar el envÃ­o.</p>
+                </section>
                 <section id="points-payment-panel" class="points-payment-panel is-disabled" aria-live="polite">
                   <div class="points-payment-panel__header">
                     <div>
@@ -155,6 +189,76 @@
           </section>
         </div>
       </section>
+    </div>
+    <div id="shipment-modal" class="receivable-detail-modal" aria-hidden="true">
+      <div class="receivable-detail-panel shipment-modal-panel" role="dialog" aria-modal="true" aria-labelledby="shipment-modal-title">
+        <div class="receivable-detail-header">
+          <div>
+            <h2 id="shipment-modal-title">Configurar envÃ­o</h2>
+            <p class="subtitle">Completa los datos de entrega solo si la factura incluye productos fÃ­sicos.</p>
+          </div>
+          <button id="close-shipment-modal" class="btn btn-secondary" type="button">Cerrar</button>
+        </div>
+        <p class="shipment-modal-tip subtitle">Se autocompletan los datos del cliente cuando ya existe telefono o direccion registrada.</p>
+        <form id="shipment-form" class="customer-form">
+          <div class="shipment-modal-grid">
+            <label>Medio de envÃ­o
+              <select id="shipment-method">
+                <option value="own_courier">MensajerÃ­a propia</option>
+                <option value="correos_cr">Correos de Costa Rica</option>
+              </select>
+            </label>
+            <label>Persona que recibe
+              <input id="shipment-recipient-name" maxlength="160" placeholder="Nombre completo de quien recibe" />
+            </label>
+            <label>TelÃ©fono principal
+              <input id="shipment-phone-primary" maxlength="30" placeholder="8888-8888" />
+            </label>
+            <label>TelÃ©fono alterno
+              <input id="shipment-phone-secondary" maxlength="30" placeholder="Opcional" />
+            </label>
+            <label>PaÃ­s
+              <input id="shipment-country" maxlength="80" value="Costa Rica" />
+            </label>
+            <label>Provincia / Estado
+              <input id="shipment-state" maxlength="80" placeholder="Provincia o estado" />
+            </label>
+            <label>CantÃ³n / Ciudad
+              <input id="shipment-city" maxlength="80" placeholder="Ciudad, cantÃ³n o distrito" />
+            </label>
+            <label>CÃ³digo postal
+              <input id="shipment-postal-code" maxlength="20" placeholder="Opcional" />
+            </label>
+            <label class="shipment-modal-grid__wide">DirecciÃ³n principal
+              <input id="shipment-address-line-1" maxlength="180" placeholder="DirecciÃ³n exacta del destino" />
+            </label>
+            <label class="shipment-modal-grid__wide">Complemento / referencias
+              <input id="shipment-address-line-2" maxlength="180" placeholder="Casa color..., frente a..., etc." />
+            </label>
+            <label class="shipment-modal-grid__wide">Instrucciones de entrega
+              <textarea id="shipment-delivery-notes" rows="3" maxlength="300" placeholder="Horario, referencias, observaciones importantes"></textarea>
+            </label>
+            <label class="shipment-modal-grid__wide">Contacto o referencia adicional
+              <input id="shipment-contact-reference" maxlength="160" placeholder="QuiÃ©n coordinÃ³, punto de referencia, etc." />
+            </label>
+          </div>
+          <section id="shipment-correos-fields" class="shipment-correos-fields hidden">
+            <h3>Datos para Correos de Costa Rica</h3>
+            <div class="shipment-modal-grid">
+              <label>GuÃ­a o nÃºmero de referencia
+                <input id="shipment-correos-guide" maxlength="80" placeholder="Opcional si aÃºn no existe" />
+              </label>
+              <label>Oficina o sucursal de Correos
+                <input id="shipment-correos-branch" maxlength="120" placeholder="Sucursal, agencia o referencia principal" />
+              </label>
+            </div>
+          </section>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">Guardar envÃ­o</button>
+            <button id="cancel-shipment-modal" class="btn btn-secondary" type="button">Cancelar</button>
+          </div>
+        </form>
+      </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="/assets/js/alerts.js"></script>

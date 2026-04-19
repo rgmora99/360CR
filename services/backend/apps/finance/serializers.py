@@ -7,7 +7,7 @@ from django.db.models.functions import Cast, Substr
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.customers.models import Customer
+from apps.customers.models import Customer, CustomerAddress
 from apps.finance.models import (
     Invoice,
     InvoiceItem,
@@ -167,6 +167,32 @@ def build_customer_credit_summary(customer, organization_id, pending_invoice_tot
         "payment_terms_days": int(customer.payment_terms_days or 0),
         "pending_invoice_total": pending_total,
         "projected_available": projected_available_credit,
+    }
+
+
+def build_customer_shipping_summary(customer):
+    address = (
+        CustomerAddress.objects.filter(customer=customer, address_type=CustomerAddress.TYPE_SHIPPING)
+        .order_by("-is_primary", "-id")
+        .first()
+        or CustomerAddress.objects.filter(customer=customer).order_by("-is_primary", "-id").first()
+    )
+    if not address:
+        return None
+
+    address_parts = [address.address_line_1, address.address_line_2, address.city, address.state, address.country]
+    printable_address = ", ".join(part for part in address_parts if part)
+
+    return {
+        "address_id": address.id,
+        "address_type": address.address_type,
+        "country": address.country,
+        "state": address.state,
+        "city": address.city,
+        "postal_code": address.postal_code,
+        "address_line_1": address.address_line_1,
+        "address_line_2": address.address_line_2,
+        "printable": printable_address,
     }
 
 
@@ -358,6 +384,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "total",
             "status",
             "email_sent_at",
+            "shipment_required",
+            "shipment_details",
             "notes",
             "agenda_event",
             "items",
@@ -506,6 +534,8 @@ class InvoiceCreateSerializer(serializers.Serializer):
     exchange_rate = serializers.DecimalField(max_digits=10, decimal_places=4, default=Decimal("1.0000"))
     notes = serializers.CharField(required=False, allow_blank=True)
     use_loyalty_points = serializers.BooleanField(required=False, default=False)
+    shipment_required = serializers.BooleanField(required=False, default=False)
+    shipment_details = serializers.JSONField(required=False, default=dict)
     items = InvoiceItemWriteSerializer(many=True)
 
     def _is_credit_sale(self, attrs):
@@ -568,6 +598,59 @@ class InvoiceCreateSerializer(serializers.Serializer):
             "total": money(subtotal - discount_total + tax_total),
         }
 
+    def _has_shippable_lines(self, invoice_breakdown):
+        return any(line["product"].product_type == Product.TYPE_PHYSICAL for line in invoice_breakdown["lines"])
+
+    def _validate_shipment_details(self, attrs, invoice_breakdown):
+        if not attrs.get("shipment_required"):
+            attrs["shipment_details"] = {}
+            return
+
+        if not self._has_shippable_lines(invoice_breakdown):
+            raise serializers.ValidationError(
+                {"shipment_required": "El envio solo aplica cuando la factura incluye productos fisicos."}
+            )
+
+        shipment = attrs.get("shipment_details") or {}
+        if not isinstance(shipment, dict):
+            raise serializers.ValidationError({"shipment_details": "Los datos de envio deben enviarse en formato valido."})
+
+        method = str(shipment.get("method") or "").strip()
+        if method not in {Invoice.SHIPMENT_OWN_COURIER, Invoice.SHIPMENT_CORREOS_CR}:
+            raise serializers.ValidationError({"shipment_details": "Selecciona un medio de envio valido."})
+
+        required_fields = {
+            "recipient_name": "Debe indicar la persona que recibe.",
+            "address_line_1": "La direccion principal de envio es obligatoria.",
+            "city": "La ciudad o localidad de envio es obligatoria.",
+            "phone_primary": "Debes registrar al menos un telefono de contacto.",
+        }
+        for field, message in required_fields.items():
+            if not str(shipment.get(field) or "").strip():
+                raise serializers.ValidationError({"shipment_details": message})
+
+        if method == Invoice.SHIPMENT_CORREOS_CR and not str(shipment.get("correos_branch") or "").strip():
+            raise serializers.ValidationError(
+                {"shipment_details": "Para Correos de Costa Rica debes indicar la sucursal o referencia principal."}
+            )
+
+        attrs["shipment_details"] = {
+            "method": method,
+            "recipient_name": str(shipment.get("recipient_name") or "").strip(),
+            "address_line_1": str(shipment.get("address_line_1") or "").strip(),
+            "address_line_2": str(shipment.get("address_line_2") or "").strip(),
+            "city": str(shipment.get("city") or "").strip(),
+            "state": str(shipment.get("state") or "").strip(),
+            "country": str(shipment.get("country") or "").strip() or "Costa Rica",
+            "postal_code": str(shipment.get("postal_code") or "").strip(),
+            "phone_primary": str(shipment.get("phone_primary") or "").strip(),
+            "phone_secondary": str(shipment.get("phone_secondary") or "").strip(),
+            "contact_reference": str(shipment.get("contact_reference") or "").strip(),
+            "delivery_notes": str(shipment.get("delivery_notes") or "").strip(),
+            "correos_branch": str(shipment.get("correos_branch") or "").strip(),
+            "correos_guide": str(shipment.get("correos_guide") or "").strip(),
+        }
+
     def _validate_customer_credit(self, customer, organization_id, invoice_total):
         if not customer.credit_approved:
             raise serializers.ValidationError(
@@ -628,6 +711,14 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
         if customer.status != Customer.STATUS_ACTIVE:
             raise serializers.ValidationError("Solo se puede facturar clientes activos.")
+
+        invoice_breakdown = self._build_invoice_lines(
+            organization_id=attrs["organization"],
+            tax_regime=attrs["tax_regime"],
+            items=attrs["items"],
+        )
+        self._validate_shipment_details(attrs, invoice_breakdown)
+        attrs["invoice_breakdown"] = invoice_breakdown
 
         is_credit_sale = self._is_credit_sale(attrs)
         if is_credit_sale:
@@ -693,13 +784,15 @@ class InvoiceCreateSerializer(serializers.Serializer):
     def create(self, validated_data):
         agenda_event = validated_data.pop("agenda_event_instance", None)
         validated_data.pop("agenda_event", None)
+        invoice_breakdown = validated_data.pop("invoice_breakdown", None)
         organization_id = validated_data["organization"]
         customer = Customer.objects.select_for_update().get(id=validated_data["customer"], organization_id=organization_id)
-        invoice_breakdown = self._build_invoice_lines(
-            organization_id=organization_id,
-            tax_regime=validated_data["tax_regime"],
-            items=validated_data["items"],
-        )
+        if invoice_breakdown is None:
+            invoice_breakdown = self._build_invoice_lines(
+                organization_id=organization_id,
+                tax_regime=validated_data["tax_regime"],
+                items=validated_data["items"],
+            )
         if self._is_credit_sale(validated_data):
             self._validate_customer_credit(
                 customer=customer,
@@ -731,6 +824,8 @@ class InvoiceCreateSerializer(serializers.Serializer):
                     installment_interval_days=validated_data.get("installment_interval_days", 30),
                     currency=validated_data["currency"],
                     exchange_rate=validated_data["exchange_rate"],
+                    shipment_required=validated_data.get("shipment_required", False),
+                    shipment_details=validated_data.get("shipment_details", {}),
                     notes=validated_data.get("notes", ""),
                     status=Invoice.STATUS_ISSUED,
                 )

@@ -8,6 +8,9 @@ from apps.customers.models import Customer
 from apps.suppliers.models import Supplier
 from apps.tenants.models import Organization
 
+SHIPMENT_OWN_COURIER = "own_courier"
+SHIPMENT_CORREOS_CR = "correos_cr"
+
 
 class Category(models.Model):
     TYPE_INCOME = "income"
@@ -112,6 +115,8 @@ class Invoice(models.Model):
     PAYMENT_TRANSFER = "03"
     PAYMENT_SINPE_MOVIL = "04"
     PAYMENT_INSTALLMENTS = "05"
+    SHIPMENT_OWN_COURIER = "own_courier"
+    SHIPMENT_CORREOS_CR = "correos_cr"
     PAYMENT_METHOD_CHOICES = [
         (PAYMENT_CASH, "Efectivo"),
         (PAYMENT_CARD, "Tarjeta"),
@@ -139,6 +144,8 @@ class Invoice(models.Model):
     total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     email_sent_at = models.DateTimeField(null=True, blank=True)
+    shipment_required = models.BooleanField(default=False)
+    shipment_details = models.JSONField(default=dict, blank=True)
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -197,6 +204,11 @@ class InvoiceReceivablePayment(models.Model):
 
 
 class Purchase(models.Model):
+    SHIPMENT_METHOD_CHOICES = [
+        (SHIPMENT_OWN_COURIER, "MensajerÃ­a propia"),
+        (SHIPMENT_CORREOS_CR, "Correos de Costa Rica"),
+    ]
+
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
     supplier_name = models.CharField(max_length=200)
     supplier_tax_id = models.CharField(max_length=50)
