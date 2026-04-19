@@ -541,14 +541,17 @@ class InvoiceCreateSerializer(serializers.Serializer):
     def _is_credit_sale(self, attrs):
         return attrs["sale_condition"] == "02" or attrs["payment_method"] == Invoice.PAYMENT_INSTALLMENTS
 
-    def _build_invoice_lines(self, organization_id, tax_regime, items):
+    def _build_invoice_lines(self, organization_id, tax_regime, items, lock=False):
         prepared_lines = []
         subtotal = Decimal("0.00")
         discount_total = Decimal("0.00")
         tax_total = Decimal("0.00")
 
         for index, item in enumerate(items, start=1):
-            product = Product.objects.select_for_update().filter(id=item["product"], organization_id=organization_id, is_active=True).first()
+            product_queryset = Product.objects.filter(id=item["product"], organization_id=organization_id, is_active=True)
+            if lock:
+                product_queryset = product_queryset.select_for_update()
+            product = product_queryset.first()
             if not product:
                 raise serializers.ValidationError(f"Producto inválido en la línea {index}.")
 
@@ -716,6 +719,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
             organization_id=attrs["organization"],
             tax_regime=attrs["tax_regime"],
             items=attrs["items"],
+            lock=False,
         )
         self._validate_shipment_details(attrs, invoice_breakdown)
         attrs["invoice_breakdown"] = invoice_breakdown
@@ -792,6 +796,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
                 organization_id=organization_id,
                 tax_regime=validated_data["tax_regime"],
                 items=validated_data["items"],
+                lock=True,
             )
         if self._is_credit_sale(validated_data):
             self._validate_customer_credit(

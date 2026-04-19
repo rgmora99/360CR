@@ -172,12 +172,13 @@
 }
 
 .shipment-inline {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(280px, 1fr);
   align-items: center;
   gap: 14px;
   margin: 14px 0 6px;
-  padding: 10px 0 4px;
+  padding: 10px 0 8px;
+  border-bottom: 1px solid rgba(122, 162, 255, 0.12);
 }
 
 .shipment-inline.is-disabled {
@@ -193,8 +194,12 @@
 
 .shipment-inline__summary {
   margin: 0;
-  text-align: right;
-  max-width: 720px;
+  text-align: left;
+  color: var(--muted);
+}
+
+#line-product-meta {
+  display: none;
 }
 
 .shipment-panel.is-disabled {

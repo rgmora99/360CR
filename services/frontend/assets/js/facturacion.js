@@ -52,6 +52,9 @@
             if (error instanceof Error) throw error;
           }
         }
+        if (contentType.includes('text/html')) {
+          throw new Error('No se pudo completar la accion en este momento. Intenta de nuevo en unos segundos.');
+        }
         throw new Error(text || 'Error de API');
       }
       if (!text) return null;
@@ -428,12 +431,12 @@
   function updateSelectedProductMeta() {
     const product = state.products.find((item) => item.id === Number($('line-product').value));
     if (!product) {
-      $('line-product-meta').textContent = 'Selecciona un producto para ver su detalle.';
+      $('line-product-meta').textContent = '';
       return;
     }
 
-    const typeLabel = product.product_type === 'service' ? 'Servicio' : 'Producto';
-    const stockLabel = product.product_type === 'service' ? 'Disponible para agenda/facturacion' : `Stock actual: ${product.stock}`;
+    const typeLabel = '';
+    const stockLabel = product.product_type === 'service' ? 'Servicio' : `Stock ${product.stock}`;
     $('line-product-meta').textContent = `${typeLabel} · Codigo: ${product.sku || product.code || 'N/D'} · ${product.name} · ${stockLabel} · Precio: CRC ${Number(product.unit_price || 0).toFixed(2)}`;
   }
 
@@ -658,9 +661,9 @@
       if (inline) inline.classList.add('is-disabled');
       if ($('shipment-inline-summary')) {
         const serviceHint = serviceProduct
-          ? ` Se agregara como linea: ${serviceProduct.name}.`
+          ? ` Se agregara como linea ${serviceProduct.name}.`
           : ' Si existe un servicio de mensajeria en inventario, se agregara automaticamente.';
-        $('shipment-inline-summary').textContent = `Marca el envio para abrir el modal de entrega.${serviceHint}`;
+        $('shipment-inline-summary').textContent = `Marca el check si el cliente necesita envio.${serviceHint}`;
       }
       removeShipmentServiceLine();
       return;
@@ -677,12 +680,12 @@
       : 'Completa la configuracion del envio antes de emitir la factura.';
     if ($('shipment-inline-summary')) {
       const methodLabel = state.shipment.method === SHIPMENT_CORREOS_CR ? 'Correos de Costa Rica' : 'Mensajeria propia';
-      const destination = [state.shipment.address_line_1, state.shipment.city].filter(Boolean).join(', ') || 'direccion pendiente';
+      const destination = [state.shipment.city, state.shipment.state].filter(Boolean).join(', ') || 'direccion pendiente';
       const serviceLineText = serviceProduct
-        ? ` Linea automatica: ${serviceProduct.name}.`
-        : ' No se encontro un servicio de mensajeria en inventario para agregar como linea.';
+        ? ` Linea: ${serviceProduct.name}.`
+        : ' Sin servicio de mensajeria detectado en inventario.';
       $('shipment-inline-summary').textContent = shipmentIsComplete()
-        ? `Envio listo por ${methodLabel} hacia ${destination}.${serviceLineText}`
+        ? `Envio listo por ${methodLabel} para ${destination}.${serviceLineText}`
         : `Envio activo con datos pendientes.${serviceLineText}`;
     }
   }
