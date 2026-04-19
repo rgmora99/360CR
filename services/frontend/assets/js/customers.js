@@ -391,8 +391,6 @@
 
     if (organizationIdInput && selectedId !== current) {
       organizationIdInput.value = String(selectedId);
-      const selectedOrganization = organizations.find((item) => item.id === selectedId);
-      setFeedback(`Se ajustó organización a ${selectedId} (${selectedOrganization?.name || 'N/D'}).`);
     }
   }
 

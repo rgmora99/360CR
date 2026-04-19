@@ -584,7 +584,6 @@
       resetProgramForm();
       resetMemberForm();
       resetRewardForm();
-      setFeedback('Organización actualizada.', false);
     } catch (error) {
       setFeedback(error.message, true);
     }

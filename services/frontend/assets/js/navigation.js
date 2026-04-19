@@ -1,6 +1,7 @@
 (function initSharedNavigation() {
   const SESSION_KEY = 'cr360.session';
   const LEGACY_ORG_KEY = 'activeOrganizationId';
+  const ORG_FLASH_KEY = 'cr360.organization.flash';
 
   function loadCachedSession() {
     try {
@@ -79,6 +80,24 @@
       pageOrganizationField.parentElement;
 
     fieldContainer?.classList.add('organization-control-hidden');
+  }
+
+  function showPendingOrganizationToast() {
+    const raw = sessionStorage.getItem(ORG_FLASH_KEY);
+    if (!raw) {
+      return;
+    }
+
+    sessionStorage.removeItem(ORG_FLASH_KEY);
+
+    try {
+      const payload = JSON.parse(raw);
+      const organizationName = String(payload?.organizationName || '').trim();
+      if (organizationName && window.appAlerts?.toast) {
+        window.appAlerts.toast(`Negocio cambiado a ${organizationName}.`, 'success');
+      }
+    } catch (_error) {
+    }
   }
 
   async function fetchSession() {
@@ -301,6 +320,7 @@
     `;
 
     hidePageOrganizationControl();
+    showPendingOrganizationToast();
 
     const menuToggleButton = document.getElementById('menu-toggle');
     const overlay = document.createElement('button');
@@ -388,6 +408,13 @@
       if (nameNode) {
         nameNode.textContent = selected?.name || 'Sin organización activa';
       }
+      sessionStorage.setItem(
+        ORG_FLASH_KEY,
+        JSON.stringify({
+          organizationId: selectedId,
+          organizationName: selected?.name || '',
+        }),
+      );
       window.location.reload();
     });
 
