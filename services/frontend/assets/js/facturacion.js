@@ -23,6 +23,7 @@
     selectedCustomer: null,
     prefillAgendaEventId: null,
     shipment: null,
+    shipmentServiceProductId: null,
   };
 
   const apiBase = () => '/api';
@@ -109,6 +110,16 @@
       correos_branch: '',
       correos_guide: '',
     };
+  }
+
+  function shipmentRequested() {
+    return Boolean($('requires-shipment')?.checked || $('requires-shipment-inline')?.checked);
+  }
+
+  function setShipmentRequested(nextValue) {
+    const checked = Boolean(nextValue);
+    if ($('requires-shipment')) $('requires-shipment').checked = checked;
+    if ($('requires-shipment-inline')) $('requires-shipment-inline').checked = checked;
   }
 
   function getBillingPrefill() {
@@ -290,6 +301,8 @@
     state.selectedCustomer = null;
     state.customers = [];
     state.shipment = emptyShipment();
+    state.shipmentServiceProductId = null;
+    setShipmentRequested(false);
     $('customer-tax-id').value = '';
     $('customer-select').innerHTML = '<option value="">Selecciona un cliente</option>';
     $('customer-select-wrap').classList.add('hidden');
@@ -434,6 +447,50 @@
     }, 0);
   }
 
+  function findShipmentServiceProduct() {
+    const shipmentMethod = state.shipment?.method || SHIPMENT_OWN_COURIER;
+    const serviceProducts = state.products.filter((product) => product.product_type === 'service' && product.is_active);
+    if (!serviceProducts.length) return null;
+
+    const normalizedMethodTerms = shipmentMethod === SHIPMENT_CORREOS_CR
+      ? ['correos', 'correo']
+      : ['mensajeria', 'mensajería', 'envio', 'envío', 'delivery'];
+    const genericTerms = ['mensajeria', 'mensajería', 'envio', 'envío', 'delivery', 'reparto', 'despacho', 'correos', 'correo'];
+
+    const pickMatch = (terms) =>
+      serviceProducts.find((product) => {
+        const haystack = `${product.name || ''} ${product.sku || ''} ${product.description || ''}`.toLowerCase();
+        return terms.some((term) => haystack.includes(term));
+      });
+
+    return pickMatch(normalizedMethodTerms) || pickMatch(genericTerms) || null;
+  }
+
+  function removeShipmentServiceLine() {
+    state.lines = state.lines.filter((line) => !line.auto_shipment);
+    state.shipmentServiceProductId = null;
+  }
+
+  function syncShipmentServiceLine() {
+    removeShipmentServiceLine();
+    if (!shipmentRequested()) return;
+
+    const serviceProduct = findShipmentServiceProduct();
+    if (!serviceProduct) return;
+    if (state.lines.some((line) => !line.auto_shipment && Number(line.product) === Number(serviceProduct.id))) {
+      state.shipmentServiceProductId = serviceProduct.id;
+      return;
+    }
+
+    state.lines.push({
+      product: serviceProduct.id,
+      quantity: 1,
+      discount_percent: 0,
+      auto_shipment: true,
+    });
+    state.shipmentServiceProductId = serviceProduct.id;
+  }
+
   function syncPointsPaymentUI() {
     const checkbox = $('pay-with-points');
     const help = $('points-payment-help');
@@ -493,7 +550,7 @@
   }
 
   function shipmentIsComplete() {
-    if (!$('requires-shipment').checked) return false;
+    if (!shipmentRequested()) return false;
     ensureShipmentState();
     if (!state.shipment?.recipient_name || !state.shipment?.address_line_1 || !state.shipment?.city || !state.shipment?.phone_primary) {
       return false;
@@ -557,25 +614,33 @@
 
   function syncShipmentUI() {
     const panel = $('shipment-panel');
-    const checked = $('requires-shipment').checked;
+    const inline = $('shipment-inline');
+    const checked = shipmentRequested();
     const shippable = hasShippableLines();
+    const serviceProduct = findShipmentServiceProduct();
 
     ensureShipmentState();
     panel.classList.remove('is-active', 'is-disabled');
+    inline?.classList.remove('is-disabled');
 
     if (!shippable) {
-      $('requires-shipment').checked = false;
+      setShipmentRequested(false);
       $('configure-shipment').disabled = true;
+      if ($('configure-shipment-inline')) $('configure-shipment-inline').disabled = true;
       $('shipment-status').textContent = 'No aplica';
       $('shipment-method-summary').textContent = 'Sin definir';
       $('shipment-destination-summary').textContent = 'Sin direccion configurada';
       $('shipment-reference-summary').textContent = 'Pendiente';
       $('shipment-help').textContent = 'Agrega productos fisicos para habilitar el envio.';
       panel.classList.add('is-disabled');
+      if (inline) inline.classList.add('is-disabled');
+      if ($('shipment-inline-summary')) $('shipment-inline-summary').textContent = 'Agrega productos fisicos para habilitar el envio.';
+      removeShipmentServiceLine();
       return;
     }
 
     $('configure-shipment').disabled = !checked;
+    if ($('configure-shipment-inline')) $('configure-shipment-inline').disabled = !checked;
     $('shipment-status').textContent = checked ? (shipmentIsComplete() ? 'Listo para emitir' : 'Configuracion pendiente') : 'No solicitado';
     $('shipment-method-summary').textContent = checked
       ? state.shipment.method === SHIPMENT_CORREOS_CR
@@ -590,13 +655,36 @@
     if (!checked) {
       panel.classList.add('is-disabled');
       $('shipment-help').textContent = 'Activa la solicitud de envio para capturar direccion, telefonos y referencias.';
+      if (inline) inline.classList.add('is-disabled');
+      if ($('shipment-inline-summary')) {
+        const serviceHint = serviceProduct
+          ? ` Se agregara como linea: ${serviceProduct.name}.`
+          : ' Si existe un servicio de mensajeria en inventario, se agregara automaticamente.';
+        $('shipment-inline-summary').textContent = `Marca el envio para abrir el modal de entrega.${serviceHint}`;
+      }
+      removeShipmentServiceLine();
       return;
     }
 
     panel.classList.add('is-active');
+    if (shipmentIsComplete()) {
+      syncShipmentServiceLine();
+    } else {
+      removeShipmentServiceLine();
+    }
     $('shipment-help').textContent = shipmentIsComplete()
       ? 'El envio esta configurado y se guardara junto con la factura.'
       : 'Completa la configuracion del envio antes de emitir la factura.';
+    if ($('shipment-inline-summary')) {
+      const methodLabel = state.shipment.method === SHIPMENT_CORREOS_CR ? 'Correos de Costa Rica' : 'Mensajeria propia';
+      const destination = [state.shipment.address_line_1, state.shipment.city].filter(Boolean).join(', ') || 'direccion pendiente';
+      const serviceLineText = serviceProduct
+        ? ` Linea automatica: ${serviceProduct.name}.`
+        : ' No se encontro un servicio de mensajeria en inventario para agregar como linea.';
+      $('shipment-inline-summary').textContent = shipmentIsComplete()
+        ? `Envio listo por ${methodLabel} hacia ${destination}.${serviceLineText}`
+        : `Envio activo con datos pendientes.${serviceLineText}`;
+    }
   }
 
   function openShipmentModal() {
@@ -618,6 +706,16 @@
   }
 
   function renderLines() {
+    if (shipmentRequested()) {
+      if (hasShippableLines() && shipmentIsComplete()) {
+        syncShipmentServiceLine();
+      } else {
+        removeShipmentServiceLine();
+      }
+    } else {
+      removeShipmentServiceLine();
+    }
+
     let subtotal = 0;
 
     $('lines-body').innerHTML =
@@ -678,17 +776,26 @@
     }
   });
 
-  $('requires-shipment').addEventListener('change', () => {
-    if ($('requires-shipment').checked) {
+  function handleShipmentToggleChange(checked) {
+    setShipmentRequested(checked);
+    if (checked) {
       ensureShipmentState();
       syncShipmentUI();
       openShipmentModal();
       return;
     }
-    syncShipmentUI();
+    renderLines();
+  }
+
+  $('requires-shipment').addEventListener('change', () => {
+    handleShipmentToggleChange($('requires-shipment').checked);
+  });
+  $('requires-shipment-inline')?.addEventListener('change', () => {
+    handleShipmentToggleChange($('requires-shipment-inline').checked);
   });
 
   $('configure-shipment').addEventListener('click', openShipmentModal);
+  $('configure-shipment-inline')?.addEventListener('click', openShipmentModal);
   $('shipment-method').addEventListener('change', syncShipmentMethodFields);
   $('close-shipment-modal').addEventListener('click', closeShipmentModal);
   $('cancel-shipment-modal').addEventListener('click', closeShipmentModal);
@@ -715,7 +822,7 @@
     }
 
     state.shipment = shipment;
-    syncShipmentUI();
+    renderLines();
     closeShipmentModal();
     setFeedback('Envio configurado correctamente.', false, { showInline: false, showToast: false });
   });
@@ -776,7 +883,7 @@
         return setFeedback('Para facturar a credito debes usar metodo de pago: A plazos.', true);
       }
 
-      if ($('requires-shipment').checked) {
+      if (shipmentRequested()) {
         if (!hasShippableLines()) {
           return setFeedback('El envio solo se puede solicitar cuando hay productos fisicos en la factura.', true);
         }
@@ -816,8 +923,8 @@
         notes: $('notes').value.trim(),
         items: buildPayloadLines(),
         use_loyalty_points: $('pay-with-points').checked,
-        shipment_required: $('requires-shipment').checked,
-        shipment_details: $('requires-shipment').checked ? state.shipment : {},
+        shipment_required: shipmentRequested(),
+        shipment_details: shipmentRequested() ? state.shipment : {},
       };
 
       const invoice = await request('/invoices/', { method: 'POST', body: JSON.stringify(payload) });
@@ -831,14 +938,15 @@
       const receivableMsg = paymentMethod === PAYMENT_INSTALLMENTS
         ? ' La cuenta quedo disponible en "Cuentas x cobrar" para registrar abonos y controlar vencimientos.'
         : '';
-      const shipmentMsg = $('requires-shipment').checked ? ' Se guardo la configuracion de envio en la factura.' : '';
+      const shipmentMsg = shipmentRequested() ? ' Se guardo la configuracion de envio en la factura.' : '';
 
       setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".${loyaltyMsg}${receivableMsg}${shipmentMsg}`, false);
 
       state.lines = [];
       state.prefillAgendaEventId = null;
       state.shipment = emptyShipment();
-      $('requires-shipment').checked = false;
+      setShipmentRequested(false);
+      state.shipmentServiceProductId = null;
       $('pay-with-points').checked = false;
       renderLines();
       await loadProducts();

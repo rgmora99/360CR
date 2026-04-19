@@ -86,6 +86,16 @@
                   <label>Moneda<input id="currency" value="CRC" maxlength="3" /></label>
                 </div>
                 <label>Notas<textarea id="notes" rows="3" maxlength="500" placeholder="Detalle interno de la factura (máx. 500 caracteres)"></textarea></label>
+                <div id="shipment-inline" class="shipment-inline is-disabled" aria-live="polite">
+                  <div class="shipment-inline__controls">
+                    <label class="points-payment-toggle shipment-inline__toggle">
+                      <input id="requires-shipment-inline" type="checkbox" />
+                      <span>Agregar envio</span>
+                    </label>
+                    <button id="configure-shipment-inline" class="btn btn-secondary" type="button" disabled>Datos de entrega</button>
+                  </div>
+                  <p id="shipment-inline-summary" class="subtitle shipment-inline__summary">Agrega productos fisicos para habilitar el envio.</p>
+                </div>
                 <section id="shipment-panel" class="shipment-panel is-disabled" aria-live="polite">
                   <div class="shipment-panel__header">
                     <div>
