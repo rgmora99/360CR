@@ -2,12 +2,17 @@
   const loginForm = document.getElementById('login-form');
   const registerForm = document.getElementById('register-form');
   const passwordSetupTrigger = document.getElementById('password-setup-trigger');
+  const googleLoginSlot = document.getElementById('google-login-button');
+  const googleRegisterSlot = document.getElementById('google-register-button');
   const SESSION_KEY = 'cr360.session';
 
   const FIELD_LABELS = {
     business: 'nombre de negocio',
-    email: 'correo electrónico',
-    password: 'contraseña',
+    first_name: 'nombre',
+    last_name: 'apellidos',
+    email: 'correo electronico',
+    phone: 'telefono',
+    password: 'contrasena',
   };
 
   const FORM_RULES = {
@@ -17,7 +22,10 @@
     },
     register: {
       business: { required: true, minLength: 2 },
+      first_name: { required: true, minLength: 2 },
+      last_name: { required: true, minLength: 2 },
       email: { required: true, email: true },
+      phone: { required: true, minLength: 8 },
       password: { required: true, minLength: 8 },
     },
   };
@@ -29,7 +37,7 @@
   function parseApiError(payload, bodyText) {
     if (!payload && /<html|<body|<title/i.test(bodyText || '')) {
       return {
-        message: 'El servidor no está disponible en este momento (502). Intenta de nuevo en unos segundos.',
+        message: 'El servidor no esta disponible en este momento (502). Intenta de nuevo en unos segundos.',
         fieldErrors: {},
         code: 'gateway_error',
         extra: {},
@@ -59,7 +67,7 @@
       }
 
       if (Object.keys(fieldErrors).length > 0) {
-        return { message: 'Revisa los campos marcados e inténtalo de nuevo.', fieldErrors };
+        return { message: 'Revisa los campos marcados e intentalo de nuevo.', fieldErrors };
       }
     }
 
@@ -131,7 +139,7 @@
     }
 
     if (rules.email && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      return 'Ingresa un correo electrónico válido.';
+      return 'Ingresa un correo electronico valido.';
     }
 
     if (rules.minLength && value.length < rules.minLength) {
@@ -184,15 +192,20 @@
     });
   }
 
+  function getRegisterPayload() {
+    const data = new FormData(registerForm);
+    return Object.fromEntries(data.entries());
+  }
+
   async function openPasswordSetupModal(prefilledEmail = '') {
     const result = await window.Swal.fire({
-      title: 'Configurar contraseña',
+      title: 'Configurar contrasena',
       html:
-        '<p style="margin-bottom:8px;">Si tu cuenta fue creada por un administrador, define aquí tu contraseña para ingresar.</p>' +
-        `<input id="setup-email" class="swal2-input" type="email" placeholder="Correo electrónico" value="${prefilledEmail || ''}">` +
-        '<input id="setup-password" class="swal2-input" type="password" placeholder="Nueva contraseña (mínimo 8)">' +
-        '<input id="setup-password-confirm" class="swal2-input" type="password" placeholder="Confirmar contraseña">',
-      confirmButtonText: 'Guardar contraseña',
+        '<p style="margin-bottom:8px;">Si tu cuenta fue creada por un administrador, define aqui tu contrasena para ingresar.</p>' +
+        `<input id="setup-email" class="swal2-input" type="email" placeholder="Correo electronico" value="${prefilledEmail || ''}">` +
+        '<input id="setup-password" class="swal2-input" type="password" placeholder="Nueva contrasena (minimo 8)">' +
+        '<input id="setup-password-confirm" class="swal2-input" type="password" placeholder="Confirmar contrasena">',
+      confirmButtonText: 'Guardar contrasena',
       showCancelButton: true,
       focusConfirm: false,
       preConfirm: () => {
@@ -200,15 +213,15 @@
         const first = document.getElementById('setup-password')?.value || '';
         const second = document.getElementById('setup-password-confirm')?.value || '';
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          window.Swal.showValidationMessage('Ingresa un correo válido.');
+          window.Swal.showValidationMessage('Ingresa un correo valido.');
           return false;
         }
         if (first.length < 8) {
-          window.Swal.showValidationMessage('La contraseña debe tener al menos 8 caracteres.');
+          window.Swal.showValidationMessage('La contrasena debe tener al menos 8 caracteres.');
           return false;
         }
         if (first !== second) {
-          window.Swal.showValidationMessage('Las contraseñas no coinciden.');
+          window.Swal.showValidationMessage('Las contrasenas no coinciden.');
           return false;
         }
         return { email, password: first };
@@ -222,10 +235,133 @@
   }
 
   function shouldTriggerPasswordSetup(error) {
-    return (
-      error?.code === 'password_setup_required' ||
-      /no tiene contraseña|debes crearla/i.test(String(error?.message || ''))
-    );
+    return error?.code === 'password_setup_required' || /no tiene contrasena|debes crearla/i.test(String(error?.message || ''));
+  }
+
+  function setGooglePlaceholder(slot, message) {
+    if (!slot) return;
+    slot.innerHTML = `<div class="google-auth-placeholder">${message}</div>`;
+  }
+
+  function loadGoogleScript() {
+    if (window.google?.accounts?.id) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-google-gsi]');
+      if (existing) {
+        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener('error', () => reject(new Error('No se pudo cargar Google.')), { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.dataset.googleGsi = 'true';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('No se pudo cargar Google.'));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function authenticateWithGoogle(credential, mode) {
+    const payload = { credential };
+
+    if (mode === 'register' && registerForm) {
+      const fields = FORM_RULES.register;
+      const registerPayload = getRegisterPayload();
+      const requiredNames = ['business', 'first_name', 'last_name', 'email', 'phone'];
+      let isValid = true;
+      requiredNames.forEach((name) => {
+        const field = registerForm.elements.namedItem(name);
+        if (field && !validateField(field, fields[name])) {
+          isValid = false;
+        }
+      });
+      if (!isValid) {
+        throw new Error('Completa primero los datos basicos del registro.');
+      }
+      Object.assign(payload, registerPayload);
+    }
+
+    const sessionData = await request('/auth/google/', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    storeSession(sessionData);
+    window.location.href = '/dashboard.html';
+  }
+
+  async function initGoogleAuth() {
+    if (!googleLoginSlot && !googleRegisterSlot) {
+      return;
+    }
+
+    try {
+      const config = await request('/auth/google/config/', { method: 'GET' });
+      if (!config?.enabled || !config?.client_id) {
+        setGooglePlaceholder(googleLoginSlot, 'Google aun no esta configurado.');
+        setGooglePlaceholder(googleRegisterSlot, 'Configura GOOGLE_CLIENT_ID para habilitar Google.');
+        return;
+      }
+
+      await loadGoogleScript();
+
+      if (!window.google?.accounts?.id) {
+        throw new Error('Google Identity no esta disponible.');
+      }
+
+      if (googleLoginSlot) {
+        window.google.accounts.id.initialize({
+          client_id: config.client_id,
+          callback: async (response) => {
+            try {
+              await authenticateWithGoogle(response.credential, 'login');
+            } catch (error) {
+              if (window.appAlerts?.notify) {
+                await window.appAlerts.notify(error.message, 'error', 'No se pudo acceder con Google');
+              }
+            }
+          },
+        });
+        window.google.accounts.id.renderButton(googleLoginSlot, {
+          theme: 'outline',
+          size: 'large',
+          text: 'continue_with',
+          shape: 'pill',
+          width: 432,
+        });
+      }
+
+      if (googleRegisterSlot) {
+        window.google.accounts.id.initialize({
+          client_id: config.client_id,
+          callback: async (response) => {
+            try {
+              await authenticateWithGoogle(response.credential, 'register');
+            } catch (error) {
+              if (window.appAlerts?.notify) {
+                await window.appAlerts.notify(error.message, 'error', 'No se pudo registrar con Google');
+              }
+            }
+          },
+        });
+        window.google.accounts.id.renderButton(googleRegisterSlot, {
+          theme: 'outline',
+          size: 'large',
+          text: 'signup_with',
+          shape: 'pill',
+          width: 432,
+        });
+      }
+    } catch (error) {
+      setGooglePlaceholder(googleLoginSlot, 'No se pudo cargar Google.');
+      setGooglePlaceholder(googleRegisterSlot, 'No se pudo cargar Google.');
+      console.error('[Auth] Error inicializando Google', error);
+    }
   }
 
   if (loginForm) {
@@ -259,11 +395,7 @@
               return;
             } catch (setupError) {
               if (window.appAlerts?.notify) {
-                await window.appAlerts.notify(
-                  setupError.message || 'No se pudo configurar la contraseña.',
-                  'error',
-                  'Configuración incompleta',
-                );
+                await window.appAlerts.notify(setupError.message || 'No se pudo configurar la contrasena.', 'error', 'Configuracion incompleta');
               }
               return;
             }
@@ -272,7 +404,7 @@
 
         setServerFieldErrors(loginForm, error.fieldErrors);
         if (window.appAlerts?.notify) {
-          await window.appAlerts.notify(error.message, 'error', 'No se pudo iniciar sesión');
+          await window.appAlerts.notify(error.message, 'error', 'No se pudo iniciar sesion');
         }
       }
     });
@@ -290,7 +422,7 @@
           body: JSON.stringify({ email: setupData.email, new_password: setupData.password }),
         });
         if (window.appAlerts?.notify) {
-          await window.appAlerts.notify('Contraseña creada. Ahora puedes iniciar sesión.', 'success', 'Listo');
+          await window.appAlerts.notify('Contrasena creada. Ahora puedes iniciar sesion.', 'success', 'Listo');
         }
         const passwordField = loginForm?.elements?.namedItem('password');
         const emailField = loginForm?.elements?.namedItem('email');
@@ -298,7 +430,7 @@
         if (passwordField) passwordField.value = setupData.password;
       } catch (error) {
         if (window.appAlerts?.notify) {
-          await window.appAlerts.notify(error.message || 'No se pudo configurar la contraseña.', 'error', 'Error');
+          await window.appAlerts.notify(error.message || 'No se pudo configurar la contrasena.', 'error', 'Error');
         }
       }
     });
@@ -306,8 +438,7 @@
 
   if (registerForm) {
     initFormValidation(registerForm, FORM_RULES.register, async () => {
-      const data = new FormData(registerForm);
-      const payload = Object.fromEntries(data.entries());
+      const payload = getRegisterPayload();
 
       try {
         const sessionData = await request('/auth/register/', {
@@ -327,4 +458,6 @@
       }
     });
   }
+
+  initGoogleAuth().catch(() => null);
 })();
