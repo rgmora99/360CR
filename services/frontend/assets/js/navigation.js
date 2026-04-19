@@ -71,16 +71,54 @@
     return payload;
   }
 
+  async function logoutSession() {
+    const response = await fetch('/api/auth/logout/', {
+      method: 'POST',
+      credentials: 'include',
+    });
+
+    if (!response.ok && response.status !== 204) {
+      throw new Error('No fue posible cerrar la sesión.');
+    }
+  }
+
+  function getUserNameParts(email) {
+    const raw = String(email || '').trim();
+    const localPart = raw.split('@')[0] || 'Invitado';
+    const normalized = localPart
+      .replace(/[._-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const displayName = normalized
+      ? normalized
+          .split(' ')
+          .filter(Boolean)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' ')
+      : 'Invitado';
+    const initials = displayName
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join('') || 'IN';
+    return { displayName, initials };
+  }
+
   function getTopbarState(sessionData) {
     const organizations = sessionData?.organizations || [];
     const activeOrganizationId = Number(sessionData?.active_organization_id);
     const activeOrganization = organizations.find((item) => item.id === activeOrganizationId) || organizations[0] || null;
+    const email = sessionData?.user?.email || 'Invitado';
+    const userInfo = getUserNameParts(email);
 
     return {
       organizations,
       activeOrganizationId: activeOrganization?.id || '',
       activeOrganizationName: activeOrganization?.name || 'Sin organización activa',
-      userLabel: sessionData?.user?.email || 'Invitado',
+      userLabel: email,
+      userDisplayName: userInfo.displayName,
+      userInitials: userInfo.initials,
     };
   }
 
@@ -194,7 +232,7 @@
       <div class="workspace">
         <p class="label">Emprendimiento activo</p>
         <strong id="active-organization-name">${topbarState.activeOrganizationName}</strong>
-        <p class="subtitle">Usuario: <span id="active-user-label">${topbarState.userLabel}</span></p>
+        <p class="subtitle">Contexto de trabajo activo</p>
       </div>
       <div class="topbar-controls">
         <label class="topbar-field">
@@ -208,12 +246,31 @@
               .join('') || '<option value="">Sin organizaciones</option>'}
           </select>
         </label>
-        <label class="topbar-field">
-          <span>Perfil</span>
-          <select>
-            <option>${topbarState.userLabel}</option>
-          </select>
-        </label>
+        <div class="profile-menu" data-profile-menu>
+          <button
+            class="profile-trigger"
+            id="profile-trigger"
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="profile-dropdown"
+          >
+            <span class="profile-avatar" id="profile-avatar">${topbarState.userInitials}</span>
+            <span class="profile-trigger-copy">
+              <strong id="active-user-name">${topbarState.userDisplayName}</strong>
+              <span id="active-user-label">${topbarState.userLabel}</span>
+            </span>
+          </button>
+          <div class="profile-dropdown" id="profile-dropdown" role="menu" aria-hidden="true">
+            <div class="profile-dropdown__header">
+              <strong id="profile-dropdown-name">${topbarState.userDisplayName}</strong>
+              <span id="profile-dropdown-email">${topbarState.userLabel}</span>
+            </div>
+            <a class="profile-dropdown__item" href="/configuraciones.html#perfil" role="menuitem">Mi perfil</a>
+            <a class="profile-dropdown__item" href="/configuraciones.html#preferencias" role="menuitem">Preferencias</a>
+            <button class="profile-dropdown__item profile-dropdown__item--danger" id="logout-button" type="button" role="menuitem">Cerrar sesión</button>
+          </div>
+        </div>
       </div>
     `;
 
@@ -240,6 +297,56 @@
     });
 
     const organizationSwitcher = document.getElementById('organization-switcher');
+    const profileMenu = topbar.querySelector('[data-profile-menu]');
+    const profileTrigger = document.getElementById('profile-trigger');
+    const profileDropdown = document.getElementById('profile-dropdown');
+    const logoutButton = document.getElementById('logout-button');
+
+    const closeProfileMenu = () => {
+      profileMenu?.classList.remove('is-open');
+      profileTrigger?.setAttribute('aria-expanded', 'false');
+      profileDropdown?.setAttribute('aria-hidden', 'true');
+    };
+
+    const openProfileMenu = () => {
+      profileMenu?.classList.add('is-open');
+      profileTrigger?.setAttribute('aria-expanded', 'true');
+      profileDropdown?.setAttribute('aria-hidden', 'false');
+    };
+
+    profileTrigger?.addEventListener('click', () => {
+      const isOpen = profileMenu?.classList.contains('is-open');
+      if (isOpen) {
+        closeProfileMenu();
+        return;
+      }
+      openProfileMenu();
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!profileMenu?.contains(event.target)) {
+        closeProfileMenu();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeProfileMenu();
+      }
+    });
+
+    logoutButton?.addEventListener('click', async () => {
+      logoutButton.disabled = true;
+      try {
+        await logoutSession();
+      } catch (_error) {
+      } finally {
+        localStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(LEGACY_ORG_KEY);
+        window.location.href = '/';
+      }
+    });
+
     organizationSwitcher?.addEventListener('change', () => {
       const selectedId = Number(organizationSwitcher.value);
       const currentSession = window.AppSession.getSession();
@@ -264,11 +371,27 @@
         const refreshedState = getTopbarState(normalizedSession);
         const orgNameNode = document.getElementById('active-organization-name');
         const userNode = document.getElementById('active-user-label');
+        const userNameNode = document.getElementById('active-user-name');
+        const userAvatarNode = document.getElementById('profile-avatar');
+        const userDropdownNameNode = document.getElementById('profile-dropdown-name');
+        const userDropdownEmailNode = document.getElementById('profile-dropdown-email');
         if (orgNameNode) {
           orgNameNode.textContent = refreshedState.activeOrganizationName;
         }
         if (userNode) {
           userNode.textContent = refreshedState.userLabel;
+        }
+        if (userNameNode) {
+          userNameNode.textContent = refreshedState.userDisplayName;
+        }
+        if (userAvatarNode) {
+          userAvatarNode.textContent = refreshedState.userInitials;
+        }
+        if (userDropdownNameNode) {
+          userDropdownNameNode.textContent = refreshedState.userDisplayName;
+        }
+        if (userDropdownEmailNode) {
+          userDropdownEmailNode.textContent = refreshedState.userLabel;
         }
         if (organizationSwitcher) {
           organizationSwitcher.innerHTML = refreshedState.organizations

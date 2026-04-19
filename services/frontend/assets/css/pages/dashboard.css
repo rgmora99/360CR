@@ -177,6 +177,129 @@ body {
   padding: 0.44rem 0.58rem;
 }
 
+.profile-menu {
+  position: relative;
+}
+
+.profile-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 220px;
+  padding: 0.5rem 0.7rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(18, 28, 49, 0.92), rgba(11, 18, 34, 0.98));
+  color: var(--txt);
+  cursor: pointer;
+  text-align: left;
+}
+
+.profile-trigger:hover,
+.profile-menu.is-open .profile-trigger {
+  border-color: rgba(122, 162, 255, 0.28);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.profile-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #7af7d7, #5ca0ff);
+  color: #071120;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.profile-trigger-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.profile-trigger-copy strong,
+.profile-trigger-copy span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-trigger-copy span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.profile-dropdown {
+  position: absolute;
+  top: calc(100% + 0.65rem);
+  right: 0;
+  width: min(280px, 92vw);
+  padding: 0.65rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(19, 27, 46, 0.98), rgba(10, 16, 29, 1));
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 25;
+}
+
+.profile-menu.is-open .profile-dropdown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.profile-dropdown__header {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.4rem 0.55rem 0.7rem;
+  margin-bottom: 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.profile-dropdown__header strong {
+  font-size: 0.95rem;
+}
+
+.profile-dropdown__header span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  word-break: break-word;
+}
+
+.profile-dropdown__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0.8rem 0.75rem;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--txt);
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.profile-dropdown__item:hover {
+  background: rgba(92, 160, 255, 0.12);
+}
+
+.profile-dropdown__item--danger {
+  color: #ff9191;
+}
+
+.profile-dropdown__item--danger:hover {
+  background: rgba(255, 93, 93, 0.12);
+}
+
 .content {
   margin-top: 1rem;
   animation: fadeInUp 0.55s ease-out both;
@@ -412,6 +535,11 @@ h1 {
   .topbar-controls select {
     min-width: 100%;
     max-width: none;
+  }
+
+  .profile-trigger,
+  .profile-dropdown {
+    width: 100%;
   }
 }
 
