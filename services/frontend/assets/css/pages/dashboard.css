@@ -445,6 +445,10 @@ h1 {
   line-height: 1.7;
 }
 
+.organization-control-hidden {
+  display: none !important;
+}
+
 
 @keyframes fadeInUp {
   from {

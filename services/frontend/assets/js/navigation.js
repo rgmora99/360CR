@@ -51,9 +51,35 @@
         ...current,
         active_organization_id: exists ? selectedId : current.active_organization_id,
       };
-      saveSession(normalizeSession(next));
+      const normalizedNext = normalizeSession(next);
+      saveSession(normalizedNext);
+      window.dispatchEvent(
+        new CustomEvent('app:organization-changed', {
+          detail: {
+            previousOrganizationId: Number(current.active_organization_id) || null,
+            activeOrganizationId: Number(normalizedNext.active_organization_id) || null,
+          },
+        }),
+      );
     },
   };
+
+  function hidePageOrganizationControl() {
+    const pageOrganizationField = document.getElementById('organization-id');
+    if (!pageOrganizationField) {
+      return;
+    }
+
+    pageOrganizationField.setAttribute('aria-hidden', 'true');
+    pageOrganizationField.setAttribute('tabindex', '-1');
+
+    const fieldContainer =
+      pageOrganizationField.closest('.organization-inline-field') ||
+      pageOrganizationField.closest('label') ||
+      pageOrganizationField.parentElement;
+
+    fieldContainer?.classList.add('organization-control-hidden');
+  }
 
   async function fetchSession() {
     const response = await fetch('/api/auth/session/', {
@@ -274,6 +300,8 @@
       </div>
     `;
 
+    hidePageOrganizationControl();
+
     const menuToggleButton = document.getElementById('menu-toggle');
     const overlay = document.createElement('button');
     overlay.type = 'button';
@@ -349,6 +377,10 @@
 
     organizationSwitcher?.addEventListener('change', () => {
       const selectedId = Number(organizationSwitcher.value);
+      const previousId = Number(window.AppSession.getActiveOrganizationId());
+      if (!selectedId || selectedId === previousId) {
+        return;
+      }
       const currentSession = window.AppSession.getSession();
       window.AppSession.setActiveOrganizationId(selectedId);
       const selected = (currentSession.organizations || []).find((org) => org.id === selectedId);
@@ -356,6 +388,7 @@
       if (nameNode) {
         nameNode.textContent = selected?.name || 'Sin organización activa';
       }
+      window.location.reload();
     });
 
     fetchSession()
