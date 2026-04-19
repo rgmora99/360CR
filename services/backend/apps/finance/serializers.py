@@ -639,6 +639,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
         attrs["shipment_details"] = {
             "method": method,
+            "status": "pending",
             "recipient_name": str(shipment.get("recipient_name") or "").strip(),
             "address_line_1": str(shipment.get("address_line_1") or "").strip(),
             "address_line_2": str(shipment.get("address_line_2") or "").strip(),
@@ -652,6 +653,8 @@ class InvoiceCreateSerializer(serializers.Serializer):
             "delivery_notes": str(shipment.get("delivery_notes") or "").strip(),
             "correos_branch": str(shipment.get("correos_branch") or "").strip(),
             "correos_guide": str(shipment.get("correos_guide") or "").strip(),
+            "delivered_at": None,
+            "status_updated_at": None,
         }
 
     def _validate_customer_credit(self, customer, organization_id, invoice_total):

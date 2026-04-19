@@ -64,6 +64,59 @@ SYNC_XML_DOCUMENT_TYPES = {
     "notadebitoelectronica",
 }
 
+SHIPMENT_STATUS_LABELS = {
+    "pending": "Pendiente",
+    "in_transit": "En ruta",
+    "delivered": "Entregado",
+    "cancelled": "Cancelado",
+}
+
+
+def _normalize_shipment_details(invoice):
+    shipment = dict(invoice.shipment_details or {})
+    shipment.setdefault("status", "pending")
+    shipment.setdefault("delivered_at", None)
+    shipment.setdefault("status_updated_at", None)
+    return shipment
+
+
+def _build_shipment_summary(invoice):
+    shipment = _normalize_shipment_details(invoice)
+    destination = ", ".join(
+        part for part in [shipment.get("city"), shipment.get("state"), shipment.get("country")] if str(part or "").strip()
+    )
+    if not destination:
+        destination = shipment.get("address_line_1") or "Sin destino definido"
+    method = shipment.get("method") or ""
+    method_label = "Correos de Costa Rica" if method == Invoice.SHIPMENT_CORREOS_CR else "Mensajeria propia"
+    status = shipment.get("status") or "pending"
+    return {
+        "invoice_id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "customer_id": invoice.customer_id,
+        "customer_name": invoice.customer.legal_name,
+        "issue_date": invoice.issue_date,
+        "total": invoice.total,
+        "currency": invoice.currency,
+        "method": method,
+        "method_label": method_label,
+        "status": status,
+        "status_label": SHIPMENT_STATUS_LABELS.get(status, status),
+        "recipient_name": shipment.get("recipient_name") or "",
+        "destination": destination,
+        "address_line_1": shipment.get("address_line_1") or "",
+        "city": shipment.get("city") or "",
+        "state": shipment.get("state") or "",
+        "country": shipment.get("country") or "",
+        "phone_primary": shipment.get("phone_primary") or "",
+        "correos_branch": shipment.get("correos_branch") or "",
+        "correos_guide": shipment.get("correos_guide") or "",
+        "delivery_notes": shipment.get("delivery_notes") or "",
+        "contact_reference": shipment.get("contact_reference") or "",
+        "delivered_at": shipment.get("delivered_at"),
+        "status_updated_at": shipment.get("status_updated_at"),
+    }
+
 
 def _xml_find_text(element, path, namespaces=None):
     node = element.find(path, namespaces or {})
@@ -972,6 +1025,61 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                 }
             )
         return Response(data)
+
+    @action(detail=False, methods=["get"], url_path="shipments")
+    def shipments(self, request):
+        queryset = (
+            self.get_queryset()
+            .filter(shipment_required=True)
+            .order_by("-issue_date", "-id")
+        )
+        status_filter = (request.query_params.get("status") or "").strip().lower()
+        search = (request.query_params.get("q") or "").strip().lower()
+        shipments = [_build_shipment_summary(invoice) for invoice in queryset]
+
+        if status_filter:
+            shipments = [shipment for shipment in shipments if shipment.get("status") == status_filter]
+
+        if search:
+            shipments = [
+                shipment
+                for shipment in shipments
+                if search
+                in (
+                    f"{shipment.get('invoice_number', '')} "
+                    f"{shipment.get('customer_name', '')} "
+                    f"{shipment.get('recipient_name', '')} "
+                    f"{shipment.get('destination', '')} "
+                    f"{shipment.get('correos_guide', '')} "
+                    f"{shipment.get('correos_branch', '')}"
+                ).lower()
+            ]
+
+        return Response(shipments)
+
+    @action(detail=True, methods=["post"], url_path="shipment-status")
+    def shipment_status(self, request, pk=None):
+        invoice = self.get_object()
+        if not invoice.shipment_required:
+            return Response({"detail": "La factura seleccionada no tiene envio configurado."}, status=400)
+
+        status_value = str(request.data.get("status") or "").strip().lower()
+        if status_value not in SHIPMENT_STATUS_LABELS:
+            return Response({"detail": "Estado de envio invalido."}, status=400)
+
+        shipment = _normalize_shipment_details(invoice)
+        shipment["status"] = status_value
+        shipment["status_updated_at"] = timezone.now().isoformat()
+        shipment["status_note"] = str(request.data.get("status_note") or "").strip()
+        if status_value == "delivered":
+            shipment["delivered_at"] = timezone.now().isoformat()
+        elif status_value != "delivered":
+            shipment["delivered_at"] = None
+
+        invoice.shipment_details = shipment
+        invoice.save(update_fields=["shipment_details"])
+        invoice.refresh_from_db()
+        return Response(_build_shipment_summary(invoice))
 
     @action(detail=False, methods=["get"], url_path="accounts-receivable")
     def accounts_receivable(self, request):

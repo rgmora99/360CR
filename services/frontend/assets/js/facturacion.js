@@ -692,7 +692,7 @@
 
   function openShipmentModal() {
     if (!hasShippableLines()) {
-      setFeedback('El envio solo esta disponible cuando la factura incluye productos fisicos.', true);
+      syncShipmentUI();
       return;
     }
     fillShipmentForm();
@@ -827,7 +827,7 @@
     state.shipment = shipment;
     renderLines();
     closeShipmentModal();
-    setFeedback('Envio configurado correctamente.', false, { showInline: false, showToast: false });
+    $('feedback').textContent = '';
   });
 
   $('line-product-search').addEventListener('input', filterProducts);
@@ -941,9 +941,10 @@
       const receivableMsg = paymentMethod === PAYMENT_INSTALLMENTS
         ? ' La cuenta quedo disponible en "Cuentas x cobrar" para registrar abonos y controlar vencimientos.'
         : '';
-      const shipmentMsg = shipmentRequested() ? ' Se guardo la configuracion de envio en la factura.' : '';
-
-      setFeedback(`Factura emitida: ${invoice.invoice_number}. Puede verla en "Ver facturas emitidas".${loyaltyMsg}${receivableMsg}${shipmentMsg}`, false);
+      setFeedback(`Factura emitida: ${invoice.invoice_number}.${loyaltyMsg}${receivableMsg}`, false, {
+        showInline: false,
+        showToast: true,
+      });
 
       state.lines = [];
       state.prefillAgendaEventId = null;

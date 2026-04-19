@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Control de envios | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
+    <link rel="stylesheet" href="/assets/css/pages/customers.css" />
+    <link rel="stylesheet" href="/assets/css/pages/facturacion.css" />
+  </head>
+  <body>
+    <div class="dashboard-layout">
+      <aside id="shared-sidebar"></aside>
+      <section class="main-panel">
+        <header id="shared-topbar"></header>
+        <div class="page-wrap">
+          <section class="module-header card">
+            <div>
+              <h1>Control de envios</h1>
+              <p class="subtitle">Visualiza los despachos registrados y actualiza si estan pendientes, en ruta o entregados.</p>
+            </div>
+          </section>
+
+          <section class="card filters">
+            <div class="invoice-filters-grid">
+              <label>Organizacion
+                <select id="organization-id"></select>
+              </label>
+              <label>Estado
+                <select id="status-filter">
+                  <option value="">Todos</option>
+                  <option value="pending">Pendientes</option>
+                  <option value="in_transit">En ruta</option>
+                  <option value="delivered">Entregados</option>
+                  <option value="cancelled">Cancelados</option>
+                </select>
+              </label>
+              <label>Buscar
+                <input id="search-filter" type="text" placeholder="Factura, cliente, destino o guia" />
+              </label>
+              <div class="invoice-filters-actions">
+                <button class="btn btn-primary" id="reload" type="button">Recargar</button>
+                <button class="btn btn-secondary" id="clear-filters" type="button">Limpiar filtros</button>
+                <a class="btn btn-secondary" href="/facturacion.html">Registrar factura</a>
+                <a class="btn btn-secondary" href="/facturas.html">Ver facturas</a>
+              </div>
+            </div>
+          </section>
+
+          <section class="invoice-summary-grid">
+            <article class="card invoice-summary-card invoice-summary-card--primary">
+              <span class="invoice-summary-card__eyebrow">Envios visibles</span>
+              <strong id="shipment-count" class="invoice-summary-card__value">0</strong>
+              <p id="shipment-caption" class="subtitle">Despachos segun filtros actuales.</p>
+            </article>
+            <article class="card invoice-summary-card">
+              <span class="invoice-summary-card__eyebrow">Entregados</span>
+              <strong id="shipment-delivered-count" class="invoice-summary-card__value">0</strong>
+              <p id="shipment-pending-count" class="subtitle">Pendientes: 0</p>
+            </article>
+          </section>
+
+          <section class="card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Factura</th>
+                    <th>Cliente</th>
+                    <th>Metodo</th>
+                    <th>Destino</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="shipments-body"></tbody>
+              </table>
+            </div>
+            <p id="feedback" class="subtitle"></p>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="/assets/js/alerts.js"></script>
+    <script src="/assets/js/navigation.js"></script>
+    <script src="/assets/js/pagination.js"></script>
+    <script>window.renderSharedNavigation({ activeModule: 'facturacion-envios' });</script>
+    <script src="/assets/js/envios.js"></script>
+  </body>
+</html>
