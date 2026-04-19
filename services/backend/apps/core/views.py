@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
 from django.utils.text import slugify
@@ -25,6 +26,51 @@ from apps.tenants.models import Membership, Organization
 logger = logging.getLogger(__name__)
 
 
+def build_unique_organization_slug(name):
+    base_slug = slugify(name) or "organizacion"
+    slug = base_slug
+    suffix = 1
+    while Organization.objects.filter(slug=slug).exists():
+        suffix += 1
+        slug = f"{base_slug}-{suffix}"
+    return slug
+
+
+def get_next_organization_hacienda_codes():
+    last_org = (
+        Organization.objects.order_by("-hacienda_branch_code", "-hacienda_terminal_code")
+        .values("hacienda_branch_code", "hacienda_terminal_code")
+        .first()
+    )
+
+    if not last_org:
+        return "001", "00001"
+
+    branch = int(last_org["hacienda_branch_code"] or "1")
+    terminal = int(last_org["hacienda_terminal_code"] or "1") + 1
+
+    if terminal > 99999:
+        branch += 1
+        terminal = 1
+
+    while branch <= 999:
+        branch_code = f"{branch:03d}"
+        terminal_code = f"{terminal:05d}"
+        exists = Organization.objects.filter(
+            hacienda_branch_code=branch_code,
+            hacienda_terminal_code=terminal_code,
+        ).exists()
+        if not exists:
+            return branch_code, terminal_code
+
+        terminal += 1
+        if terminal > 99999:
+            branch += 1
+            terminal = 1
+
+    raise ValueError("No hay códigos de sucursal/terminal disponibles para nuevas organizaciones.")
+
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -36,20 +82,46 @@ class RegisterView(APIView):
         if not business or not email or len(password) < 8:
             return Response({"detail": "Datos inválidos. Verifique negocio, correo y contraseña mínima de 8 caracteres."}, status=400)
 
-        if User.objects.filter(username=email).exists():
+        existing_user = User.objects.filter(username=email).first()
+        user = existing_user
+
+        if existing_user and Membership.objects.filter(user=existing_user).exists():
             return Response({"detail": "Ya existe una cuenta con ese correo."}, status=400)
 
-        user = User.objects.create_user(username=email, email=email, password=password)
+        if existing_user:
+            authenticated_user = authenticate(request, username=email, password=password)
+            if not authenticated_user:
+                return Response({"detail": "Ya existe una cuenta con ese correo."}, status=400)
+            user = authenticated_user
 
-        base_slug = slugify(business) or "organizacion"
-        slug = base_slug
-        suffix = 1
-        while Organization.objects.filter(slug=slug).exists():
-            suffix += 1
-            slug = f"{base_slug}-{suffix}"
+        try:
+            with transaction.atomic():
+                if not user:
+                    user = User.objects.create_user(username=email, email=email, password=password)
 
-        organization = Organization.objects.create(name=business, slug=slug)
-        Membership.objects.create(user=user, organization=organization, role=Membership.ROLE_OWNER)
+                slug = build_unique_organization_slug(business)
+                branch_code, terminal_code = get_next_organization_hacienda_codes()
+
+                organization = Organization.objects.create(
+                    name=business,
+                    slug=slug,
+                    hacienda_branch_code=branch_code,
+                    hacienda_terminal_code=terminal_code,
+                )
+                Membership.objects.get_or_create(
+                    user=user,
+                    organization=organization,
+                    defaults={"role": Membership.ROLE_OWNER},
+                )
+        except IntegrityError:
+            logger.exception("No se pudo completar el registro de %s por un conflicto de integridad.", email)
+            return Response(
+                {"detail": "No se pudo completar el registro. Intenta nuevamente en unos segundos."},
+                status=409,
+            )
+        except ValueError as exc:
+            logger.exception("No se pudo generar la organización inicial para %s.", email)
+            return Response({"detail": str(exc)}, status=400)
 
         login(request, user)
         return Response(
