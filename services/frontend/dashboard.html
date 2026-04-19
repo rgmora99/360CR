@@ -27,10 +27,12 @@
             </div>
             <div class="card stats">
               <h3>Resumen del día</h3>
-              <p><span>Gestiones realizadas</span> <strong>24</strong></p>
-              <p><span>Recordatorios activos</span> <strong>5</strong></p>
-              <p><span>Rendimiento semanal</span> <strong class="success">+12.4%</strong></p>
-              <div class="progress"><div></div></div>
+              <p><span>Ventas emitidas hoy</span> <strong id="dashboard-sales-count">0</strong></p>
+              <p><span>Clientes nuevos hoy</span> <strong id="dashboard-customers-count">0</strong></p>
+              <p><span>Citas pendientes hoy</span> <strong id="dashboard-events-count">0</strong></p>
+              <p><span>Ventas últimos 7 días</span> <strong id="dashboard-weekly-total">CRC 0.00</strong></p>
+              <p><span>Variación semanal</span> <strong id="dashboard-weekly-change" class="success">0.00%</strong></p>
+              <div class="progress"><div id="dashboard-progress-bar"></div></div>
             </div>
           </section>
 
@@ -54,10 +56,8 @@
 
           <section class="card activity" id="actividad">
             <h2>Actividad reciente</h2>
-            <ul>
-              <li>Se creó una nueva factura en <strong>Facturación</strong>.</li>
-              <li>Se agendó una llamada con cliente VIP en <strong>Agenda</strong>.</li>
-              <li>Se lanzó campaña de retención desde <strong>Marketing automático</strong>.</li>
+            <ul id="dashboard-activity-list">
+              <li>Cargando actividad reciente...</li>
             </ul>
           </section>
         </main>
