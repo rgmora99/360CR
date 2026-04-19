@@ -313,8 +313,8 @@
   }
 
   function renderTable() {
-    if (!suppliersBody || !searchInput) return;
-    const term = searchInput.value.trim().toLowerCase();
+    if (!suppliersBody) return;
+    const term = searchInput?.value.trim().toLowerCase() || '';
     const filtered = suppliers.filter((item) => `${item.code} ${item.legal_name} ${item.email || ''}`.toLowerCase().includes(term));
     if (suppliersPager) {
       suppliersPager.update(filtered);

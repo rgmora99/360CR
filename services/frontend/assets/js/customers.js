@@ -406,8 +406,8 @@
   }
 
   function renderTable() {
-    if (!customersBody || !searchInput) return;
-    const term = searchInput.value.trim().toLowerCase();
+    if (!customersBody) return;
+    const term = searchInput?.value.trim().toLowerCase() || '';
     const filtered = customers.filter((item) => `${item.code} ${item.legal_name} ${item.email || ''}`.toLowerCase().includes(term));
     if (customersPager) {
       customersPager.update(filtered);
