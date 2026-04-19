@@ -325,7 +325,7 @@ class DashboardSummaryView(APIView):
             )
 
         recent_activity.sort(key=lambda item: item["timestamp"], reverse=True)
-        recent_activity = recent_activity[:6]
+        recent_activity = recent_activity[:3]
 
         return Response(
             {
