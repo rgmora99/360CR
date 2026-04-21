@@ -182,6 +182,9 @@
       return;
     }
 
+    const cachedSession = window.AppSession.getSession();
+    const topbarState = getTopbarState(cachedSession);
+
     const menuItems = [
       { key: 'inicio', label: 'Inicio', href: '/dashboard.html' },
       {
@@ -234,8 +237,9 @@
       { key: 'configuraciones', label: 'Configuraciones', href: '/configuraciones.html' },
     ];
 
-    const cachedSession = window.AppSession.getSession();
-    const topbarState = getTopbarState(cachedSession);
+    if (cachedSession?.user?.is_system_owner) {
+      menuItems.push({ key: 'system-admin', label: 'Administración SaaS', href: '/saas-admin.html' });
+    }
 
     const menuMarkup = menuItems
       .map((item) => {

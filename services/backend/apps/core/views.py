@@ -26,7 +26,7 @@ from apps.customers.models import Customer
 from apps.finance.models import Invoice, InvoiceReceivablePayment, Purchase
 from apps.loyalty.models import LoyaltyPointEntry, LoyaltyRedemption
 from apps.suppliers.models import Supplier
-from apps.tenants.models import Membership, Organization
+from apps.tenants.models import Membership, Organization, SaaSPlan, Subscription, SubscriptionModule
 
 logger = logging.getLogger(__name__)
 
@@ -76,13 +76,41 @@ def get_next_organization_hacienda_codes():
     raise ValueError("No hay codigos de sucursal/terminal disponibles para nuevas organizaciones.")
 
 
+def sync_subscription_modules(subscription):
+    if not subscription.plan_catalog_id:
+        return
+
+    included_module_ids = list(
+        subscription.plan_catalog.plan_modules.filter(is_included=True).values_list("module_id", flat=True)
+    )
+    SubscriptionModule.objects.filter(subscription=subscription, source="plan").exclude(module_id__in=included_module_ids).delete()
+    current_ids = set(subscription.subscription_modules.values_list("module_id", flat=True))
+    for module_id in included_module_ids:
+        if module_id in current_ids:
+            continue
+        SubscriptionModule.objects.create(subscription=subscription, module_id=module_id, source="plan", is_enabled=True)
+
+
 def build_session_payload(user):
     memberships = Membership.objects.select_related("organization").filter(user=user)
+    organization_ids = [m.organization_id for m in memberships]
+    module_map = {}
+    if organization_ids:
+        module_rows = (
+            SubscriptionModule.objects.filter(subscription__organization_id__in=organization_ids, is_enabled=True)
+            .select_related("module", "subscription__organization")
+            .values("subscription__organization_id", "module__code")
+        )
+        for row in module_rows:
+            module_map.setdefault(row["subscription__organization_id"], []).append(row["module__code"])
+
     organizations = [
         {
             "id": m.organization.id,
             "name": m.organization.name,
             "parent_organization": m.organization.parent_organization_id,
+            "membership_role": m.role,
+            "active_modules": sorted(module_map.get(m.organization.id, [])),
         }
         for m in memberships
     ]
@@ -95,6 +123,7 @@ def build_session_payload(user):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "phone": profile.phone if profile else "",
+            "is_system_owner": bool(user.is_superuser or user.is_staff),
         },
         "organizations": organizations,
         "active_organization_id": active_id,
@@ -172,6 +201,19 @@ def register_organization_for_user(user, business):
         organization=organization,
         defaults={"role": Membership.ROLE_OWNER},
     )
+    base_plan = SaaSPlan.objects.filter(code="base", is_active=True).first()
+    Subscription.objects.get_or_create(
+        # Cada organizacion nueva arranca con el paquete base y queda lista para crecer por modulos.
+        organization=organization,
+        defaults={
+            "plan": Subscription.PLAN_STARTER,
+            "plan_catalog": base_plan,
+            "status": Subscription.STATUS_TRIAL,
+            "billing_cycle": Subscription.BILLING_MONTHLY,
+            "base_price": getattr(base_plan, "monthly_price", 0) or 0,
+        },
+    )
+    sync_subscription_modules(organization.subscription)
     return organization
 
 

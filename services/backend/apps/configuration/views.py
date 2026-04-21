@@ -1,22 +1,60 @@
 import imaplib
 
 from django.contrib.auth.models import User
-from rest_framework import viewsets
+from django.db import transaction
+from django.utils.text import slugify
+from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
-from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.configuration.models import OrganizationEmailInbox, RoleCatalog, SystemSetting, UserPreference, UserRoleAssignment
 from apps.configuration.serializers import (
     ConfigurationUserSerializer,
+    OrganizationEmailInboxSerializer,
+    OrganizationFeatureFlagSerializer,
     RoleCatalogSerializer,
+    SaaSModuleSerializer,
+    SaaSPlanModuleSerializer,
+    SaaSPlanSerializer,
+    SubscriptionModuleSerializer,
+    SubscriptionSerializer,
+    SystemAdminMembershipSerializer,
+    SystemAdminOrganizationSerializer,
+    SystemAdminUserSerializer,
     SystemSettingSerializer,
     UserPreferenceSerializer,
     UserRoleAssignmentSerializer,
-    OrganizationEmailInboxSerializer,
+    sync_subscription_modules,
 )
 from apps.tenants.access import OrganizationScopedViewMixin
+from apps.tenants.models import (
+    Membership,
+    Organization,
+    OrganizationFeatureFlag,
+    SaaSModule,
+    SaaSPlan,
+    SaaSPlanModule,
+    Subscription,
+    SubscriptionModule,
+)
+
+
+def build_unique_slug(name):
+    base_slug = slugify(name) or "organizacion"
+    slug = base_slug
+    suffix = 2
+    while Organization.objects.filter(slug=slug).exists():
+        slug = f"{base_slug}-{suffix}"
+        suffix += 1
+    return slug
+
+
+class IsSystemOwner(permissions.BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and (user.is_superuser or user.is_staff))
 
 
 class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
@@ -27,15 +65,9 @@ class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSe
 
     def get_queryset(self):
         allowed_ids = self.get_allowed_organization_ids()
-        return (
-            User.objects.filter(membership__organization_id__in=allowed_ids)
-            .distinct()
-            .order_by("id")
-        )
+        return User.objects.filter(membership__organization_id__in=allowed_ids).distinct().order_by("id")
 
-# Compatibilidad retroactiva:
-# algunas versiones del contenedor importan OrganizationCollaboratorView desde urls.py.
-# Mantener este alias evita fallos de importación sin romper la API actual.
+
 class OrganizationCollaboratorView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -146,3 +178,113 @@ class OrganizationEmailInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelV
                     mailbox.logout()
                 except Exception:
                     pass
+
+
+class SystemAdminOverviewView(APIView):
+    permission_classes = [IsSystemOwner]
+
+    def get(self, request):
+        organizations = Organization.objects.count()
+        subscriptions = Subscription.objects.count()
+        active_subscriptions = Subscription.objects.filter(status__in=[Subscription.STATUS_TRIAL, Subscription.STATUS_ACTIVE]).count()
+        users = User.objects.count()
+        modules = SaaSModule.objects.filter(is_active=True).count()
+        plans = SaaSPlan.objects.filter(is_active=True).count()
+        memberships = Membership.objects.count()
+        flags = OrganizationFeatureFlag.objects.count()
+
+        return Response(
+            {
+                "summary": {
+                    "organizations": organizations,
+                    "subscriptions": subscriptions,
+                    "active_subscriptions": active_subscriptions,
+                    "users": users,
+                    "memberships": memberships,
+                    "modules": modules,
+                    "plans": plans,
+                    "feature_flags": flags,
+                }
+            }
+        )
+
+
+class SystemAdminUserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all().order_by("id")
+    serializer_class = SystemAdminUserSerializer
+    permission_classes = [IsSystemOwner]
+
+
+class SystemAdminMembershipViewSet(viewsets.ModelViewSet):
+    queryset = Membership.objects.select_related("user", "organization").all().order_by("organization__name", "user__email")
+    serializer_class = SystemAdminMembershipSerializer
+    permission_classes = [IsSystemOwner]
+
+
+class SystemAdminOrganizationViewSet(viewsets.ModelViewSet):
+    queryset = Organization.objects.select_related("parent_organization").order_by("name")
+    serializer_class = SystemAdminOrganizationSerializer
+    permission_classes = [IsSystemOwner]
+
+    def perform_create(self, serializer):
+        name = serializer.validated_data["name"]
+        organization = serializer.save(slug=serializer.validated_data.get("slug") or build_unique_slug(name))
+        base_plan = SaaSPlan.objects.filter(code="base", is_active=True).first()
+        subscription, _ = Subscription.objects.get_or_create(
+            organization=organization,
+            defaults={
+                "plan": Subscription.PLAN_STARTER,
+                "plan_catalog": base_plan,
+                "status": Subscription.STATUS_TRIAL,
+                "billing_cycle": Subscription.BILLING_MONTHLY,
+                "base_price": getattr(base_plan, "monthly_price", 0) or 0,
+            },
+        )
+        sync_subscription_modules(subscription)
+
+
+class SaaSModuleViewSet(viewsets.ModelViewSet):
+    queryset = SaaSModule.objects.all().order_by("group", "sort_order", "name")
+    serializer_class = SaaSModuleSerializer
+    permission_classes = [IsSystemOwner]
+
+
+class SaaSPlanViewSet(viewsets.ModelViewSet):
+    queryset = SaaSPlan.objects.prefetch_related("plan_modules__module").all().order_by("sort_order", "name")
+    serializer_class = SaaSPlanSerializer
+    permission_classes = [IsSystemOwner]
+
+
+class SaaSPlanModuleViewSet(viewsets.ModelViewSet):
+    queryset = SaaSPlanModule.objects.select_related("plan", "module").all().order_by("plan__sort_order", "sort_order", "module__name")
+    serializer_class = SaaSPlanModuleSerializer
+    permission_classes = [IsSystemOwner]
+
+
+class SubscriptionViewSet(viewsets.ModelViewSet):
+    queryset = Subscription.objects.select_related("organization", "plan_catalog").prefetch_related("subscription_modules__module").all().order_by("organization__name")
+    serializer_class = SubscriptionSerializer
+    permission_classes = [IsSystemOwner]
+
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            subscription = serializer.save()
+            if subscription.plan_catalog_id and not subscription.base_price:
+                subscription.base_price = (
+                    subscription.plan_catalog.annual_price
+                    if subscription.billing_cycle == Subscription.BILLING_ANNUAL
+                    else subscription.plan_catalog.monthly_price
+                )
+                subscription.save(update_fields=["base_price"])
+
+
+class SubscriptionModuleViewSet(viewsets.ModelViewSet):
+    queryset = SubscriptionModule.objects.select_related("subscription", "module").all().order_by("subscription__organization__name", "module__group", "module__name")
+    serializer_class = SubscriptionModuleSerializer
+    permission_classes = [IsSystemOwner]
+
+
+class OrganizationFeatureFlagViewSet(viewsets.ModelViewSet):
+    queryset = OrganizationFeatureFlag.objects.select_related("organization", "module").all().order_by("organization__name", "key")
+    serializer_class = OrganizationFeatureFlagSerializer
+    permission_classes = [IsSystemOwner]

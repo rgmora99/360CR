@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Administración SaaS | 360CR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/css/base.css" />
+    <link rel="stylesheet" href="/assets/css/components.css" />
+    <link rel="stylesheet" href="/assets/css/pages/dashboard.css" />
+    <link rel="stylesheet" href="/assets/css/pages/saas-admin.css" />
+  </head>
+  <body>
+    <div class="dashboard-layout">
+      <aside id="shared-sidebar"></aside>
+      <section class="main-panel">
+        <header id="shared-topbar"></header>
+        <main class="content saas-admin-content">
+          <section class="hero card saas-admin-hero">
+            <div>
+              <p class="badge">Propietario del sistema</p>
+              <h1>Administración SaaS</h1>
+              <p class="subtitle">Gestiona organizaciones, usuarios, suscripciones, módulos activos, planes y banderas de funciones desde una sola consola.</p>
+            </div>
+          </section>
+
+          <section class="saas-admin-stats" id="system-summary"></section>
+
+          <section class="saas-admin-grid">
+            <article class="card">
+              <div class="section-heading">
+                <div>
+                  <h2>Organizaciones</h2>
+                  <p class="subtitle">Crea negocios, revisa su estado y administra la suscripción activa.</p>
+                </div>
+              </div>
+              <div class="saas-admin-form-grid">
+                <label>Nombre
+                  <input id="org-name" type="text" placeholder="Ej: Barbería Central" />
+                </label>
+                <label>Slug opcional
+                  <input id="org-slug" type="text" placeholder="barberia-central" />
+                </label>
+                <label>Sucursal Hacienda
+                  <input id="org-branch" type="text" maxlength="3" value="001" />
+                </label>
+                <label>Terminal Hacienda
+                  <input id="org-terminal" type="text" maxlength="5" value="00001" />
+                </label>
+                <button class="btn btn-primary" id="create-organization" type="button">Crear organización</button>
+              </div>
+              <div class="saas-admin-form-grid compact">
+                <label>Organización
+                  <select id="subscription-organization"></select>
+                </label>
+                <label>Plan
+                  <select id="subscription-plan"></select>
+                </label>
+                <label>Estado
+                  <select id="subscription-status">
+                    <option value="trial">Prueba</option>
+                    <option value="active">Activa</option>
+                    <option value="past_due">Pendiente de pago</option>
+                    <option value="suspended">Suspendida</option>
+                    <option value="cancelled">Cancelada</option>
+                  </select>
+                </label>
+                <label>Ciclo
+                  <select id="subscription-cycle">
+                    <option value="monthly">Mensual</option>
+                    <option value="annual">Anual</option>
+                    <option value="custom">Personalizado</option>
+                  </select>
+                </label>
+                <label>Próximo cobro
+                  <input id="subscription-next-billing" type="date" />
+                </label>
+                <label>Precio base
+                  <input id="subscription-base-price" type="number" step="0.01" min="0" />
+                </label>
+                <button class="btn btn-secondary" id="save-subscription" type="button">Guardar suscripción</button>
+              </div>
+              <p id="org-feedback" class="subtitle">Sin acciones recientes.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Organización</th><th>Slug</th><th>Plan</th><th>Estado</th><th>Usuarios</th></tr>
+                  </thead>
+                  <tbody id="organizations-body"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="section-heading">
+                <div>
+                  <h2>Usuarios y accesos</h2>
+                  <p class="subtitle">Crea usuarios globales y asígnalos a organizaciones con su rol correspondiente.</p>
+                </div>
+              </div>
+              <div class="saas-admin-form-grid">
+                <label>Correo
+                  <input id="user-email" type="email" placeholder="dueno@negocio.com" />
+                </label>
+                <label>Nombre
+                  <input id="user-first-name" type="text" placeholder="Nombre" />
+                </label>
+                <label>Apellido
+                  <input id="user-last-name" type="text" placeholder="Apellido" />
+                </label>
+                <label>Es staff del sistema
+                  <select id="user-is-staff">
+                    <option value="false">No</option>
+                    <option value="true">Sí</option>
+                  </select>
+                </label>
+                <button class="btn btn-primary" id="create-user" type="button">Crear usuario</button>
+              </div>
+              <div class="saas-admin-form-grid compact">
+                <label>Usuario
+                  <select id="membership-user"></select>
+                </label>
+                <label>Organización
+                  <select id="membership-organization"></select>
+                </label>
+                <label>Rol
+                  <select id="membership-role">
+                    <option value="owner">Owner</option>
+                    <option value="admin">Admin</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                </label>
+                <button class="btn btn-secondary" id="create-membership" type="button">Asignar acceso</button>
+              </div>
+              <p id="user-feedback" class="subtitle">Sin acciones recientes.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Usuario</th><th>Estado</th><th>Staff</th><th>Accesos</th></tr>
+                  </thead>
+                  <tbody id="users-body"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+
+          <section class="saas-admin-grid">
+            <article class="card">
+              <div class="section-heading">
+                <div>
+                  <h2>Módulos y planes</h2>
+                  <p class="subtitle">Construye paquetes y define qué capacidades están incluidas en cada plan.</p>
+                </div>
+              </div>
+              <div class="saas-admin-form-grid">
+                <label>Código del módulo
+                  <input id="module-code" type="text" placeholder="reminders" />
+                </label>
+                <label>Nombre
+                  <input id="module-name" type="text" placeholder="Recordatorios" />
+                </label>
+                <label>Grupo
+                  <select id="module-group">
+                    <option value="base">Base</option>
+                    <option value="operations">Operación</option>
+                    <option value="growth">Crecimiento</option>
+                    <option value="finance">Finanzas</option>
+                    <option value="premium">Premium</option>
+                  </select>
+                </label>
+                <label>Ruta sugerida
+                  <input id="module-route" type="text" placeholder="/dashboard.html" />
+                </label>
+                <label>Descripción
+                  <textarea id="module-description" rows="2" placeholder="Explica qué resuelve este módulo"></textarea>
+                </label>
+                <button class="btn btn-primary" id="create-module" type="button">Crear módulo</button>
+              </div>
+              <div class="saas-admin-form-grid compact">
+                <label>Código del plan
+                  <input id="plan-code" type="text" placeholder="base-plus" />
+                </label>
+                <label>Nombre
+                  <input id="plan-name" type="text" placeholder="Base +" />
+                </label>
+                <label>Mensual
+                  <input id="plan-monthly-price" type="number" min="0" step="0.01" />
+                </label>
+                <label>Anual
+                  <input id="plan-annual-price" type="number" min="0" step="0.01" />
+                </label>
+                <label>Descripción
+                  <textarea id="plan-description" rows="2" placeholder="Resumen comercial del plan"></textarea>
+                </label>
+                <button class="btn btn-secondary" id="create-plan" type="button">Crear plan</button>
+              </div>
+              <div class="saas-admin-form-grid compact">
+                <label>Plan
+                  <select id="plan-module-plan"></select>
+                </label>
+                <label>Módulo
+                  <select id="plan-module-module"></select>
+                </label>
+                <button class="btn btn-secondary" id="link-plan-module" type="button">Agregar módulo al plan</button>
+              </div>
+              <p id="catalog-feedback" class="subtitle">Sin acciones recientes.</p>
+              <div class="two-column-lists">
+                <div>
+                  <h3>Módulos</h3>
+                  <ul id="modules-list" class="settings-list"></ul>
+                </div>
+                <div>
+                  <h3>Planes</h3>
+                  <ul id="plans-list" class="settings-list"></ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="section-heading">
+                <div>
+                  <h2>Feature flags</h2>
+                  <p class="subtitle">Activa funciones por organización sin tocar código ni cambiar el plan completo.</p>
+                </div>
+              </div>
+              <div class="saas-admin-form-grid">
+                <label>Organización
+                  <select id="flag-organization"></select>
+                </label>
+                <label>Módulo relacionado
+                  <select id="flag-module">
+                    <option value="">Sin módulo</option>
+                  </select>
+                </label>
+                <label>Key
+                  <input id="flag-key" type="text" placeholder="crm_beta" />
+                </label>
+                <label>Etiqueta
+                  <input id="flag-label" type="text" placeholder="CRM beta" />
+                </label>
+                <label>Habilitada
+                  <select id="flag-enabled">
+                    <option value="true">Sí</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+                <label>Descripción
+                  <textarea id="flag-description" rows="2" placeholder="Uso interno o comercial"></textarea>
+                </label>
+                <button class="btn btn-primary" id="create-flag" type="button">Guardar feature flag</button>
+              </div>
+              <p id="flag-feedback" class="subtitle">Sin acciones recientes.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Organización</th><th>Key</th><th>Módulo</th><th>Estado</th></tr>
+                  </thead>
+                  <tbody id="flags-body"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+
+          <p id="system-admin-feedback" class="subtitle"></p>
+        </main>
+      </section>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="/assets/js/alerts.js"></script>
+    <script src="/assets/js/navigation.js"></script>
+    <script>window.renderSharedNavigation({ activeModule: 'system-admin' });</script>
+    <script src="/assets/js/saas-admin.js"></script>
+  </body>
+</html>
