@@ -4,6 +4,8 @@
   const subtitle = $('self-book-subtitle');
   const selfBookForm = $('self-book-form');
   const manageBookingForm = $('manage-booking-form');
+  const manageBookingPanel = $('manage-booking-panel');
+  const toggleManageBookingButton = $('toggle-manage-booking');
   const availabilityResult = $('availability-result');
   const checkAvailabilityButton = $('check-availability');
   const slotList = $('self-slot-list');
@@ -35,16 +37,12 @@
   let servicesById = new Map();
   let collaboratorsById = new Map();
   let availableSlots = [];
-  let managedAppointments = [];
+  let loadedAppointment = null;
   let editingAppointment = null;
   let padronTypingTimer = null;
 
   function getApiBase() {
     return '/api';
-  }
-
-  function getStorageKey() {
-    return `cr360.selfBookingAppointments.${organizationId}`;
   }
 
   function getOrganizationIdFromUrl() {
@@ -72,35 +70,6 @@
     }
 
     return payload;
-  }
-
-  function loadStoredCredentials() {
-    try {
-      const raw = localStorage.getItem(getStorageKey());
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (_error) {
-      return [];
-    }
-  }
-
-  function saveStoredCredentials(items) {
-    localStorage.setItem(getStorageKey(), JSON.stringify(items));
-  }
-
-  function upsertManagedCredential(reference, accessCode) {
-    const normalizedReference = String(reference || '').trim().toUpperCase();
-    const normalizedAccessCode = String(accessCode || '').trim().toUpperCase();
-    if (!normalizedReference || !normalizedAccessCode) return;
-
-    const current = loadStoredCredentials().filter((item) => item.reference !== normalizedReference);
-    current.unshift({ reference: normalizedReference, accessCode: normalizedAccessCode });
-    saveStoredCredentials(current.slice(0, 12));
-  }
-
-  function removeManagedCredential(reference) {
-    const normalizedReference = String(reference || '').trim().toUpperCase();
-    saveStoredCredentials(loadStoredCredentials().filter((item) => item.reference !== normalizedReference));
   }
 
   function populateSelect(select, items, placeholder, labelFn) {
@@ -193,7 +162,7 @@
     bookingModeBanner.classList.toggle('is-hidden', !isEditing);
     submitBookingButton.textContent = isEditing ? 'Guardar cambios de la cita' : 'Agendar cita';
     if (isEditing && editingAppointment) {
-      bookingModeText.textContent = `Estás moviendo la cita ${editingAppointment.reference} de ${formatDateTime(editingAppointment.starts_at)}.`;
+      bookingModeText.textContent = `Estás moviendo tu cita del ${formatDateTime(editingAppointment.starts_at)}.`;
     }
   }
 
@@ -266,87 +235,62 @@
   }
 
   function renderHistory() {
-    if (!managedAppointments.length) {
-      historyList.innerHTML = '<p class="slot-list__empty">Aquí verás tus reservas guardadas en este dispositivo o cualquier cita que abras con referencia y código.</p>';
+    if (!loadedAppointment) {
+      historyList.classList.add('is-hidden');
+      historyList.innerHTML = '<p class="slot-list__empty">Ingresa tu referencia y código para abrir una cita.</p>';
       return;
     }
 
-    historyList.innerHTML = managedAppointments
-      .map(
-        (appointment) => `
-          <article class="history-card">
-            <div class="history-card__head">
-              <div>
-                <h3 class="history-card__title">${appointment.service_name || appointment.title}</h3>
-                <span class="status-pill ${statusClass(appointment.status)}">${appointment.status_display || appointment.status}</span>
-              </div>
-            </div>
-            <div class="history-card__meta">
-              <div><span>Referencia</span><strong>${appointment.reference}</strong></div>
-              <div><span>Fecha</span><strong>${formatDateTime(appointment.starts_at)}</strong></div>
-              <div><span>Fin</span><strong>${formatDateTime(appointment.ends_at)}</strong></div>
-              <div><span>Especialista</span><strong>${appointment.collaborator_label || 'Por confirmar'}</strong></div>
-            </div>
-            <div class="history-card__actions">
-              ${appointment.can_reschedule ? `<button class="btn btn-secondary" type="button" data-action="reschedule" data-reference="${appointment.reference}">Mover cita</button>` : ''}
-              ${appointment.can_cancel ? `<button class="btn btn-secondary" type="button" data-action="cancel" data-reference="${appointment.reference}">Cancelar cita</button>` : ''}
-            </div>
-          </article>
-        `
-      )
-      .join('');
+    historyList.classList.remove('is-hidden');
+    historyList.innerHTML = `
+      <article class="history-card">
+        <div class="history-card__head">
+          <div>
+            <h3 class="history-card__title">${loadedAppointment.service_name || loadedAppointment.title}</h3>
+            <span class="status-pill ${statusClass(loadedAppointment.status)}">${loadedAppointment.status_display || loadedAppointment.status}</span>
+          </div>
+        </div>
+        <div class="history-card__meta">
+          <div><span>Fecha</span><strong>${formatDateTime(loadedAppointment.starts_at)}</strong></div>
+          <div><span>Fin</span><strong>${formatDateTime(loadedAppointment.ends_at)}</strong></div>
+          <div><span>Especialista</span><strong>${loadedAppointment.collaborator_label || 'Por confirmar'}</strong></div>
+          <div><span>Estado</span><strong>${loadedAppointment.is_upcoming ? 'Próxima cita' : 'Histórico'}</strong></div>
+        </div>
+        <div class="history-card__actions">
+          ${loadedAppointment.can_reschedule ? '<button class="btn btn-secondary" type="button" data-action="reschedule">Mover cita</button>' : ''}
+          ${loadedAppointment.can_cancel ? '<button class="btn btn-secondary" type="button" data-action="cancel">Cancelar cita</button>' : ''}
+        </div>
+      </article>
+    `;
   }
 
-  function upsertManagedAppointment(appointment, accessCode, persist = true) {
-    const normalizedReference = String(appointment.reference || '').trim().toUpperCase();
-    const normalizedAccessCode = String(accessCode || '').trim().toUpperCase();
-    const next = {
-      ...appointment,
-      reference: normalizedReference,
-      access_code: normalizedAccessCode,
-    };
-    managedAppointments = managedAppointments.filter((item) => item.reference !== normalizedReference);
-    managedAppointments.unshift(next);
-    if (persist) {
-      upsertManagedCredential(normalizedReference, normalizedAccessCode);
+  function setManagePanelVisible(isVisible) {
+    manageBookingPanel.classList.toggle('is-hidden', !isVisible);
+    if (toggleManageBookingButton) {
+      toggleManageBookingButton.textContent = isVisible ? 'Ocultar gestión de citas' : 'Gestionar mis citas';
     }
-    renderHistory();
-    return next;
+    if (!isVisible) {
+      loadedAppointment = null;
+      renderHistory();
+    }
   }
 
-  function findManagedAppointment(reference) {
-    const normalizedReference = String(reference || '').trim().toUpperCase();
-    return managedAppointments.find((item) => item.reference === normalizedReference);
-  }
-
-  async function loadManagedAppointment(reference, accessCode, options = {}) {
-    const normalizedReference = String(reference || '').trim().toUpperCase();
-    const normalizedAccessCode = String(accessCode || '').trim().toUpperCase();
+  async function loadManagedAppointment(reference, accessCode) {
     const payload = await request(`${getApiBase()}/agenda-events/self-book-lookup/`, {
       method: 'POST',
       body: JSON.stringify({
-        reference: normalizedReference,
-        access_code: normalizedAccessCode,
+        reference: String(reference || '').trim().toUpperCase(),
+        access_code: String(accessCode || '').trim().toUpperCase(),
       }),
     });
 
-    const appointment = upsertManagedAppointment(payload.appointment, normalizedAccessCode, options.persist !== false);
-    if (options.notify !== false) {
-      await notifyUser(`Reserva ${appointment.reference} cargada correctamente.`, 'success', 'Reserva abierta');
-    }
-    return appointment;
-  }
-
-  async function loadStoredAppointments() {
-    const stored = loadStoredCredentials();
-    for (const item of stored) {
-      try {
-        await loadManagedAppointment(item.reference, item.accessCode, { notify: false, persist: false });
-      } catch (_error) {
-        removeManagedCredential(item.reference);
-      }
-    }
+    loadedAppointment = {
+      ...payload.appointment,
+      reference: String(reference || '').trim().toUpperCase(),
+      access_code: String(accessCode || '').trim().toUpperCase(),
+    };
     renderHistory();
+    return loadedAppointment;
   }
 
   async function loadPublicContext() {
@@ -361,13 +305,44 @@
     renderSummary();
   }
 
+  async function hydrateExistingCustomer() {
+    const taxId = selfBook.taxId.value.trim();
+    if (!taxId) {
+      selectedCustomer = null;
+      selfBook.legalName.value = '';
+      selfBook.email.value = '';
+      selfBook.phone.value = '';
+      return;
+    }
+
+    const payload = await request(`${getApiBase()}/agenda-events/self-book-customer/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        organization_id: organizationId,
+        tax_id: taxId,
+        lookup_only: true,
+      }),
+    });
+
+    if (!payload.exists || !payload.customer) {
+      selectedCustomer = null;
+      return;
+    }
+
+    selectedCustomer = payload.customer;
+    selfBook.legalName.value = payload.customer.legal_name || '';
+    selfBook.email.value = payload.customer.email || '';
+    selfBook.phone.value = payload.customer.phone || '';
+    setStatusMessage(`Cliente identificado: ${payload.customer.legal_name}. Revisamos y autocompletamos sus datos.`, 'is-success');
+  }
+
   async function syncCustomerFromPadron() {
     if (!window.CedulaPadron) {
       return;
     }
 
     const taxId = selfBook.taxId.value.trim();
-    if (!taxId) {
+    if (!taxId || selfBook.legalName.value.trim()) {
       return;
     }
     const normalizedTaxId = window.CedulaPadron.normalizeCedula(taxId);
@@ -375,20 +350,11 @@
 
     const record = await window.CedulaPadron.resolveByCedula(taxId);
     if (!record) {
-      setStatusMessage(`La cédula ${taxId} no existe en el padrón electoral.`, 'is-warning');
       return;
     }
 
-    if (!selfBook.legalName.value.trim()) {
-      selfBook.legalName.value = record.fullName;
-      setStatusMessage(`Nombre autocompletado desde padrón: ${record.fullName}.`, 'is-success');
-      return;
-    }
-
-    const isSameName = window.CedulaPadron.compareName(selfBook.legalName.value, record);
-    if (isSameName === false) {
-      setStatusMessage(`La cédula corresponde a "${record.fullName}". Verifica el nombre ingresado.`, 'is-warning');
-    }
+    selfBook.legalName.value = record.fullName;
+    setStatusMessage(`Nombre autocompletado desde padrón: ${record.fullName}.`, 'is-success');
   }
 
   async function ensureCustomer() {
@@ -414,6 +380,9 @@
     });
 
     selectedCustomer = response.customer;
+    selfBook.legalName.value = response.customer.legal_name || selfBook.legalName.value;
+    selfBook.email.value = response.customer.email || selfBook.email.value;
+    selfBook.phone.value = response.customer.phone || selfBook.phone.value;
     return selectedCustomer;
   }
 
@@ -448,7 +417,7 @@
         renderSummary();
         setStatusMessage(
           result.schedule
-            ? `No hay espacios disponibles dentro del horario actual.`
+            ? 'No hay espacios disponibles dentro del horario actual.'
             : 'El especialista no tiene horario configurado para ese día.',
           'is-warning'
         );
@@ -483,16 +452,15 @@
     }
   }
 
-  async function beginReschedule(reference) {
-    const appointment = findManagedAppointment(reference);
-    if (!appointment) return;
+  async function beginReschedule() {
+    if (!loadedAppointment) return;
 
-    editingAppointment = appointment;
+    editingAppointment = loadedAppointment;
     updateBookingModeUi();
 
-    const startsAt = new Date(appointment.starts_at);
-    selfBook.service.value = String(appointment.service || '');
-    selfBook.collaborator.value = String(appointment.collaborator || '');
+    const startsAt = new Date(loadedAppointment.starts_at);
+    selfBook.service.value = String(loadedAppointment.service || '');
+    selfBook.collaborator.value = String(loadedAppointment.collaborator || '');
     selfBook.date.value = formatDateInput(startsAt);
     selfBook.start.value = formatTimeInput(startsAt);
     calculateEndTime();
@@ -511,22 +479,26 @@
     setStatusMessage('Modo reprogramación cancelado.', 'is-success');
   }
 
-  async function cancelAppointment(reference) {
-    const appointment = findManagedAppointment(reference);
-    if (!appointment) {
-      throw new Error('No encontramos la reserva en este dispositivo.');
+  async function cancelAppointment() {
+    if (!loadedAppointment) {
+      throw new Error('Primero abre una cita con su referencia y código.');
     }
 
     const payload = await request(`${getApiBase()}/agenda-events/self-book-cancel/`, {
       method: 'POST',
       body: JSON.stringify({
-        reference: appointment.reference,
-        access_code: appointment.access_code,
+        reference: loadedAppointment.reference,
+        access_code: loadedAppointment.access_code,
       }),
     });
 
-    upsertManagedAppointment(payload.appointment, appointment.access_code);
-    if (editingAppointment && editingAppointment.reference === appointment.reference) {
+    loadedAppointment = {
+      ...payload.appointment,
+      reference: loadedAppointment.reference,
+      access_code: loadedAppointment.access_code,
+    };
+    renderHistory();
+    if (editingAppointment) {
       cancelEditingMode();
     }
     setStatusMessage('La cita fue cancelada correctamente.', 'is-success');
@@ -540,6 +512,7 @@
       if (!selfBook.start.value) {
         throw new Error('Selecciona una hora disponible antes de agendar la cita.');
       }
+
       const payload = {
         organization: organizationId,
         event_type: eventTypeId,
@@ -566,9 +539,15 @@
             starts_at: payload.starts_at,
           }),
         });
-        upsertManagedAppointment(response.appointment, editingAppointment.access_code);
+
+        loadedAppointment = {
+          ...response.appointment,
+          reference: editingAppointment.reference,
+          access_code: editingAppointment.access_code,
+        };
+        renderHistory();
         cancelEditingMode();
-        await notifyUser(`La cita ${response.appointment.reference} fue reprogramada correctamente.`, 'success', 'Cita actualizada');
+        await notifyUser('La cita fue reprogramada correctamente.', 'success', 'Cita actualizada');
         return;
       }
 
@@ -577,17 +556,22 @@
         body: JSON.stringify(payload),
       });
 
-      const credentials = response.appointment.manage_credentials || {};
-      upsertManagedAppointment(response.appointment, credentials.access_code);
-      manageReferenceInput.value = credentials.reference || '';
-      manageAccessCodeInput.value = credentials.access_code || '';
       clearBookingSelection();
 
-      await notifyUser(
-        `Tu cita quedó reservada. Guarda la referencia ${credentials.reference} y el código ${credentials.access_code}. También los dejamos guardados en este dispositivo.`,
-        'success',
-        'Cita agendada'
-      );
+      const credentials = response.appointment.manage_credentials || {};
+      await window.Swal.fire({
+        title: 'Reserva confirmada',
+        html: `
+          <p style="margin-bottom:12px;">Guarda estos datos para gestionar tu cita más adelante.</p>
+          <div style="text-align:left;display:grid;gap:10px;">
+            <div><strong>Referencia:</strong><br>${credentials.reference || ''}</div>
+            <div><strong>Código de acceso:</strong><br>${credentials.access_code || ''}</div>
+          </div>
+        `,
+        icon: 'success',
+        confirmButtonText: 'Entendido',
+      });
+      await notifyUser('Tu cita fue agendada correctamente. Guarda la referencia y el código de acceso.', 'success', 'Cita agendada');
     } catch (error) {
       const message = normalizeErrorMessage(error);
       if (isConflictErrorMessage(message)) {
@@ -611,23 +595,30 @@
       if (!reference || !accessCode) {
         throw new Error('Ingresa la referencia y el código de acceso para abrir una reserva.');
       }
-      await loadManagedAppointment(reference, accessCode, { notify: true, persist: true });
+      await loadManagedAppointment(reference, accessCode);
+      await notifyUser('Cita cargada correctamente. Ya puedes gestionarla.', 'success', 'Cita abierta');
     } catch (error) {
-      await notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo abrir la reserva');
+      loadedAppointment = null;
+      renderHistory();
+      await notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo abrir la cita');
     }
   });
 
   selfBook.taxId.addEventListener('blur', () => {
-    syncCustomerFromPadron().catch((error) => {
-      notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo validar la cédula').catch(() => null);
-    });
+    hydrateExistingCustomer()
+      .then(syncCustomerFromPadron)
+      .catch((error) => {
+        notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo validar la cédula').catch(() => null);
+      });
   });
 
   selfBook.taxId.addEventListener('input', () => {
     selectedCustomer = null;
     if (padronTypingTimer) clearTimeout(padronTypingTimer);
     padronTypingTimer = setTimeout(() => {
-      syncCustomerFromPadron().catch(() => null);
+      hydrateExistingCustomer()
+        .then(syncCustomerFromPadron)
+        .catch(() => null);
     }, 250);
   });
 
@@ -654,11 +645,12 @@
     const button = event.target.closest('[data-action]');
     if (!button) return;
     const action = button.dataset.action;
-    const reference = button.dataset.reference;
+
     if (action === 'reschedule') {
-      await beginReschedule(reference);
+      await beginReschedule();
       return;
     }
+
     if (action === 'cancel') {
       let confirmed = true;
       if (window.Swal) {
@@ -674,12 +666,22 @@
       }
       if (!confirmed) return;
       try {
-        await cancelAppointment(reference);
+        await cancelAppointment();
       } catch (error) {
         await notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo cancelar la cita');
       }
     }
   });
+
+  if (toggleManageBookingButton) {
+    toggleManageBookingButton.addEventListener('click', () => {
+      const isHidden = manageBookingPanel.classList.contains('is-hidden');
+      setManagePanelVisible(isHidden);
+      if (isHidden) {
+        manageReferenceInput.focus();
+      }
+    });
+  }
 
   cancelEditingButton.addEventListener('click', cancelEditingMode);
   checkAvailabilityButton.addEventListener('click', checkAvailability);
@@ -687,13 +689,12 @@
   try {
     organizationId = getOrganizationIdFromUrl();
     updateBookingModeUi();
+    setManagePanelVisible(false);
     resetAvailableSlots('Selecciona servicio, especialista y fecha para consultar horarios.');
     renderHistory();
-    loadPublicContext()
-      .then(loadStoredAppointments)
-      .catch((error) => {
-        setStatusMessage(`No se pudo cargar el portal: ${normalizeErrorMessage(error)}`, 'is-error');
-      });
+    loadPublicContext().catch((error) => {
+      setStatusMessage(`No se pudo cargar el portal: ${normalizeErrorMessage(error)}`, 'is-error');
+    });
   } catch (error) {
     setStatusMessage(error.message, 'is-error');
     checkAvailabilityButton.disabled = true;

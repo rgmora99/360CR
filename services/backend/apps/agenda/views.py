@@ -439,6 +439,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     def self_book_customer(self, request):
         organization_id = request.data.get("organization_id")
         tax_id = (request.data.get("tax_id") or "").strip()
+        lookup_only = str(request.data.get("lookup_only") or "").strip().lower() in {"1", "true", "yes"}
         if not organization_id:
             return Response({"detail": "organization_id es requerido"}, status=400)
         if not tax_id:
@@ -465,13 +466,19 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             return Response(
                 {
                     "created": False,
+                    "exists": True,
                     "customer": {
                         "id": existing_customer.id,
                         "legal_name": existing_customer.legal_name,
                         "tax_id": existing_customer.tax_id,
+                        "email": existing_customer.email,
+                        "phone": existing_customer.phone,
                     },
                 }
             )
+
+        if lookup_only:
+            return Response({"created": False, "exists": False, "customer": None}, status=200)
 
         legal_name = (request.data.get("legal_name") or "").strip()
         if not legal_name:
@@ -495,10 +502,13 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         return Response(
             {
                 "created": True,
+                "exists": True,
                 "customer": {
                     "id": customer.id,
                     "legal_name": customer.legal_name,
                     "tax_id": customer.tax_id,
+                    "email": customer.email,
+                    "phone": customer.phone,
                 },
             },
             status=status.HTTP_201_CREATED,

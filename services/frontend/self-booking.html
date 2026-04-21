@@ -86,16 +86,21 @@
           <div class="history-header">
             <div>
               <h2>Gestiona una cita</h2>
-              <p class="section-help">Cada reserva genera una referencia y un código de acceso. Los guardamos en este dispositivo para que puedas reprogramar o cancelar sin exponer tu cédula.</p>
+              <p class="section-help">Si quieres mover o cancelar una cita, usa la referencia de reserva y el código de acceso que se te entregó al confirmar.</p>
             </div>
           </div>
-          <form id="manage-booking-form" class="manage-booking-form">
-            <label>Referencia de reserva<input id="manage-reference" placeholder="Ej: RES-7F3A9C2D" autocomplete="off" /></label>
-            <label>Código de acceso<input id="manage-access-code" placeholder="Ej: 8Q4L7M2P" autocomplete="off" /></label>
-            <button id="load-managed-booking" class="btn btn-primary" type="submit">Abrir reserva</button>
-          </form>
-          <div id="history-list" class="history-list">
-            <p class="slot-list__empty">Aquí verás tus reservas guardadas en este dispositivo o cualquier cita que abras con referencia y código.</p>
+          <div class="manage-booking-trigger">
+            <button id="toggle-manage-booking" class="btn btn-primary" type="button">Gestionar mis citas</button>
+          </div>
+          <div id="manage-booking-panel" class="manage-booking-panel is-hidden">
+            <form id="manage-booking-form" class="manage-booking-form">
+              <label>Referencia de reserva<input id="manage-reference" placeholder="Ej: RES-7F3A9C2D" autocomplete="off" /></label>
+              <label>Código de acceso<input id="manage-access-code" placeholder="Ej: 8Q4L7M2P" autocomplete="off" /></label>
+              <button id="load-managed-booking" class="btn btn-primary" type="submit">Abrir reserva</button>
+            </form>
+          </div>
+          <div id="history-list" class="history-list is-hidden">
+            <p class="slot-list__empty">Ingresa tu referencia y código para abrir una cita.</p>
           </div>
         </section>
 

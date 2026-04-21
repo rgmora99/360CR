@@ -225,8 +225,23 @@ select {
   gap: 0.85rem;
 }
 
-.manage-booking-form {
+.manage-booking-trigger {
   margin-top: 1rem;
+}
+
+.manage-booking-trigger .btn {
+  width: 100%;
+}
+
+.manage-booking-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: rgba(10, 18, 34, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.manage-booking-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 0.85rem;
