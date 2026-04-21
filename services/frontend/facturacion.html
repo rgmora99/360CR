@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Facturación POS | 360CR</title>
+    <title>FacturaciÃ³n POS | 360CR</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
@@ -21,8 +21,8 @@
         <div class="page-wrap">
           <section class="module-header card">
             <div>
-              <h1>Facturación Punto de Venta</h1>
-              <p class="subtitle">Emisión de facturas con autocompletado de cliente, PDF y envío por correo.</p>
+              <h1>FacturaciÃ³n Punto de Venta</h1>
+              <p class="subtitle">EmisiÃ³n de facturas con autocompletado de cliente, PDF y envÃ­o por correo.</p>
             </div>
             <div class="quick-actions">
               <a class="btn btn-secondary" href="/envios.html">Control de envios</a>
@@ -36,17 +36,17 @@
               <div class="billing-section-header">
                 <div>
                   <h2>Cliente</h2>
-                  <p class="subtitle">Busca por cédula para cargar los datos completos del cliente antes de facturar.</p>
+                  <p class="subtitle">Busca por cÃ©dula para cargar los datos completos del cliente antes de facturar.</p>
                 </div>
-                <label class="organization-inline-field">Organización
+                <label class="organization-inline-field">OrganizaciÃ³n
                   <select id="organization-id" required></select>
                 </label>
               </div>
 
               <div class="customer-lookup-card">
                 <div class="customer-lookup-grid">
-                  <label>Cédula del cliente
-                    <input id="customer-tax-id" placeholder="Ingresa la cédula del cliente" maxlength="50" autocomplete="off" />
+                  <label>CÃ©dula del cliente
+                    <input id="customer-tax-id" placeholder="Ingresa la cÃ©dula del cliente" maxlength="50" autocomplete="off" />
                   </label>
                   <div class="customer-lookup-actions">
                     <button class="btn btn-secondary" id="search-customer" type="button">Buscar cliente</button>
@@ -70,113 +70,80 @@
               <form id="invoice-form" class="customer-form">
                 <div class="form-grid">
                   <label>Tipo documento
-                    <select id="document-type"><option value="01">Factura electrónica</option><option value="03">Nota de crédito</option></select>
+                    <select id="document-type"><option value="01">Factura electrÃ³nica</option><option value="03">Nota de crÃ©dito</option></select>
                   </label>
-                  <label>Condición venta
-                    <select id="sale-condition"><option value="01">Contado</option><option value="02">Crédito</option></select>
+                  <label>CondiciÃ³n venta
+                    <select id="sale-condition"><option value="01">Contado</option><option value="02">CrÃ©dito</option></select>
                   </label>
                   <label>Medio pago
-                    <select id="payment-method"><option value="01">Efectivo</option><option value="02">Tarjeta</option><option value="03">Transferencia</option><option value="04">SINPE Móvil</option><option value="05">A plazos</option></select>
+                    <select id="payment-method"><option value="01">Efectivo</option><option value="02">Tarjeta</option><option value="03">Transferencia</option><option value="04">SINPE MÃ³vil</option><option value="05">A plazos</option></select>
                   </label>
-                  <label>Régimen fiscal
+                  <label>RÃ©gimen fiscal
                     <select id="tax-regime"><option value="simplified">Simplificado</option><option value="general">General</option></select>
                   </label>
                   <label id="installments-count-wrap" class="hidden">Cantidad de cuotas
                     <input id="installment-count" type="number" min="2" value="3" />
                   </label>
-                  <label id="installments-interval-wrap" class="hidden">Intervalo cuotas (días)
+                  <label id="installments-interval-wrap" class="hidden">Intervalo cuotas (dÃ­as)
                     <input id="installment-interval-days" type="number" min="1" value="30" />
                   </label>
                   <label>Moneda<input id="currency" value="CRC" maxlength="3" /></label>
                 </div>
-                <label>Notas<textarea id="notes" rows="3" maxlength="500" placeholder="Observaciones opcionales de la factura (máx. 500 caracteres)"></textarea></label>
-                <div id="shipment-inline" class="shipment-inline is-disabled" aria-live="polite">
-                  <div class="shipment-inline__controls">
-                    <label class="points-payment-toggle shipment-inline__toggle">
-                      <input id="requires-shipment-inline" type="checkbox" />
-                      <span>Agregar envio</span>
-                    </label>
-                    <button id="configure-shipment-inline" class="btn btn-secondary" type="button" disabled>Datos de entrega</button>
-                  </div>
-                  <p id="shipment-inline-summary" class="subtitle shipment-inline__summary">Agrega productos fisicos para habilitar el envio.</p>
-                </div>
-                <section id="shipment-panel" class="shipment-panel is-disabled" aria-live="polite">
-                  <div class="shipment-panel__header">
-                    <div>
-                      <h3>EnvÃ­o del producto</h3>
-                      <p class="subtitle">Activa esta opciÃ³n si el cliente necesita despacho o retiro coordinado.</p>
-                    </div>
-                    <div class="shipment-panel__actions">
-                      <label class="points-payment-toggle shipment-toggle">
+                <label>Notas<textarea id="notes" rows="3" maxlength="500" placeholder="Observaciones opcionales de la factura (mÃ¡x. 500 caracteres)"></textarea></label>
+
+                <section class="invoice-options" aria-label="Opciones de factura">
+                  <article id="shipment-option-card" class="invoice-option-card is-disabled" aria-live="polite">
+                    <div class="invoice-option-card__header">
+                      <div>
+                        <h3>Envio</h3>
+                        <p class="subtitle">Activa esta opcion solo cuando la factura incluye entrega.</p>
+                      </div>
+                      <label class="option-toggle">
                         <input id="requires-shipment" type="checkbox" />
-                        <span>Solicitar envÃ­o</span>
+                        <span>Agregar envio</span>
                       </label>
-                      <button id="configure-shipment" class="btn btn-secondary" type="button" disabled>Configurar envÃ­o</button>
                     </div>
-                  </div>
-                  <div class="shipment-panel__summary">
-                    <div class="points-stat">
-                      <span class="points-stat__label">Estado</span>
-                      <strong id="shipment-status">No aplica</strong>
+                    <div class="invoice-option-card__body">
+                      <div>
+                        <strong id="shipment-option-status" class="invoice-option-card__status">No aplica</strong>
+                        <p id="shipment-option-summary" class="subtitle invoice-option-card__summary">Agrega productos fisicos para habilitar el envio.</p>
+                      </div>
+                      <button id="configure-shipment" class="btn btn-secondary" type="button" disabled>Datos de entrega</button>
                     </div>
-                    <div class="points-stat">
-                      <span class="points-stat__label">Medio</span>
-                      <strong id="shipment-method-summary">Sin definir</strong>
+                  </article>
+
+                  <article id="points-option-card" class="invoice-option-card is-disabled" aria-live="polite">
+                    <div class="invoice-option-card__header">
+                      <div>
+                        <h3>Fidelizacion</h3>
+                        <p class="subtitle">Si el cliente tiene saldo suficiente, puedes cobrar con puntos.</p>
+                      </div>
+                      <label class="option-toggle">
+                        <input id="pay-with-points" type="checkbox" />
+                        <span>Aplicar puntos</span>
+                      </label>
                     </div>
-                    <div class="points-stat">
-                      <span class="points-stat__label">Destino</span>
-                      <strong id="shipment-destination-summary">Sin direcciÃ³n configurada</strong>
+                    <div class="invoice-option-card__body">
+                      <div>
+                        <strong id="points-option-status" class="invoice-option-card__status">Pendiente</strong>
+                        <p id="points-option-summary" class="subtitle invoice-option-card__summary">Selecciona un cliente y agrega lineas para validar esta opcion.</p>
+                      </div>
+                      <button id="open-points-modal" class="btn btn-secondary" type="button">Ver detalle</button>
                     </div>
-                    <div class="points-stat">
-                      <span class="points-stat__label">Referencia</span>
-                      <strong id="shipment-reference-summary">Pendiente</strong>
-                    </div>
-                  </div>
-                  <p id="shipment-help" class="subtitle points-payment-panel__help">Agrega productos fÃ­sicos para habilitar el envÃ­o.</p>
-                </section>
-                <section id="points-payment-panel" class="points-payment-panel is-disabled" aria-live="polite">
-                  <div class="points-payment-panel__header">
-                    <div>
-                      <h3>Pagar con puntos de fidelización</h3>
-                      <p class="subtitle">Usa puntos disponibles del cliente para cubrir la factura. 1 punto = 1 CRC.</p>
-                    </div>
-                    <label class="points-payment-toggle">
-                      <input id="pay-with-points" type="checkbox" />
-                      <span>Aplicar puntos</span>
-                    </label>
-                  </div>
-                  <div class="points-payment-panel__stats">
-                    <div class="points-stat">
-                      <span class="points-stat__label">Cliente</span>
-                      <strong id="points-customer-name">Sin cliente seleccionado</strong>
-                    </div>
-                    <div class="points-stat">
-                      <span class="points-stat__label">Disponibles</span>
-                      <strong id="points-available">0 pts</strong>
-                    </div>
-                    <div class="points-stat">
-                      <span class="points-stat__label">Requeridos</span>
-                      <strong id="points-required">0 pts</strong>
-                    </div>
-                    <div class="points-stat">
-                      <span class="points-stat__label">Resultado</span>
-                      <strong id="points-result">Pendiente</strong>
-                    </div>
-                  </div>
-                  <p id="points-payment-help" class="subtitle points-payment-panel__help"></p>
+                  </article>
                 </section>
 
                 <div class="line-picker card">
                   <div class="line-picker-header">
                     <div>
                       <h3>Agregar servicio o producto</h3>
-                      <p class="subtitle">Busca por código o nombre y luego confirma la línea con cantidad y descuento.</p>
+                      <p class="subtitle">Busca por cÃ³digo o nombre y luego confirma la lÃ­nea con cantidad y descuento.</p>
                     </div>
                   </div>
                   <div class="line-picker-grid">
                     <div class="line-picker-product-stack">
                       <label class="line-picker-search">Buscar producto
-                        <input id="line-product-search" type="text" placeholder="Ejemplo: ACR001 o Acrílico" autocomplete="off" />
+                        <input id="line-product-search" type="text" placeholder="Ejemplo: ACR001 o AcrÃ­lico" autocomplete="off" />
                       </label>
                       <label class="line-picker-select">Producto o servicio
                         <select id="line-product"></select>
@@ -189,7 +156,7 @@
                       <input id="line-discount" type="number" min="0" max="100" step="0.01" value="0" />
                     </label>
                     <div class="line-picker-actions">
-                      <button class="btn btn-secondary" type="button" id="add-line">Agregar línea</button>
+                      <button class="btn btn-secondary" type="button" id="add-line">Agregar lÃ­nea</button>
                     </div>
                   </div>
                   <p id="line-product-meta" class="subtitle">Selecciona un producto para ver su detalle.</p>
@@ -272,6 +239,40 @@
             <button id="cancel-shipment-modal" class="btn btn-secondary" type="button">Cancelar</button>
           </div>
         </form>
+      </div>
+    </div>
+    <div id="points-modal" class="receivable-detail-modal" aria-hidden="true">
+      <div class="receivable-detail-panel shipment-modal-panel loyalty-modal-panel" role="dialog" aria-modal="true" aria-labelledby="points-modal-title">
+        <div class="receivable-detail-header">
+          <div>
+            <h2 id="points-modal-title">Pago con puntos</h2>
+            <p class="subtitle">Revisa rapidamente si la factura puede cobrarse con fidelizacion.</p>
+          </div>
+          <button id="close-points-modal" class="btn btn-secondary" type="button">Cerrar</button>
+        </div>
+        <div class="loyalty-modal-grid">
+          <div class="points-stat">
+            <span class="points-stat__label">Cliente</span>
+            <strong id="points-customer-name">Sin cliente seleccionado</strong>
+          </div>
+          <div class="points-stat">
+            <span class="points-stat__label">Disponibles</span>
+            <strong id="points-available">0 pts</strong>
+          </div>
+          <div class="points-stat">
+            <span class="points-stat__label">Requeridos</span>
+            <strong id="points-required">0 pts</strong>
+          </div>
+          <div class="points-stat">
+            <span class="points-stat__label">Resultado</span>
+            <strong id="points-result">Pendiente</strong>
+          </div>
+        </div>
+        <p id="points-payment-help" class="subtitle loyalty-modal-help"></p>
+        <div class="actions">
+          <button id="confirm-points-usage" class="btn btn-primary" type="button">Usar puntos</button>
+          <button id="cancel-points-usage" class="btn btn-secondary" type="button">Cerrar</button>
+        </div>
       </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

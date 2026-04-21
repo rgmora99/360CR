@@ -116,13 +116,12 @@
   }
 
   function shipmentRequested() {
-    return Boolean($('requires-shipment')?.checked || $('requires-shipment-inline')?.checked);
+    return Boolean($('requires-shipment')?.checked);
   }
 
   function setShipmentRequested(nextValue) {
     const checked = Boolean(nextValue);
     if ($('requires-shipment')) $('requires-shipment').checked = checked;
-    if ($('requires-shipment-inline')) $('requires-shipment-inline').checked = checked;
   }
 
   function getBillingPrefill() {
@@ -559,7 +558,9 @@
   function syncPointsPaymentUI() {
     const checkbox = $('pay-with-points');
     const help = $('points-payment-help');
-    const panel = $('points-payment-panel');
+    const card = $('points-option-card');
+    const detailButton = $('open-points-modal');
+    const confirmButton = $('confirm-points-usage');
     const customer = state.selectedCustomer;
     const availablePoints = Number(customer?.loyalty?.available_points || 0);
     const subtotal = calculateSubtotal();
@@ -569,42 +570,59 @@
     $('points-available').textContent = `${availablePoints} pts`;
     $('points-required').textContent = `${requiredPoints || 0} pts`;
     $('points-result').textContent = 'Pendiente';
-    panel.classList.remove('is-active', 'is-warning', 'is-disabled');
+    $('points-option-status').textContent = 'Pendiente';
+    $('points-option-summary').textContent = 'Selecciona un cliente y agrega lineas para validar esta opcion.';
+    card.classList.remove('is-active', 'is-warning', 'is-disabled');
+    detailButton.disabled = false;
+    confirmButton.disabled = false;
 
     if (!customer?.loyalty?.program_name) {
       checkbox.checked = false;
       checkbox.disabled = true;
-      panel.classList.add('is-disabled');
+      card.classList.add('is-disabled');
       help.textContent = customer ? 'El cliente seleccionado no tiene membresia activa.' : 'Selecciona un cliente para validar puntos.';
       $('points-result').textContent = 'No disponible';
+      $('points-option-status').textContent = 'No disponible';
+      $('points-option-summary').textContent = help.textContent;
+      confirmButton.disabled = true;
       return;
     }
 
     if (!subtotal) {
       checkbox.checked = false;
       checkbox.disabled = true;
-      panel.classList.add('is-disabled');
+      card.classList.add('is-disabled');
       help.textContent = `Disponible: ${availablePoints} pts. Agrega lineas para validar pago con puntos.`;
       $('points-result').textContent = 'Sin lineas';
+      $('points-option-status').textContent = 'Sin lineas';
+      $('points-option-summary').textContent = help.textContent;
+      confirmButton.disabled = true;
       return;
     }
 
     const hasEnough = availablePoints >= requiredPoints;
     checkbox.disabled = !hasEnough;
     if (!hasEnough) checkbox.checked = false;
+    confirmButton.disabled = !hasEnough;
 
     if (checkbox.checked && hasEnough) {
-      panel.classList.add('is-active');
+      card.classList.add('is-active');
       $('points-result').textContent = 'Canje aplicado';
       help.textContent = `Se descontaran ${requiredPoints} pts y esta compra no acumulara puntos nuevos.`;
+      $('points-option-status').textContent = 'Canje aplicado';
+      $('points-option-summary').textContent = help.textContent;
       return;
     }
 
-    panel.classList.add(hasEnough ? 'is-warning' : 'is-disabled');
+    card.classList.add(hasEnough ? 'is-warning' : 'is-disabled');
     $('points-result').textContent = hasEnough ? 'Disponible para usar' : 'Saldo insuficiente';
     help.textContent = hasEnough
       ? `Disponible: ${availablePoints} pts. Requeridos aprox.: ${requiredPoints} pts.`
       : `Disponible: ${availablePoints} pts. Requiere aprox. ${requiredPoints} pts para cubrir la factura.`;
+    $('points-option-status').textContent = hasEnough ? 'Disponible' : 'Saldo insuficiente';
+    $('points-option-summary').textContent = hasEnough
+      ? `Cliente con ${availablePoints} pts. Puedes activar esta opcion para cubrir la factura.`
+      : help.textContent;
   }
 
   function hasShippableLines() {
@@ -678,44 +696,31 @@
   }
 
   function syncShipmentUI() {
-    const panel = $('shipment-panel');
-    const inline = $('shipment-inline');
+    const card = $('shipment-option-card');
     const checked = shipmentRequested();
     const shippable = hasShippableLines();
     const serviceProduct = findShipmentServiceProduct();
 
     ensureShipmentState();
-    panel.classList.remove('is-active', 'is-disabled');
-    inline?.classList.remove('is-disabled');
+    card.classList.remove('is-active', 'is-disabled');
 
     if (!shippable) {
       setShipmentRequested(false);
       $('configure-shipment').disabled = true;
-      if ($('configure-shipment-inline')) $('configure-shipment-inline').disabled = true;
-      $('shipment-status').textContent = 'No aplica';
-      $('shipment-method-summary').textContent = 'Sin definir';
-      $('shipment-destination-summary').textContent = 'Sin direccion configurada';
-      $('shipment-reference-summary').textContent = 'Pendiente';
-      $('shipment-help').textContent = 'Agrega productos fisicos para habilitar el envio.';
-      panel.classList.add('is-disabled');
-      if (inline) inline.classList.add('is-disabled');
-      if ($('shipment-inline-summary')) $('shipment-inline-summary').textContent = 'Agrega productos fisicos para habilitar el envio.';
+      $('shipment-option-status').textContent = 'No aplica';
+      $('shipment-option-summary').textContent = 'Agrega productos fisicos para habilitar el envio.';
+      card.classList.add('is-disabled');
       removeShipmentServiceLine();
       return;
     }
 
     $('configure-shipment').disabled = !checked;
-    if ($('configure-shipment-inline')) $('configure-shipment-inline').disabled = !checked;
-    $('shipment-status').textContent = checked ? (shipmentIsComplete() ? 'Listo para emitir' : 'Configuracion pendiente') : 'No solicitado';
-    $('shipment-method-summary').textContent = checked
-      ? state.shipment.method === SHIPMENT_CORREOS_CR
-        ? 'Correos de Costa Rica'
-        : 'Mensajeria propia'
-      : 'Sin definir';
-    $('shipment-destination-summary').textContent = checked
+    $('shipment-option-status').textContent = checked ? (shipmentIsComplete() ? 'Listo para emitir' : 'Configuracion pendiente') : 'No solicitado';
+    const methodLabel = state.shipment.method === SHIPMENT_CORREOS_CR ? 'Correos de Costa Rica' : 'Mensajeria propia';
+    const destination = checked
       ? [state.shipment.address_line_1, state.shipment.city].filter(Boolean).join(' · ') || 'Sin direccion configurada'
       : 'Sin direccion configurada';
-    $('shipment-reference-summary').textContent = checked ? shipmentReferenceSummary(state.shipment) : 'Pendiente';
+    const reference = shipmentReferenceSummary(state.shipment);
 
     if (!checked) {
       panel.classList.add('is-disabled');
@@ -768,6 +773,92 @@
     $('shipment-modal').classList.remove('is-open');
     $('shipment-modal').setAttribute('aria-hidden', 'true');
     document.body.classList.remove('modal-open');
+  }
+
+  function syncShipmentUI() {
+    const card = $('shipment-option-card');
+    const checked = shipmentRequested();
+    const shippable = hasShippableLines();
+    const serviceProduct = findShipmentServiceProduct();
+
+    ensureShipmentState();
+    card.classList.remove('is-active', 'is-disabled');
+
+    if (!shippable) {
+      setShipmentRequested(false);
+      $('configure-shipment').disabled = true;
+      $('shipment-option-status').textContent = 'No aplica';
+      $('shipment-option-summary').textContent = 'Agrega productos fisicos para habilitar el envio.';
+      card.classList.add('is-disabled');
+      removeShipmentServiceLine();
+      return;
+    }
+
+    $('configure-shipment').disabled = !checked;
+
+    if (!checked) {
+      card.classList.add('is-disabled');
+      $('shipment-option-status').textContent = 'No solicitado';
+      $('shipment-option-summary').textContent = serviceProduct
+        ? `Marca el check si el cliente necesita entrega. Se agregara la linea ${serviceProduct.name}.`
+        : 'Marca el check si el cliente necesita entrega. Si existe un servicio de mensajeria, se agregara automaticamente.';
+      removeShipmentServiceLine();
+      return;
+    }
+
+    card.classList.add('is-active');
+    if (shipmentIsComplete()) {
+      syncShipmentServiceLine();
+    } else {
+      removeShipmentServiceLine();
+    }
+
+    const methodLabel = state.shipment.method === SHIPMENT_CORREOS_CR ? 'Correos de Costa Rica' : 'Mensajeria propia';
+    const destination = [state.shipment.city, state.shipment.state].filter(Boolean).join(', ') || 'direccion pendiente';
+    const reference = shipmentReferenceSummary(state.shipment);
+    $('shipment-option-status').textContent = shipmentIsComplete() ? 'Listo para emitir' : 'Configuracion pendiente';
+    $('shipment-option-summary').textContent = shipmentIsComplete()
+      ? `${methodLabel} para ${destination}. Referencia: ${reference}.`
+      : 'Completa destinatario, direccion, ciudad y telefono para terminar el envio.';
+  }
+
+  function openModal(modalId, focusId) {
+    $(modalId).classList.add('is-open');
+    $(modalId).setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+    if (focusId) {
+      window.setTimeout(() => $(focusId)?.focus(), 20);
+    }
+  }
+
+  function closeModal(modalId) {
+    $(modalId).classList.remove('is-open');
+    $(modalId).setAttribute('aria-hidden', 'true');
+    if (![...document.querySelectorAll('.receivable-detail-modal.is-open')].length) {
+      document.body.classList.remove('modal-open');
+    }
+  }
+
+  function openShipmentModal() {
+    if (!hasShippableLines()) {
+      syncShipmentUI();
+      return;
+    }
+    fillShipmentForm();
+    openModal('shipment-modal', 'shipment-recipient-name');
+  }
+
+  function closeShipmentModal() {
+    closeModal('shipment-modal');
+  }
+
+  function openPointsModal() {
+    syncPointsPaymentUI();
+    openModal('points-modal', 'confirm-points-usage');
+  }
+
+  function closePointsModal() {
+    closeModal('points-modal');
   }
 
   function renderLines() {
@@ -839,6 +930,7 @@
       $('payment-method').value = '03';
       syncInstallmentsUI();
     }
+    syncPointsPaymentUI();
   });
 
   function handleShipmentToggleChange(checked) {
@@ -855,21 +947,36 @@
   $('requires-shipment').addEventListener('change', () => {
     handleShipmentToggleChange($('requires-shipment').checked);
   });
-  $('requires-shipment-inline')?.addEventListener('change', () => {
-    handleShipmentToggleChange($('requires-shipment-inline').checked);
-  });
 
   $('configure-shipment').addEventListener('click', openShipmentModal);
-  $('configure-shipment-inline')?.addEventListener('click', openShipmentModal);
+  $('open-points-modal').addEventListener('click', openPointsModal);
   $('shipment-method').addEventListener('change', syncShipmentMethodFields);
   $('close-shipment-modal').addEventListener('click', closeShipmentModal);
   $('cancel-shipment-modal').addEventListener('click', closeShipmentModal);
+  $('close-points-modal').addEventListener('click', closePointsModal);
+  $('cancel-points-usage').addEventListener('click', closePointsModal);
+  $('confirm-points-usage').addEventListener('click', () => {
+    if ($('pay-with-points').disabled) {
+      closePointsModal();
+      return;
+    }
+    $('pay-with-points').checked = true;
+    $('payment-method').value = '03';
+    syncInstallmentsUI();
+    syncPointsPaymentUI();
+    closePointsModal();
+  });
   $('shipment-modal').addEventListener('click', (event) => {
     if (event.target === $('shipment-modal')) closeShipmentModal();
+  });
+  $('points-modal').addEventListener('click', (event) => {
+    if (event.target === $('points-modal')) closePointsModal();
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && $('shipment-modal').classList.contains('is-open')) {
       closeShipmentModal();
+    } else if (event.key === 'Escape' && $('points-modal').classList.contains('is-open')) {
+      closePointsModal();
     }
   });
 
