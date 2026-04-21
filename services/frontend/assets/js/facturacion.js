@@ -10,7 +10,7 @@
     { value: '01', label: 'Efectivo' },
     { value: '02', label: 'Tarjeta' },
     { value: '03', label: 'Transferencia' },
-    { value: '04', label: 'SINPE Movil' },
+    { value: '04', label: 'SINPE Móvil' },
     { value: PAYMENT_INSTALLMENTS, label: 'A plazos', creditOnly: true },
   ];
 
@@ -30,7 +30,7 @@
   const orgId = () => {
     const id = Number($('organization-id').value || window.AppSession?.getActiveOrganizationId?.());
     if (!id || id < 1) {
-      throw new Error('No hay organizacion activa. Selecciona una organizacion valida.');
+      throw new Error('No hay organización activa. Selecciona una organización válida.');
     }
     return id;
   };
@@ -206,7 +206,7 @@
     select.innerHTML = ['<option value="">Selecciona un cliente</option>']
       .concat(
         state.customers.map(
-          (customer) => `<option value="${customer.id}">${escapeHtml(customer.legal_name)} (${escapeHtml(customer.tax_id || 'sin cedula')})</option>`,
+          (customer) => `<option value="${customer.id}">${escapeHtml(customer.legal_name)} (${escapeHtml(customer.tax_id || 'sin cédula')})</option>`,
         ),
       )
       .join('');
@@ -292,15 +292,15 @@
     const loyaltyHtml = customer.loyalty?.program_name
       ? `
         <div class="customer-meta-chip">
-          <span class="customer-meta-chip__label">Fidelizacion</span>
+          <span class="customer-meta-chip__label">Fidelización</span>
           <strong>${escapeHtml(customer.loyalty.program_name)}</strong>
           <small>${Number(customer.loyalty.available_points || 0)} pts disponibles</small>
         </div>
       `
       : `
         <div class="customer-meta-chip customer-meta-chip--muted">
-          <span class="customer-meta-chip__label">Fidelizacion</span>
-          <strong>Sin membresia</strong>
+          <span class="customer-meta-chip__label">Fidelización</span>
+          <strong>Sin membresía</strong>
           <small>No hay programa activo</small>
         </div>
       `;
@@ -308,10 +308,10 @@
     const creditHtml = credit
       ? `
         <div class="customer-meta-chip ${credit.approved ? 'customer-meta-chip--success' : 'customer-meta-chip--warning'}">
-          <span class="customer-meta-chip__label">Credito</span>
+          <span class="customer-meta-chip__label">Crédito</span>
           <strong>${credit.approved ? 'Aprobado' : 'No aprobado'}</strong>
-          <small>${credit.approved ? `Disponible CRC ${Number(credit.available || 0).toFixed(2)} de ${Number(credit.limit || 0).toFixed(2)}` : `Limite CRC ${Number(credit.limit || 0).toFixed(2)}`}</small>
-          <small>${Number(credit.payment_terms_days || 0) > 0 ? `Plazo ${Number(credit.payment_terms_days)} dias` : 'Sin plazo configurado'}</small>
+          <small>${credit.approved ? `Disponible CRC ${Number(credit.available || 0).toFixed(2)} de ${Number(credit.limit || 0).toFixed(2)}` : `Límite CRC ${Number(credit.limit || 0).toFixed(2)}`}</small>
+          <small>${Number(credit.payment_terms_days || 0) > 0 ? `Plazo ${Number(credit.payment_terms_days)} días` : 'Sin plazo configurado'}</small>
         </div>
       `
       : '';
@@ -319,8 +319,8 @@
     const shippingHtml = customer.shipping?.printable
       ? `
         <div class="customer-meta-chip customer-meta-chip--muted">
-          <span class="customer-meta-chip__label">Envio sugerido</span>
-          <strong>${escapeHtml(customer.shipping.city || 'Direccion cargada')}</strong>
+          <span class="customer-meta-chip__label">Envío sugerido</span>
+          <strong>${escapeHtml(customer.shipping.city || 'Dirección cargada')}</strong>
           <small>${escapeHtml(customer.shipping.printable)}</small>
         </div>
       `
@@ -332,7 +332,7 @@
           <div>
             <strong class="customer-meta-card__name">${escapeHtml(customer.legal_name)}</strong>
             <p class="customer-meta-card__contact">
-              <span>${escapeHtml(customer.tax_id || 'Sin cedula')}</span>
+              <span>${escapeHtml(customer.tax_id || 'Sin cédula')}</span>
               <span>${escapeHtml(customer.email || 'Sin correo')}</span>
               <span>${escapeHtml(customer.phone || 'Sin telefono')}</span>
             </p>
@@ -353,13 +353,13 @@
 
   async function searchCustomerByTaxId() {
     const normalized = normalizeTaxId($('customer-tax-id').value.trim());
-    if (!normalized) throw new Error('Ingresa una cedula antes de buscar.');
+    if (!normalized) throw new Error('Ingresa una cédula antes de buscar.');
 
     await loadCustomers(normalized);
     const exactMatch = state.customers.find((customer) => normalizeTaxId(customer.tax_id) === normalized);
     if (!exactMatch) {
       selectCustomer(null, false);
-      throw new Error('No encontramos un cliente con esa cedula en la organizacion seleccionada.');
+      throw new Error('No encontramos un cliente con esa cédula en la organización seleccionada.');
     }
 
     selectCustomer(exactMatch);
@@ -498,7 +498,7 @@
 
     const typeLabel = '';
     const stockLabel = product.product_type === 'service' ? 'Servicio' : `Stock ${product.stock}`;
-    $('line-product-meta').textContent = `${typeLabel} · Codigo: ${product.sku || product.code || 'N/D'} · ${product.name} · ${stockLabel} · Precio: CRC ${Number(product.unit_price || 0).toFixed(2)}`;
+    $('line-product-meta').textContent = `${typeLabel} · Código: ${product.sku || product.code || 'N/D'} · ${product.name} · ${stockLabel} · Precio: CRC ${Number(product.unit_price || 0).toFixed(2)}`;
   }
 
   function calculateSubtotal() {
