@@ -137,6 +137,35 @@
     sessionStorage.removeItem(BILLING_PREFILL_KEY);
   }
 
+  function resetInvoiceForm(options = {}) {
+    const { keepOrganization = true } = options;
+    state.lines = [];
+    state.prefillAgendaEventId = null;
+    state.shipment = emptyShipment();
+    state.shipmentServiceProductId = null;
+    setShipmentRequested(false);
+    $('document-type').value = '01';
+    $('sale-condition').value = '01';
+    $('payment-method').value = '01';
+    $('tax-regime').value = 'simplified';
+    $('installment-count').value = 3;
+    $('installment-interval-days').value = 30;
+    $('currency').value = 'CRC';
+    $('notes').value = '';
+    $('line-product-search').value = '';
+    $('line-qty').value = 1;
+    $('line-discount').value = 0;
+    $('pay-with-points').checked = false;
+    clearCustomerSelection();
+    syncInstallmentsUI();
+    filterProducts();
+    renderLines();
+    setAgendaPrefillBanner(null, false, false);
+    if (!keepOrganization) {
+      renderOrganizations();
+    }
+  }
+
   function renderOrganizations() {
     state.organizations = window.AppSession?.getOrganizations?.() || [];
     const activeId = Number(window.AppSession?.getActiveOrganizationId?.());
@@ -253,32 +282,70 @@
     state.selectedCustomer = customer;
 
     if (!customer) {
-      $('customer-meta').textContent = 'No hay cliente seleccionado.';
+      $('customer-meta').innerHTML = 'No hay cliente seleccionado.';
       $('customer-meta').classList.add('customer-meta-empty');
       syncPointsPaymentUI();
       syncShipmentUI();
       return;
     }
 
-    const loyaltyText = customer.loyalty?.program_name
-      ? ` · Fidelizacion: ${customer.loyalty.program_name} (${customer.loyalty.available_points} pts)`
-      : ' · Sin membresia de fidelizacion';
-    $('customer-meta').textContent = `${customer.legal_name} · Cedula: ${customer.tax_id || 'sin cedula'} · ${customer.email || 'sin correo'} · ${customer.phone || 'sin telefono'}${loyaltyText}`;
-
     const credit = customer.credit || null;
-    if (credit) {
-      const daysText = Number(credit.payment_terms_days || 0) > 0
-        ? `plazo ${Number(credit.payment_terms_days)} dias`
-        : 'sin dias de pago configurados';
-      const creditText = credit.approved
-        ? ` · Credito aprobado: disponible CRC ${Number(credit.available || 0).toFixed(2)} de ${Number(credit.limit || 0).toFixed(2)} · ${daysText}`
-        : ` · Credito no aprobado · limite CRC ${Number(credit.limit || 0).toFixed(2)} · ${daysText}`;
-      $('customer-meta').textContent = `${$('customer-meta').textContent}${creditText}`;
-    }
+    const loyaltyHtml = customer.loyalty?.program_name
+      ? `
+        <div class="customer-meta-chip">
+          <span class="customer-meta-chip__label">Fidelizacion</span>
+          <strong>${escapeHtml(customer.loyalty.program_name)}</strong>
+          <small>${Number(customer.loyalty.available_points || 0)} pts disponibles</small>
+        </div>
+      `
+      : `
+        <div class="customer-meta-chip customer-meta-chip--muted">
+          <span class="customer-meta-chip__label">Fidelizacion</span>
+          <strong>Sin membresia</strong>
+          <small>No hay programa activo</small>
+        </div>
+      `;
 
-    if (customer.shipping?.printable) {
-      $('customer-meta').textContent = `${$('customer-meta').textContent} · Envio sugerido: ${customer.shipping.printable}`;
-    }
+    const creditHtml = credit
+      ? `
+        <div class="customer-meta-chip ${credit.approved ? 'customer-meta-chip--success' : 'customer-meta-chip--warning'}">
+          <span class="customer-meta-chip__label">Credito</span>
+          <strong>${credit.approved ? 'Aprobado' : 'No aprobado'}</strong>
+          <small>${credit.approved ? `Disponible CRC ${Number(credit.available || 0).toFixed(2)} de ${Number(credit.limit || 0).toFixed(2)}` : `Limite CRC ${Number(credit.limit || 0).toFixed(2)}`}</small>
+          <small>${Number(credit.payment_terms_days || 0) > 0 ? `Plazo ${Number(credit.payment_terms_days)} dias` : 'Sin plazo configurado'}</small>
+        </div>
+      `
+      : '';
+
+    const shippingHtml = customer.shipping?.printable
+      ? `
+        <div class="customer-meta-chip customer-meta-chip--muted">
+          <span class="customer-meta-chip__label">Envio sugerido</span>
+          <strong>${escapeHtml(customer.shipping.city || 'Direccion cargada')}</strong>
+          <small>${escapeHtml(customer.shipping.printable)}</small>
+        </div>
+      `
+      : '';
+
+    $('customer-meta').innerHTML = `
+      <div class="customer-meta-card">
+        <div class="customer-meta-card__identity">
+          <div>
+            <strong class="customer-meta-card__name">${escapeHtml(customer.legal_name)}</strong>
+            <p class="customer-meta-card__contact">
+              <span>${escapeHtml(customer.tax_id || 'Sin cedula')}</span>
+              <span>${escapeHtml(customer.email || 'Sin correo')}</span>
+              <span>${escapeHtml(customer.phone || 'Sin telefono')}</span>
+            </p>
+          </div>
+        </div>
+        <div class="customer-meta-card__details">
+          ${loyaltyHtml}
+          ${creditHtml}
+          ${shippingHtml}
+        </div>
+      </div>
+    `;
 
     $('customer-meta').classList.remove('customer-meta-empty');
     syncPointsPaymentUI();
@@ -317,18 +384,18 @@
     const summary = $('agenda-prefill-summary');
     if (!prefill?.eventId) {
       banner.classList.add('hidden');
-      summary.textContent = 'Se completaran automaticamente los datos disponibles de la cita.';
+      summary.innerHTML = '';
       return;
     }
 
-    const parts = [
-      prefill.title ? `Evento: ${prefill.title}` : 'Evento desde agenda',
-      prefill.startsAt ? `Fecha: ${new Date(prefill.startsAt).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' })}` : '',
-      customerFound ? 'Cliente cargado' : 'Cliente pendiente de validar manualmente',
-      lineAdded ? 'Servicio agregado a la factura' : prefill.serviceId ? 'Servicio pendiente de validar manualmente' : '',
+    const chips = [
+      prefill.title ? `<span class="agenda-prefill-banner__chip">${escapeHtml(prefill.title)}</span>` : '',
+      prefill.startsAt ? `<span class="agenda-prefill-banner__chip">${escapeHtml(new Date(prefill.startsAt).toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' }))}</span>` : '',
+      `<span class="agenda-prefill-banner__chip ${customerFound ? 'is-ready' : ''}">${customerFound ? 'Cliente cargado' : 'Cliente pendiente'}</span>`,
+      lineAdded ? `<span class="agenda-prefill-banner__chip is-ready">Servicio agregado</span>` : prefill.serviceId ? `<span class="agenda-prefill-banner__chip">Servicio pendiente</span>` : '',
     ].filter(Boolean);
 
-    summary.textContent = parts.join(' · ');
+    summary.innerHTML = chips.join('');
     banner.classList.remove('hidden');
   }
 
@@ -375,11 +442,6 @@
         $('line-product').value = String(prefill.serviceId);
         updateSelectedProductMeta();
       }
-    }
-
-    if (prefill.notes) {
-      const currentNotes = $('notes').value.trim();
-      $('notes').value = currentNotes ? `${currentNotes}\n${prefill.notes}` : prefill.notes;
     }
 
     setAgendaPrefillBanner(prefill, customerFound, lineAdded);
@@ -946,17 +1008,8 @@
         showToast: true,
       });
 
-      state.lines = [];
-      state.prefillAgendaEventId = null;
-      state.shipment = emptyShipment();
-      setShipmentRequested(false);
-      state.shipmentServiceProductId = null;
-      $('pay-with-points').checked = false;
-      renderLines();
+      resetInvoiceForm();
       await loadProducts();
-      if (state.selectedCustomer?.tax_id) {
-        $('customer-tax-id').value = state.selectedCustomer.tax_id;
-      }
     } catch (error) {
       setFeedback(error.message || 'No se pudo insertar la factura.', true);
     }
@@ -964,7 +1017,7 @@
 
   syncInstallmentsUI();
   renderOrganizations();
-  clearCustomerSelection();
+  resetInvoiceForm();
 
   $('organization-id').addEventListener('change', () => {
     window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
@@ -974,7 +1027,7 @@
 
   Promise.all([loadProducts(), loadCustomers()])
     .then(() => {
-      clearCustomerSelection();
+      resetInvoiceForm();
       return applyBillingPrefill();
     })
     .catch((error) => setFeedback(error.message, true));

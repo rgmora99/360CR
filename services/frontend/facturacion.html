@@ -60,9 +60,12 @@
               </div>
 
               <h2>Nueva factura</h2>
-              <div id="agenda-prefill-banner" class="card hidden">
-                <strong>Factura desde cita</strong>
-                <p id="agenda-prefill-summary" class="subtitle">Se completarán automáticamente los datos disponibles de la cita.</p>
+              <div id="agenda-prefill-banner" class="card hidden agenda-prefill-banner">
+                <div class="agenda-prefill-banner__header">
+                  <strong>Factura desde cita</strong>
+                  <span class="agenda-prefill-banner__badge">Agenda</span>
+                </div>
+                <div id="agenda-prefill-summary" class="agenda-prefill-banner__summary"></div>
               </div>
               <form id="invoice-form" class="customer-form">
                 <div class="form-grid">
@@ -86,7 +89,7 @@
                   </label>
                   <label>Moneda<input id="currency" value="CRC" maxlength="3" /></label>
                 </div>
-                <label>Notas<textarea id="notes" rows="3" maxlength="500" placeholder="Detalle interno de la factura (máx. 500 caracteres)"></textarea></label>
+                <label>Notas<textarea id="notes" rows="3" maxlength="500" placeholder="Observaciones opcionales de la factura (máx. 500 caracteres)"></textarea></label>
                 <div id="shipment-inline" class="shipment-inline is-disabled" aria-live="polite">
                   <div class="shipment-inline__controls">
                     <label class="points-payment-toggle shipment-inline__toggle">
