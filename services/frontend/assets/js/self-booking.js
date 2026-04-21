@@ -12,6 +12,7 @@
   const scheduleHint = $('self-schedule-hint');
   const summaryContent = $('booking-summary-content');
   const historyList = $('history-list');
+  const customerStatus = $('customer-status');
   const bookingModeBanner = $('booking-mode-banner');
   const bookingModeText = $('booking-mode-text');
   const cancelEditingButton = $('cancel-editing');
@@ -76,6 +77,15 @@
     select.innerHTML = [`<option value="">${placeholder}</option>`]
       .concat(items.map((item) => `<option value="${item.id}">${labelFn(item)}</option>`))
       .join('');
+  }
+
+  function setCustomerStatus(message, variant = '') {
+    if (!customerStatus) return;
+    customerStatus.textContent = message;
+    customerStatus.classList.remove('is-found', 'is-new', 'is-loading');
+    if (variant) {
+      customerStatus.classList.add(variant);
+    }
   }
 
   function combineDateAndTime(dateValue, timeValue) {
@@ -260,8 +270,22 @@
           ${loadedAppointment.can_reschedule ? '<button class="btn btn-secondary" type="button" data-action="reschedule">Mover cita</button>' : ''}
           ${loadedAppointment.can_cancel ? '<button class="btn btn-secondary" type="button" data-action="cancel">Cancelar cita</button>' : ''}
         </div>
+        ${!loadedAppointment.can_reschedule && !loadedAppointment.can_cancel ? `<div class="history-card__hint">${buildManagementHint(loadedAppointment)}</div>` : ''}
       </article>
     `;
+  }
+
+  function buildManagementHint(appointment) {
+    if (!appointment) {
+      return 'Abre una cita con referencia y código para gestionarla.';
+    }
+    if (appointment.status === 'cancelled') {
+      return 'Esta cita ya fue cancelada. Por eso no se puede volver a mover ni cancelar.';
+    }
+    if (!appointment.is_upcoming) {
+      return 'Esta cita ya pasó, así que no se puede modificar ni cancelar para liberar espacio.';
+    }
+    return 'Esta cita no se puede gestionar en este momento.';
   }
 
   function setManagePanelVisible(isVisible) {
@@ -312,8 +336,11 @@
       selfBook.legalName.value = '';
       selfBook.email.value = '';
       selfBook.phone.value = '';
+      setCustomerStatus('Ingresa tu cédula para identificar si ya existe un perfil.');
       return;
     }
+
+    setCustomerStatus('Buscando cliente existente...', 'is-loading');
 
     const payload = await request(`${getApiBase()}/agenda-events/self-book-customer/`, {
       method: 'POST',
@@ -326,6 +353,10 @@
 
     if (!payload.exists || !payload.customer) {
       selectedCustomer = null;
+      selfBook.legalName.value = '';
+      selfBook.email.value = '';
+      selfBook.phone.value = '';
+      setCustomerStatus('Cliente nuevo. Completa sus datos para crear el perfil al reservar.', 'is-new');
       return;
     }
 
@@ -333,6 +364,7 @@
     selfBook.legalName.value = payload.customer.legal_name || '';
     selfBook.email.value = payload.customer.email || '';
     selfBook.phone.value = payload.customer.phone || '';
+    setCustomerStatus(`Cliente encontrado: ${payload.customer.legal_name}. Completamos sus datos automáticamente.`, 'is-found');
     setStatusMessage(`Cliente identificado: ${payload.customer.legal_name}. Revisamos y autocompletamos sus datos.`, 'is-success');
   }
 
@@ -354,6 +386,7 @@
     }
 
     selfBook.legalName.value = record.fullName;
+    setCustomerStatus(`Cliente nuevo. Nombre sugerido desde padrón: ${record.fullName}.`, 'is-new');
     setStatusMessage(`Nombre autocompletado desde padrón: ${record.fullName}.`, 'is-success');
   }
 
@@ -383,6 +416,7 @@
     selfBook.legalName.value = response.customer.legal_name || selfBook.legalName.value;
     selfBook.email.value = response.customer.email || selfBook.email.value;
     selfBook.phone.value = response.customer.phone || selfBook.phone.value;
+    setCustomerStatus(`Cliente listo: ${response.customer.legal_name}.`, 'is-found');
     return selectedCustomer;
   }
 
@@ -596,7 +630,11 @@
         throw new Error('Ingresa la referencia y el código de acceso para abrir una reserva.');
       }
       await loadManagedAppointment(reference, accessCode);
-      await notifyUser('Cita cargada correctamente. Ya puedes gestionarla.', 'success', 'Cita abierta');
+      if (loadedAppointment?.can_reschedule || loadedAppointment?.can_cancel) {
+        await notifyUser('Cita cargada correctamente. Ya puedes modificarla o cancelarla.', 'success', 'Cita abierta');
+      } else {
+        await notifyUser(buildManagementHint(loadedAppointment), 'warning', 'Cita cargada');
+      }
     } catch (error) {
       loadedAppointment = null;
       renderHistory();
@@ -690,6 +728,7 @@
     organizationId = getOrganizationIdFromUrl();
     updateBookingModeUi();
     setManagePanelVisible(false);
+    setCustomerStatus('Ingresa tu cédula para identificar si ya existe un perfil.');
     resetAvailableSlots('Selecciona servicio, especialista y fecha para consultar horarios.');
     renderHistory();
     loadPublicContext().catch((error) => {
