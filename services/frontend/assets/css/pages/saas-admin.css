@@ -3,8 +3,15 @@
   gap: 18px;
 }
 
+.saas-admin-content--loading > *:not(.saas-admin-guard) {
+  display: none;
+}
+
 .saas-admin-hero {
-  background: linear-gradient(135deg, rgba(57, 86, 151, 0.22), rgba(11, 23, 48, 0.9));
+  background:
+    radial-gradient(circle at top right, rgba(99, 148, 255, 0.16), transparent 32%),
+    linear-gradient(135deg, rgba(19, 36, 72, 0.96), rgba(10, 18, 34, 0.98));
+  border-color: rgba(122, 162, 255, 0.16);
 }
 
 .saas-admin-stats {
@@ -14,24 +21,59 @@
 }
 
 .saas-stat {
-  padding: 16px;
+  padding: 16px 18px;
   border-radius: 18px;
   border: 1px solid rgba(122, 162, 255, 0.14);
-  background: rgba(15, 23, 42, 0.68);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(10, 16, 30, 0.94));
 }
 
 .saas-stat span {
   display: block;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   margin-bottom: 8px;
 }
 
 .saas-stat strong {
-  font-size: 1.8rem;
+  font-size: clamp(1.5rem, 2vw, 2rem);
   line-height: 1;
+}
+
+.saas-admin-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  background: rgba(9, 15, 28, 0.84);
+}
+
+.saas-admin-tab {
+  border: 1px solid rgba(122, 162, 255, 0.16);
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--muted);
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.saas-admin-tab:hover,
+.saas-admin-tab.is-active {
+  color: var(--txt);
+  border-color: rgba(122, 162, 255, 0.34);
+  background: linear-gradient(180deg, rgba(54, 92, 168, 0.26), rgba(17, 29, 58, 0.92));
+}
+
+.saas-admin-panel {
+  display: none;
+  gap: 16px;
+}
+
+.saas-admin-panel.is-active {
+  display: grid;
 }
 
 .saas-admin-grid {
@@ -41,11 +83,11 @@
 }
 
 .section-heading {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .section-heading h2,
-.two-column-lists h3 {
+.settings-list strong {
   margin: 0;
 }
 
@@ -53,11 +95,16 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .saas-admin-form-grid.compact {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.saas-admin-form-grid.with-divider {
+  padding-top: 14px;
+  border-top: 1px solid rgba(122, 162, 255, 0.12);
 }
 
 .saas-admin-form-grid label {
@@ -66,47 +113,93 @@
   font-weight: 600;
 }
 
-.saas-admin-form-grid button,
-.saas-admin-form-grid label:last-child {
-  align-self: end;
+.saas-admin-form-grid input,
+.saas-admin-form-grid select,
+.saas-admin-form-grid textarea {
+  width: 100%;
 }
 
-.two-column-lists {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+.saas-admin-span-2 {
+  grid-column: 1 / -1;
+}
+
+.saas-admin-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.saas-admin-actions .btn {
+  min-width: 180px;
+}
+
+.saas-admin-table-card {
+  overflow: hidden;
+}
+
+.table-wrap tbody tr {
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.table-wrap tbody tr:hover {
+  background: rgba(122, 162, 255, 0.08);
 }
 
 .settings-list {
   list-style: none;
   padding: 0;
-  margin: 12px 0 0;
+  margin: 0;
   display: grid;
   gap: 10px;
 }
 
 .settings-list li {
-  padding: 12px 14px;
+  padding: 14px;
   border-radius: 14px;
   background: rgba(15, 23, 42, 0.58);
   border: 1px solid rgba(122, 162, 255, 0.12);
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
-.settings-list strong {
-  display: block;
-  margin-bottom: 6px;
+.settings-list li:hover {
+  transform: translateY(-1px);
+  border-color: rgba(122, 162, 255, 0.28);
+  background: rgba(17, 29, 58, 0.78);
 }
 
 .settings-list span {
+  display: block;
+  margin-top: 6px;
   color: var(--muted);
   font-size: 0.92rem;
+  line-height: 1.45;
 }
 
-@media (max-width: 1100px) {
+.saas-admin-guard {
+  padding: 22px;
+  border-color: rgba(255, 122, 122, 0.22);
+  background: linear-gradient(180deg, rgba(48, 20, 27, 0.86), rgba(20, 11, 16, 0.98));
+}
+
+.saas-admin-guard.hidden {
+  display: none;
+}
+
+.saas-admin-hidden {
+  display: none !important;
+}
+
+@media (max-width: 1180px) {
   .saas-admin-grid,
-  .two-column-lists,
   .saas-admin-form-grid,
   .saas-admin-form-grid.compact {
     grid-template-columns: 1fr;
+  }
+
+  .saas-admin-span-2 {
+    grid-column: auto;
   }
 }
