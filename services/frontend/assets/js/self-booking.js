@@ -3,6 +3,7 @@
 
   const subtitle = $('self-book-subtitle');
   const selfBookForm = $('self-book-form');
+  const manageBookingForm = $('manage-booking-form');
   const availabilityResult = $('availability-result');
   const checkAvailabilityButton = $('check-availability');
   const slotList = $('self-slot-list');
@@ -13,6 +14,8 @@
   const bookingModeText = $('booking-mode-text');
   const cancelEditingButton = $('cancel-editing');
   const submitBookingButton = $('submit-booking');
+  const manageReferenceInput = $('manage-reference');
+  const manageAccessCodeInput = $('manage-access-code');
 
   const selfBook = {
     service: $('self-service'),
@@ -26,24 +29,22 @@
     phone: $('self-phone'),
   };
 
-  const customerExtraFields = {
-    legalName: $('self-legal-name-wrap'),
-    email: $('self-email-wrap'),
-    phone: $('self-phone-wrap'),
-  };
-
   let organizationId = null;
   let eventTypeId = null;
   let selectedCustomer = null;
   let servicesById = new Map();
   let collaboratorsById = new Map();
   let availableSlots = [];
-  let appointmentHistory = [];
+  let managedAppointments = [];
   let editingAppointment = null;
   let padronTypingTimer = null;
 
   function getApiBase() {
     return '/api';
+  }
+
+  function getStorageKey() {
+    return `cr360.selfBookingAppointments.${organizationId}`;
   }
 
   function getOrganizationIdFromUrl() {
@@ -64,41 +65,42 @@
 
     const contentType = response.headers.get('content-type') || '';
     const bodyText = await response.text();
-
-    if (!response.ok) {
-      throw new Error(bodyText || 'Error inesperado del servidor.');
-    }
-
-    if (!bodyText) {
-      return null;
-    }
-
-    if (!contentType.includes('application/json')) {
-      throw new Error('El endpoint respondió contenido no JSON.');
-    }
-
-    return JSON.parse(bodyText);
-  }
-
-  async function requestAllow404(url) {
-    const response = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-    });
-
-    const contentType = response.headers.get('content-type') || '';
-    const bodyText = await response.text();
     const payload = bodyText && contentType.includes('application/json') ? JSON.parse(bodyText) : null;
-
-    if (response.status === 404) {
-      return { notFound: true, payload };
-    }
 
     if (!response.ok) {
       throw new Error((payload && payload.detail) || bodyText || 'Error inesperado del servidor.');
     }
 
-    return { notFound: false, payload };
+    return payload;
+  }
+
+  function loadStoredCredentials() {
+    try {
+      const raw = localStorage.getItem(getStorageKey());
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  function saveStoredCredentials(items) {
+    localStorage.setItem(getStorageKey(), JSON.stringify(items));
+  }
+
+  function upsertManagedCredential(reference, accessCode) {
+    const normalizedReference = String(reference || '').trim().toUpperCase();
+    const normalizedAccessCode = String(accessCode || '').trim().toUpperCase();
+    if (!normalizedReference || !normalizedAccessCode) return;
+
+    const current = loadStoredCredentials().filter((item) => item.reference !== normalizedReference);
+    current.unshift({ reference: normalizedReference, accessCode: normalizedAccessCode });
+    saveStoredCredentials(current.slice(0, 12));
+  }
+
+  function removeManagedCredential(reference) {
+    const normalizedReference = String(reference || '').trim().toUpperCase();
+    saveStoredCredentials(loadStoredCredentials().filter((item) => item.reference !== normalizedReference));
   }
 
   function populateSelect(select, items, placeholder, labelFn) {
@@ -114,6 +116,9 @@
   function validatePayload(payload) {
     if (!payload.service || !payload.collaborator) {
       throw new Error('Selecciona servicio y colaborador.');
+    }
+    if (!selfBook.taxId.value.trim() || !selfBook.legalName.value.trim()) {
+      throw new Error('Completa tu cédula y nombre antes de continuar.');
     }
   }
 
@@ -136,13 +141,6 @@
     if (window.appAlerts?.notify) {
       await window.appAlerts.notify(message, type, title);
     }
-  }
-
-  function setExtraFieldsVisible(isVisible) {
-    Object.values(customerExtraFields).forEach((node) => {
-      node.classList.toggle('is-hidden', !isVisible);
-    });
-    selfBook.legalName.required = isVisible;
   }
 
   function normalizeErrorMessage(error) {
@@ -195,7 +193,7 @@
     bookingModeBanner.classList.toggle('is-hidden', !isEditing);
     submitBookingButton.textContent = isEditing ? 'Guardar cambios de la cita' : 'Agendar cita';
     if (isEditing && editingAppointment) {
-      bookingModeText.textContent = `Estás moviendo la cita de ${formatDateTime(editingAppointment.starts_at)}.`;
+      bookingModeText.textContent = `Estás moviendo la cita ${editingAppointment.reference} de ${formatDateTime(editingAppointment.starts_at)}.`;
     }
   }
 
@@ -204,7 +202,7 @@
     const collaborator = collaboratorsById.get(Number(selfBook.collaborator.value));
     summaryContent.innerHTML = `
       <span>Servicio</span><strong>${service?.name || 'Pendiente'}</strong>
-      <span>Colaborador</span><strong>${collaborator?.email || 'Pendiente'}</strong>
+      <span>Especialista</span><strong>${collaborator?.label || 'Pendiente'}</strong>
       <span>Fecha</span><strong>${formatDateOnly(selfBook.date.value)}</strong>
       <span>Hora</span><strong>${selfBook.start.value ? `${selfBook.start.value} - ${selfBook.end.value}` : 'Pendiente'}</strong>
     `;
@@ -218,7 +216,7 @@
     selfBook.end.value = '';
     availableSlots = [];
     slotList.innerHTML = '<p class="slot-list__empty">Todavía no has consultado horarios.</p>';
-    scheduleHint.textContent = 'Selecciona servicio, colaborador y fecha para cargar los espacios.';
+    scheduleHint.textContent = 'Selecciona servicio, especialista y fecha para cargar los espacios.';
     renderSummary();
   }
 
@@ -227,7 +225,7 @@
     selfBook.start.value = '';
     selfBook.end.value = '';
     slotList.innerHTML = '<p class="slot-list__empty">Todavía no has consultado horarios.</p>';
-    scheduleHint.textContent = 'Selecciona servicio, colaborador y fecha para cargar los espacios.';
+    scheduleHint.textContent = 'Selecciona servicio, especialista y fecha para cargar los espacios.';
     setStatusMessage(message);
     renderSummary();
   }
@@ -244,8 +242,7 @@
       return;
     }
 
-    const serviceId = Number(selfBook.service.value);
-    const service = servicesById.get(serviceId);
+    const service = servicesById.get(Number(selfBook.service.value));
     if (!selfBook.start.value || !service?.service_duration_minutes) {
       selfBook.end.value = '';
       return;
@@ -269,12 +266,12 @@
   }
 
   function renderHistory() {
-    if (!appointmentHistory.length) {
-      historyList.innerHTML = '<p class="slot-list__empty">No hay citas registradas para esta cédula.</p>';
+    if (!managedAppointments.length) {
+      historyList.innerHTML = '<p class="slot-list__empty">Aquí verás tus reservas guardadas en este dispositivo o cualquier cita que abras con referencia y código.</p>';
       return;
     }
 
-    historyList.innerHTML = appointmentHistory
+    historyList.innerHTML = managedAppointments
       .map(
         (appointment) => `
           <article class="history-card">
@@ -285,14 +282,14 @@
               </div>
             </div>
             <div class="history-card__meta">
+              <div><span>Referencia</span><strong>${appointment.reference}</strong></div>
               <div><span>Fecha</span><strong>${formatDateTime(appointment.starts_at)}</strong></div>
               <div><span>Fin</span><strong>${formatDateTime(appointment.ends_at)}</strong></div>
-              <div><span>Colaborador</span><strong>${appointment.collaborator_email || 'Sin asignar'}</strong></div>
-              <div><span>Estado</span><strong>${appointment.is_upcoming ? 'Próxima cita' : 'Histórico'}</strong></div>
+              <div><span>Especialista</span><strong>${appointment.collaborator_label || 'Por confirmar'}</strong></div>
             </div>
             <div class="history-card__actions">
-              ${appointment.can_reschedule ? `<button class="btn btn-secondary" type="button" data-action="reschedule" data-id="${appointment.id}">Mover cita</button>` : ''}
-              ${appointment.can_cancel ? `<button class="btn btn-secondary" type="button" data-action="cancel" data-id="${appointment.id}">Cancelar cita</button>` : ''}
+              ${appointment.can_reschedule ? `<button class="btn btn-secondary" type="button" data-action="reschedule" data-reference="${appointment.reference}">Mover cita</button>` : ''}
+              ${appointment.can_cancel ? `<button class="btn btn-secondary" type="button" data-action="cancel" data-reference="${appointment.reference}">Cancelar cita</button>` : ''}
             </div>
           </article>
         `
@@ -300,57 +297,56 @@
       .join('');
   }
 
-  async function loadCustomerHistory(taxId) {
-    const cleanTaxId = String(taxId || '').trim();
-    if (!cleanTaxId) {
-      appointmentHistory = [];
-      renderHistory();
-      return;
+  function upsertManagedAppointment(appointment, accessCode, persist = true) {
+    const normalizedReference = String(appointment.reference || '').trim().toUpperCase();
+    const normalizedAccessCode = String(accessCode || '').trim().toUpperCase();
+    const next = {
+      ...appointment,
+      reference: normalizedReference,
+      access_code: normalizedAccessCode,
+    };
+    managedAppointments = managedAppointments.filter((item) => item.reference !== normalizedReference);
+    managedAppointments.unshift(next);
+    if (persist) {
+      upsertManagedCredential(normalizedReference, normalizedAccessCode);
     }
-
-    const params = new URLSearchParams({
-      organization_id: String(organizationId),
-      tax_id: cleanTaxId,
-    });
-    const payload = await request(`${getApiBase()}/agenda-events/self-book-history/?${params.toString()}`);
-    appointmentHistory = Array.isArray(payload.appointments) ? payload.appointments : [];
     renderHistory();
+    return next;
   }
 
-  function renderAvailableSlots(result) {
-    availableSlots = Array.isArray(result.available_slots) ? result.available_slots : [];
-    const serviceDuration = result.service?.duration_minutes;
-    const stepMinutes = result.service?.slot_step_minutes;
-    scheduleHint.textContent = result.schedule
-      ? `Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.${serviceDuration ? ` Servicio: ${serviceDuration} min.` : ''}${stepMinutes ? ` Inicios cada ${stepMinutes} min.` : ''}`
-      : 'El colaborador no tiene horario configurado para este día.';
+  function findManagedAppointment(reference) {
+    const normalizedReference = String(reference || '').trim().toUpperCase();
+    return managedAppointments.find((item) => item.reference === normalizedReference);
+  }
 
-    if (!availableSlots.length) {
-      slotList.innerHTML = '<p class="slot-list__empty">No hay horarios disponibles para esta fecha.</p>';
-      selfBook.start.value = '';
-      selfBook.end.value = '';
-      renderSummary();
-      setStatusMessage(
-        result.schedule
-          ? `No hay espacios disponibles. Horario del colaborador: ${result.schedule.start_time} - ${result.schedule.end_time}.`
-          : 'El colaborador no tiene horario configurado para ese día.',
-        'is-warning'
-      );
-      return;
+  async function loadManagedAppointment(reference, accessCode, options = {}) {
+    const normalizedReference = String(reference || '').trim().toUpperCase();
+    const normalizedAccessCode = String(accessCode || '').trim().toUpperCase();
+    const payload = await request(`${getApiBase()}/agenda-events/self-book-lookup/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        reference: normalizedReference,
+        access_code: normalizedAccessCode,
+      }),
+    });
+
+    const appointment = upsertManagedAppointment(payload.appointment, normalizedAccessCode, options.persist !== false);
+    if (options.notify !== false) {
+      await notifyUser(`Reserva ${appointment.reference} cargada correctamente.`, 'success', 'Reserva abierta');
     }
+    return appointment;
+  }
 
-    slotList.innerHTML = availableSlots
-      .map(
-        (slot) => `
-          <button type="button" class="slot-chip" data-start-time="${slot.start_time}">
-            <strong>${slot.start_time} - ${slot.end_time}</strong>
-            <span>${editingAppointment ? 'Disponible para reprogramar' : 'Disponible'}</span>
-          </button>
-        `
-      )
-      .join('');
-    renderSummary();
-    setStatusMessage(`Encontramos ${availableSlots.length} horario(s) disponible(s). Selecciona el que prefieras.`, 'is-success');
+  async function loadStoredAppointments() {
+    const stored = loadStoredCredentials();
+    for (const item of stored) {
+      try {
+        await loadManagedAppointment(item.reference, item.accessCode, { notify: false, persist: false });
+      } catch (_error) {
+        removeManagedCredential(item.reference);
+      }
+    }
+    renderHistory();
   }
 
   async function loadPublicContext() {
@@ -361,36 +357,8 @@
     collaboratorsById = new Map(payload.collaborators.map((collaborator) => [collaborator.id, collaborator]));
 
     populateSelect(selfBook.service, payload.services, 'Seleccione servicio', (item) => item.name);
-    populateSelect(selfBook.collaborator, payload.collaborators, 'Seleccione colaborador', (item) => item.email);
+    populateSelect(selfBook.collaborator, payload.collaborators, 'Seleccione especialista', (item) => item.label);
     renderSummary();
-  }
-
-  async function resolveCustomerByTaxId() {
-    const taxId = selfBook.taxId.value.trim();
-    if (!taxId) {
-      selectedCustomer = null;
-      setExtraFieldsVisible(false);
-      appointmentHistory = [];
-      renderHistory();
-      return;
-    }
-
-    const query = new URLSearchParams({ organization_id: String(organizationId), tax_id: taxId });
-    const result = await requestAllow404(`${getApiBase()}/agenda-events/self-book-customer/?${query.toString()}`);
-
-    if (result.notFound) {
-      selectedCustomer = null;
-      setExtraFieldsVisible(true);
-      appointmentHistory = [];
-      renderHistory();
-      setStatusMessage('No encontramos esta cédula. Completa los datos para crear tu perfil cliente.', 'is-warning');
-      return;
-    }
-
-    selectedCustomer = result.payload.customer;
-    setExtraFieldsVisible(false);
-    await loadCustomerHistory(taxId);
-    setStatusMessage(`Cliente identificado: ${selectedCustomer.legal_name}. Revisa abajo tus citas programadas e historial.`, 'is-success');
   }
 
   async function syncCustomerFromPadron() {
@@ -424,22 +392,21 @@
   }
 
   async function ensureCustomer() {
-    if (selectedCustomer?.id) {
+    if (selectedCustomer?.id && selectedCustomer.tax_id === selfBook.taxId.value.trim()) {
       return selectedCustomer;
-    }
-
-    const taxId = selfBook.taxId.value.trim();
-    if (!taxId) {
-      throw new Error('Ingresa la cédula del cliente.');
     }
 
     const payload = {
       organization_id: organizationId,
-      tax_id: taxId,
+      tax_id: selfBook.taxId.value.trim(),
       legal_name: selfBook.legalName.value.trim(),
       email: selfBook.email.value.trim(),
       phone: selfBook.phone.value.trim(),
     };
+
+    if (!payload.tax_id || !payload.legal_name) {
+      throw new Error('Completa al menos la cédula y el nombre para continuar.');
+    }
 
     const response = await request(`${getApiBase()}/agenda-events/self-book-customer/`, {
       method: 'POST',
@@ -447,14 +414,13 @@
     });
 
     selectedCustomer = response.customer;
-    await loadCustomerHistory(taxId);
     return selectedCustomer;
   }
 
   async function checkAvailability() {
     try {
       if (!selfBook.date.value || !selfBook.collaborator.value || !selfBook.service.value) {
-        throw new Error('Selecciona servicio, fecha y colaborador para consultar disponibilidad.');
+        throw new Error('Selecciona servicio, fecha y especialista para consultar disponibilidad.');
       }
 
       const params = new URLSearchParams({
@@ -468,13 +434,47 @@
       }
 
       const result = await request(`${getApiBase()}/agenda-events/availability/?${params.toString()}`);
-      renderAvailableSlots(result);
+      availableSlots = Array.isArray(result.available_slots) ? result.available_slots : [];
+      const serviceDuration = result.service?.duration_minutes;
+      const stepMinutes = result.service?.slot_step_minutes;
+      scheduleHint.textContent = result.schedule
+        ? `Horario disponible: ${result.schedule.start_time} - ${result.schedule.end_time}.${serviceDuration ? ` Servicio: ${serviceDuration} min.` : ''}${stepMinutes ? ` Inicios cada ${stepMinutes} min.` : ''}`
+        : 'El especialista no tiene horario configurado para este día.';
+
+      if (!availableSlots.length) {
+        slotList.innerHTML = '<p class="slot-list__empty">No hay horarios disponibles para esta fecha.</p>';
+        selfBook.start.value = '';
+        selfBook.end.value = '';
+        renderSummary();
+        setStatusMessage(
+          result.schedule
+            ? `No hay espacios disponibles dentro del horario actual.`
+            : 'El especialista no tiene horario configurado para ese día.',
+          'is-warning'
+        );
+        return;
+      }
+
+      slotList.innerHTML = availableSlots
+        .map(
+          (slot) => `
+            <button type="button" class="slot-chip" data-start-time="${slot.start_time}">
+              <strong>${slot.start_time} - ${slot.end_time}</strong>
+              <span>${editingAppointment ? 'Disponible para reprogramar' : 'Disponible'}</span>
+            </button>
+          `
+        )
+        .join('');
+      renderSummary();
+      setStatusMessage(`Encontramos ${availableSlots.length} horario(s) disponible(s). Selecciona el que prefieras.`, 'is-success');
+
       if (selfBook.start.value) {
         const stillAvailable = availableSlots.some((slot) => slot.start_time === selfBook.start.value);
         if (!stillAvailable) {
           selfBook.start.value = '';
           selfBook.end.value = '';
-          renderSummary();
+        } else {
+          selectSlot(selfBook.start.value);
         }
       }
     } catch (error) {
@@ -483,8 +483,8 @@
     }
   }
 
-  async function beginReschedule(appointmentId) {
-    const appointment = appointmentHistory.find((item) => String(item.id) === String(appointmentId));
+  async function beginReschedule(reference) {
+    const appointment = findManagedAppointment(reference);
     if (!appointment) return;
 
     editingAppointment = appointment;
@@ -511,20 +511,24 @@
     setStatusMessage('Modo reprogramación cancelado.', 'is-success');
   }
 
-  async function cancelAppointment(appointmentId) {
-    if (!selectedCustomer?.tax_id) return;
-    await request(`${getApiBase()}/agenda-events/self-book-cancel/`, {
+  async function cancelAppointment(reference) {
+    const appointment = findManagedAppointment(reference);
+    if (!appointment) {
+      throw new Error('No encontramos la reserva en este dispositivo.');
+    }
+
+    const payload = await request(`${getApiBase()}/agenda-events/self-book-cancel/`, {
       method: 'POST',
       body: JSON.stringify({
-        organization_id: organizationId,
-        tax_id: selectedCustomer.tax_id,
-        event_id: Number(appointmentId),
+        reference: appointment.reference,
+        access_code: appointment.access_code,
       }),
     });
-    if (editingAppointment && String(editingAppointment.id) === String(appointmentId)) {
+
+    upsertManagedAppointment(payload.appointment, appointment.access_code);
+    if (editingAppointment && editingAppointment.reference === appointment.reference) {
       cancelEditingMode();
     }
-    await loadCustomerHistory(selectedCustomer.tax_id);
     setStatusMessage('La cita fue cancelada correctamente.', 'is-success');
   }
 
@@ -542,7 +546,7 @@
         service: Number(selfBook.service.value),
         collaborator: Number(selfBook.collaborator.value),
         customer: customer.id,
-        title: `Cita ${customer.legal_name}`,
+        title: `Cita ${selfBook.legalName.value.trim()}`,
         starts_at: combineDateAndTime(selfBook.date.value, selfBook.start.value),
         status: 'pending',
         priority: 'medium',
@@ -552,31 +556,38 @@
       validatePayload(payload);
 
       if (editingAppointment) {
-        await request(`${getApiBase()}/agenda-events/self-book-reschedule/`, {
+        const response = await request(`${getApiBase()}/agenda-events/self-book-reschedule/`, {
           method: 'POST',
           body: JSON.stringify({
-            organization_id: organizationId,
-            tax_id: customer.tax_id,
-            event_id: editingAppointment.id,
+            reference: editingAppointment.reference,
+            access_code: editingAppointment.access_code,
             service: payload.service,
             collaborator: payload.collaborator,
             starts_at: payload.starts_at,
           }),
         });
-        await loadCustomerHistory(customer.tax_id);
+        upsertManagedAppointment(response.appointment, editingAppointment.access_code);
         cancelEditingMode();
-        await notifyUser(`La cita de ${customer.legal_name} fue reprogramada correctamente.`, 'success', 'Cita actualizada');
+        await notifyUser(`La cita ${response.appointment.reference} fue reprogramada correctamente.`, 'success', 'Cita actualizada');
         return;
       }
 
-      await request(`${getApiBase()}/agenda-events/self-book/`, {
+      const response = await request(`${getApiBase()}/agenda-events/self-book/`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
 
-      await loadCustomerHistory(customer.tax_id);
+      const credentials = response.appointment.manage_credentials || {};
+      upsertManagedAppointment(response.appointment, credentials.access_code);
+      manageReferenceInput.value = credentials.reference || '';
+      manageAccessCodeInput.value = credentials.access_code || '';
       clearBookingSelection();
-      await notifyUser(`Tu cita fue agendada correctamente para ${customer.legal_name}.`, 'success', 'Cita agendada');
+
+      await notifyUser(
+        `Tu cita quedó reservada. Guarda la referencia ${credentials.reference} y el código ${credentials.access_code}. También los dejamos guardados en este dispositivo.`,
+        'success',
+        'Cita agendada'
+      );
     } catch (error) {
       const message = normalizeErrorMessage(error);
       if (isConflictErrorMessage(message)) {
@@ -592,36 +603,44 @@
     }
   });
 
+  manageBookingForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      const reference = manageReferenceInput.value.trim();
+      const accessCode = manageAccessCodeInput.value.trim();
+      if (!reference || !accessCode) {
+        throw new Error('Ingresa la referencia y el código de acceso para abrir una reserva.');
+      }
+      await loadManagedAppointment(reference, accessCode, { notify: true, persist: true });
+    } catch (error) {
+      await notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo abrir la reserva');
+    }
+  });
+
   selfBook.taxId.addEventListener('blur', () => {
-    resolveCustomerByTaxId()
-      .then(syncCustomerFromPadron)
-      .catch((error) => {
-        notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo validar la cédula').catch(() => null);
-      });
+    syncCustomerFromPadron().catch((error) => {
+      notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo validar la cédula').catch(() => null);
+    });
   });
 
   selfBook.taxId.addEventListener('input', () => {
     selectedCustomer = null;
-    appointmentHistory = [];
-    renderHistory();
     if (padronTypingTimer) clearTimeout(padronTypingTimer);
     padronTypingTimer = setTimeout(() => {
-      resolveCustomerByTaxId()
-        .then(syncCustomerFromPadron)
-        .catch(() => null);
+      syncCustomerFromPadron().catch(() => null);
     }, 250);
   });
 
   selfBook.service.addEventListener('change', () => {
-    resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horarios.');
+    resetAvailableSlots('Selecciona fecha y especialista, luego consulta horarios.');
     renderSummary();
   });
   selfBook.collaborator.addEventListener('change', () => {
-    resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horarios.');
+    resetAvailableSlots('Selecciona fecha y especialista, luego consulta horarios.');
     renderSummary();
   });
   selfBook.date.addEventListener('change', () => {
-    resetAvailableSlots('Selecciona fecha y colaborador, luego consulta horarios.');
+    resetAvailableSlots('Selecciona fecha y especialista, luego consulta horarios.');
     renderSummary();
   });
 
@@ -635,9 +654,9 @@
     const button = event.target.closest('[data-action]');
     if (!button) return;
     const action = button.dataset.action;
-    const id = button.dataset.id;
+    const reference = button.dataset.reference;
     if (action === 'reschedule') {
-      await beginReschedule(id);
+      await beginReschedule(reference);
       return;
     }
     if (action === 'cancel') {
@@ -655,7 +674,7 @@
       }
       if (!confirmed) return;
       try {
-        await cancelAppointment(id);
+        await cancelAppointment(reference);
       } catch (error) {
         await notifyUser(normalizeErrorMessage(error), 'error', 'No se pudo cancelar la cita');
       }
@@ -667,16 +686,22 @@
 
   try {
     organizationId = getOrganizationIdFromUrl();
-    setExtraFieldsVisible(false);
     updateBookingModeUi();
-    resetAvailableSlots('Selecciona servicio, colaborador y fecha para consultar horarios.');
+    resetAvailableSlots('Selecciona servicio, especialista y fecha para consultar horarios.');
     renderHistory();
-    loadPublicContext().catch((error) => {
-      setStatusMessage(`No se pudo cargar el portal: ${normalizeErrorMessage(error)}`, 'is-error');
-    });
+    loadPublicContext()
+      .then(loadStoredAppointments)
+      .catch((error) => {
+        setStatusMessage(`No se pudo cargar el portal: ${normalizeErrorMessage(error)}`, 'is-error');
+      });
   } catch (error) {
     setStatusMessage(error.message, 'is-error');
     checkAvailabilityButton.disabled = true;
     submitBookingButton.disabled = true;
+    if (manageBookingForm) {
+      Array.from(manageBookingForm.elements).forEach((element) => {
+        element.disabled = true;
+      });
+    }
   }
 })();

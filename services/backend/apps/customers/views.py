@@ -27,18 +27,11 @@ class CustomerTypeViewSet(viewsets.ModelViewSet):
 class CustomerViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = CustomerSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("organization",)
 
     def get_queryset(self):
         queryset = Customer.objects.select_related("organization", "customer_type").all()
         return self.scope_queryset(queryset)
-
-    def perform_create(self, serializer):
-        self.validate_organization_payload(serializer.validated_data["organization"].id)
-        serializer.save()
-
-    def perform_update(self, serializer):
-        self.validate_organization_payload(serializer.validated_data["organization"].id)
-        serializer.save()
 
     @action(detail=False, methods=["get"], url_path="next-code")
     def next_code(self, request):
@@ -62,6 +55,8 @@ class CustomerViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 class OrganizationViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = OrganizationSerializer
     permission_classes = [IsAuthenticated]
+    enforce_tenant_on_create = False
+    enforce_tenant_on_update = False
 
     def get_queryset(self):
         return Organization.objects.all().order_by("id").filter(id__in=self.get_allowed_organization_ids())
@@ -83,6 +78,7 @@ class CustomerContactViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet)
     organization_lookup_field = "customer__organization_id"
     serializer_class = CustomerContactSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("customer.organization_id",)
 
     def get_queryset(self):
         queryset = CustomerContact.objects.select_related("customer").all()
@@ -96,6 +92,7 @@ class CustomerAddressViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet)
     organization_lookup_field = "customer__organization_id"
     serializer_class = CustomerAddressSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("customer.organization_id",)
 
     def get_queryset(self):
         queryset = CustomerAddress.objects.select_related("customer").all()

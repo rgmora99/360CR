@@ -1,3 +1,6 @@
+import secrets
+
+from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -11,6 +14,15 @@ from apps.tenants.models import Organization
 
 
 User = get_user_model()
+
+
+def generate_public_booking_reference():
+    return f"RES-{secrets.token_hex(4).upper()}"
+
+
+def generate_public_access_code():
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(8))
 
 
 def agenda_weekday_for_date(date_value):
@@ -94,6 +106,8 @@ class AgendaEvent(models.Model):
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
     reminder_minutes = models.PositiveIntegerField(default=30)
     location = models.CharField(max_length=150, blank=True)
+    public_reference = models.CharField(max_length=20, unique=True, blank=True, null=True)
+    public_access_code_hash = models.CharField(max_length=128, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -161,8 +175,27 @@ class AgendaEvent(models.Model):
             raise ValidationError({"starts_at": f"Ya existe una cita en ese horario {owner}."})
 
     def save(self, *args, **kwargs):
+        if not self.public_reference:
+            while True:
+                candidate = generate_public_booking_reference()
+                if not AgendaEvent.objects.filter(public_reference=candidate).exclude(pk=self.pk).exists():
+                    self.public_reference = candidate
+                    break
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def issue_public_access_code(self):
+        access_code = generate_public_access_code()
+        self.public_access_code_hash = make_password(access_code)
+        return access_code
+
+    def has_public_access_code(self):
+        return bool(self.public_access_code_hash)
+
+    def verify_public_access_code(self, raw_code):
+        if not self.public_access_code_hash or not raw_code:
+            return False
+        return check_password(str(raw_code).strip(), self.public_access_code_hash)
 
     def __str__(self) -> str:
         return f"{self.title} ({self.starts_at:%Y-%m-%d %H:%M})"

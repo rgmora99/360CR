@@ -22,6 +22,13 @@ from apps.tenants.models import Membership, Organization
 User = get_user_model()
 
 
+def _collaborator_public_label(collaborator):
+    if not collaborator:
+        return "Especialista por confirmar"
+    full_name = f"{(collaborator.first_name or '').strip()} {(collaborator.last_name or '').strip()}".strip()
+    return full_name or "Especialista asignado"
+
+
 def _build_available_slots(day, availability, occupied_events, duration_minutes, step_minutes, tz):
     if not availability or not availability.is_active or duration_minutes <= 0 or step_minutes <= 0:
         return []
@@ -84,25 +91,17 @@ class AgendaEventTypeViewSet(viewsets.ModelViewSet):
 class CollaboratorAvailabilityViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = CollaboratorAvailabilitySerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("organization",)
 
     def get_queryset(self):
         queryset = CollaboratorAvailability.objects.select_related("organization", "collaborator")
         return self.scope_queryset(queryset)
 
-    def perform_create(self, serializer):
-        organization = serializer.validated_data["organization"]
-        self.validate_organization_payload(organization.id)
-        serializer.save()
-
-    def perform_update(self, serializer):
-        organization = serializer.validated_data.get("organization") or serializer.instance.organization
-        self.validate_organization_payload(organization.id)
-        serializer.save()
-
 
 class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = AgendaEventSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("organization", "service.organization_id", "customer.organization_id", "supplier.organization_id")
 
     def get_permissions(self):
         if self.action in {
@@ -110,7 +109,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             "self_book",
             "self_book_context",
             "self_book_customer",
-            "self_book_history",
+            "self_book_lookup",
             "self_book_cancel",
             "self_book_reschedule",
         }:
@@ -157,43 +156,48 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
         return self.scope_queryset(queryset)
 
-    def _get_public_customer(self, organization_id, tax_id):
-        if not organization_id:
-            raise ValueError("organization_id es requerido")
-        if not tax_id:
-            raise ValueError("tax_id es requerido")
-        try:
-            organization_id_int = int(organization_id)
-        except (TypeError, ValueError):
-            raise LookupError("organization_id inválido")
+    def _get_public_appointment(self, reference, access_code):
+        normalized_reference = str(reference or "").strip().upper()
+        normalized_access_code = str(access_code or "").strip().upper()
+        if not normalized_reference:
+            raise ValueError("reference es requerido")
+        if not normalized_access_code:
+            raise ValueError("access_code es requerido")
 
-        organization = Organization.objects.filter(id=organization_id_int).first()
-        if not organization:
-            raise LookupError("organization_id inválido")
+        appointment = (
+            AgendaEvent.objects.select_related("service", "collaborator", "customer")
+            .filter(public_reference=normalized_reference)
+            .first()
+        )
+        if not appointment or not appointment.verify_public_access_code(normalized_access_code):
+            raise LookupError("No pudimos validar la referencia y el código de acceso.")
+        return appointment
 
-        customer = Customer.objects.filter(organization=organization, tax_id=tax_id).first()
-        return organization, customer
-
-    def _serialize_public_history(self, queryset):
+    def _serialize_public_appointment(self, appointment, include_manage_credentials=False, access_code=""):
         now = timezone.now()
-        serializer = self.get_serializer(queryset, many=True)
-        items = []
-        for item in serializer.data:
-            starts_at = parse_datetime(item.get("starts_at"))
-            can_manage = bool(
-                starts_at
-                and starts_at >= now
-                and item.get("status") == AgendaEvent.STATUS_PENDING
-            )
-            items.append(
-                {
-                    **item,
-                    "is_upcoming": bool(starts_at and starts_at >= now),
-                    "can_cancel": can_manage,
-                    "can_reschedule": can_manage,
-                }
-            )
-        return items
+        can_manage = bool(appointment.starts_at and appointment.starts_at >= now and appointment.status == AgendaEvent.STATUS_PENDING)
+        payload = {
+            "id": appointment.id,
+            "reference": appointment.public_reference,
+            "title": appointment.title,
+            "service": appointment.service_id,
+            "service_name": getattr(appointment.service, "name", "") or appointment.title,
+            "collaborator": appointment.collaborator_id,
+            "collaborator_label": _collaborator_public_label(appointment.collaborator),
+            "starts_at": appointment.starts_at,
+            "ends_at": appointment.ends_at,
+            "status": appointment.status,
+            "status_display": appointment.get_status_display(),
+            "is_upcoming": bool(appointment.starts_at and appointment.starts_at >= now),
+            "can_cancel": can_manage,
+            "can_reschedule": can_manage,
+        }
+        if include_manage_credentials:
+            payload["manage_credentials"] = {
+                "reference": appointment.public_reference,
+                "access_code": access_code,
+            }
+        return payload
 
     @action(detail=False, methods=["get"], url_path="collaborators")
     def collaborators(self, request):
@@ -252,7 +256,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         start_of_day = timezone.make_aware(datetime.combine(day, datetime.min.time()), tz)
         end_of_day = start_of_day + timedelta(days=1)
 
-        events = (
+        occupied_events = list(
             AgendaEvent.objects.filter(
                 organization=organization,
                 collaborator=collaborator,
@@ -262,27 +266,8 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             .exclude(id=exclude_event_id) 
             .exclude(status=AgendaEvent.STATUS_CANCELLED)
             .order_by("starts_at")
-            .values("starts_at", "ends_at", "title", "service_id")
+            .values("starts_at", "ends_at")
         )
-
-        occupied_events = [
-            {
-                "starts_at": item["starts_at"],
-                "ends_at": item["ends_at"],
-                "title": item["title"],
-                "service_id": item["service_id"],
-            }
-            for item in events
-        ]
-        occupied = [
-            {
-                "starts_at": item["starts_at"].isoformat(),
-                "ends_at": item["ends_at"].isoformat(),
-                "title": item["title"],
-                "service_id": item["service_id"],
-            }
-            for item in occupied_events
-        ]
         weekday = agenda_weekday_for_date(day)
         availability = CollaboratorAvailability.objects.filter(
             organization=organization,
@@ -344,10 +329,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
         return Response(
             {
-                "organization": organization.id,
-                "collaborator": collaborator.id,
                 "date": day.isoformat(),
-                "occupied": occupied,
                 "schedule": (
                     {
                         "weekday": weekday,
@@ -399,11 +381,23 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
         try:
-            serializer.save(status=AgendaEvent.STATUS_PENDING)
+            appointment = serializer.save(status=AgendaEvent.STATUS_PENDING)
         except DjangoValidationError as exc:
             detail = getattr(exc, "message_dict", None) or getattr(exc, "messages", None) or str(exc)
             return Response(detail, status=400)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        access_code = appointment.issue_public_access_code()
+        appointment.save(update_fields=["public_access_code_hash", "updated_at"])
+        return Response(
+            {
+                "detail": "Cita agendada correctamente.",
+                "appointment": self._serialize_public_appointment(
+                    appointment,
+                    include_manage_credentials=True,
+                    access_code=access_code,
+                ),
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=["get"], url_path="self-book-context")
     def self_book_context(self, request):
@@ -423,8 +417,8 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         )
 
         collaborators = [
-            {"id": membership.user_id, "email": membership.user.email}
-            for membership in Membership.objects.select_related("user").filter(organization=organization).order_by("user__email")
+            {"id": membership.user_id, "label": _collaborator_public_label(membership.user)}
+            for membership in Membership.objects.select_related("user").filter(organization=organization).order_by("user__first_name", "user__last_name", "user__email")
         ]
 
         cita_type = AgendaEventType.objects.filter(code="cita").first() or AgendaEventType.objects.first()
@@ -441,15 +435,10 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             }
         )
 
-    @action(detail=False, methods=["get", "post"], url_path="self-book-customer")
+    @action(detail=False, methods=["post"], url_path="self-book-customer")
     def self_book_customer(self, request):
-        if request.method.lower() == "get":
-            organization_id = request.query_params.get("organization_id")
-            tax_id = (request.query_params.get("tax_id") or "").strip()
-        else:
-            organization_id = request.data.get("organization_id")
-            tax_id = (request.data.get("tax_id") or "").strip()
-
+        organization_id = request.data.get("organization_id")
+        tax_id = (request.data.get("tax_id") or "").strip()
         if not organization_id:
             return Response({"detail": "organization_id es requerido"}, status=400)
         if not tax_id:
@@ -461,23 +450,18 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             return Response({"detail": "organization_id inválido"}, status=400)
 
         existing_customer = Customer.objects.filter(organization=organization, tax_id=tax_id).first()
-        if request.method.lower() == "get":
-            if not existing_customer:
-                return Response({"exists": False, "detail": "Cliente no encontrado."}, status=404)
-            return Response(
-                {
-                    "exists": True,
-                    "customer": {
-                        "id": existing_customer.id,
-                        "legal_name": existing_customer.legal_name,
-                        "tax_id": existing_customer.tax_id,
-                        "email": existing_customer.email,
-                        "phone": existing_customer.phone,
-                    },
-                }
-            )
-
         if existing_customer:
+            updates = []
+            incoming_email = (request.data.get("email") or "").strip()
+            incoming_phone = (request.data.get("phone") or "").strip()
+            if incoming_email and existing_customer.email != incoming_email:
+                existing_customer.email = incoming_email
+                updates.append("email")
+            if incoming_phone and existing_customer.phone != incoming_phone:
+                existing_customer.phone = incoming_phone
+                updates.append("phone")
+            if updates:
+                existing_customer.save(update_fields=[*updates, "updated_at"])
             return Response(
                 {
                     "created": False,
@@ -485,8 +469,6 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                         "id": existing_customer.id,
                         "legal_name": existing_customer.legal_name,
                         "tax_id": existing_customer.tax_id,
-                        "email": existing_customer.email,
-                        "phone": existing_customer.phone,
                     },
                 }
             )
@@ -517,70 +499,36 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                     "id": customer.id,
                     "legal_name": customer.legal_name,
                     "tax_id": customer.tax_id,
-                    "email": customer.email,
-                    "phone": customer.phone,
                 },
             },
             status=status.HTTP_201_CREATED,
         )
 
-    @action(detail=False, methods=["get"], url_path="self-book-history")
-    def self_book_history(self, request):
-        organization_id = request.query_params.get("organization_id")
-        tax_id = (request.query_params.get("tax_id") or "").strip()
-
+    @action(detail=False, methods=["post"], url_path="self-book-lookup")
+    def self_book_lookup(self, request):
         try:
-            organization, customer = self._get_public_customer(organization_id, tax_id)
+            appointment = self._get_public_appointment(
+                request.data.get("reference"),
+                request.data.get("access_code"),
+            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         except LookupError as exc:
-            return Response({"detail": str(exc)}, status=400)
+            return Response({"detail": str(exc)}, status=404)
 
-        if not customer:
-            return Response({"customer": None, "appointments": []})
-
-        appointments = (
-            AgendaEvent.objects.select_related("service", "collaborator", "customer")
-            .filter(organization=organization, customer=customer)
-            .order_by("-starts_at", "-id")
-        )
-        return Response(
-            {
-                "customer": {
-                    "id": customer.id,
-                    "legal_name": customer.legal_name,
-                    "tax_id": customer.tax_id,
-                    "email": customer.email,
-                    "phone": customer.phone,
-                },
-                "appointments": self._serialize_public_history(appointments),
-            }
-        )
+        return Response({"appointment": self._serialize_public_appointment(appointment)})
 
     @action(detail=False, methods=["post"], url_path="self-book-cancel")
     def self_book_cancel(self, request):
-        organization_id = request.data.get("organization_id")
-        tax_id = (request.data.get("tax_id") or "").strip()
-        event_id = request.data.get("event_id")
-
         try:
-            organization, customer = self._get_public_customer(organization_id, tax_id)
+            appointment = self._get_public_appointment(
+                request.data.get("reference"),
+                request.data.get("access_code"),
+            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         except LookupError as exc:
-            return Response({"detail": str(exc)}, status=400)
-
-        if not customer:
-            return Response({"detail": "Cliente no encontrado."}, status=404)
-
-        try:
-            appointment = AgendaEvent.objects.select_related("service", "collaborator", "customer").get(
-                id=int(event_id),
-                organization=organization,
-                customer=customer,
-            )
-        except (TypeError, ValueError, AgendaEvent.DoesNotExist):
-            return Response({"detail": "La cita indicada no existe."}, status=404)
+            return Response({"detail": str(exc)}, status=404)
 
         if appointment.status == AgendaEvent.STATUS_CANCELLED:
             return Response({"detail": "La cita ya estaba cancelada."}, status=400)
@@ -592,37 +540,25 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         return Response(
             {
                 "detail": "Cita cancelada correctamente.",
-                "appointment": self.get_serializer(appointment).data,
+                "appointment": self._serialize_public_appointment(appointment),
             }
         )
 
     @action(detail=False, methods=["post"], url_path="self-book-reschedule")
     def self_book_reschedule(self, request):
-        organization_id = request.data.get("organization_id")
-        tax_id = (request.data.get("tax_id") or "").strip()
-        event_id = request.data.get("event_id")
         starts_at_raw = str(request.data.get("starts_at") or "")
         service_id = request.data.get("service")
         collaborator_id = request.data.get("collaborator")
 
         try:
-            organization, customer = self._get_public_customer(organization_id, tax_id)
+            appointment = self._get_public_appointment(
+                request.data.get("reference"),
+                request.data.get("access_code"),
+            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         except LookupError as exc:
-            return Response({"detail": str(exc)}, status=400)
-
-        if not customer:
-            return Response({"detail": "Cliente no encontrado."}, status=404)
-
-        try:
-            appointment = AgendaEvent.objects.select_related("service", "collaborator", "customer").get(
-                id=int(event_id),
-                organization=organization,
-                customer=customer,
-            )
-        except (TypeError, ValueError, AgendaEvent.DoesNotExist):
-            return Response({"detail": "La cita indicada no existe."}, status=404)
+            return Response({"detail": str(exc)}, status=404)
 
         if appointment.status == AgendaEvent.STATUS_CANCELLED:
             return Response({"detail": "No se puede mover una cita cancelada."}, status=400)
@@ -638,7 +574,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             try:
                 service = Product.objects.get(
                     id=int(service_id),
-                    organization=organization,
+                    organization=appointment.organization,
                     product_type=Product.TYPE_SERVICE,
                     is_active=True,
                 )
@@ -653,7 +589,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                 collaborator = User.objects.get(id=int(collaborator_id))
             except (TypeError, ValueError, User.DoesNotExist):
                 return Response({"detail": "El colaborador indicado no existe."}, status=400)
-            if not Membership.objects.filter(user_id=collaborator.id, organization_id=organization.id).exists():
+            if not Membership.objects.filter(user_id=collaborator.id, organization_id=appointment.organization_id).exists():
                 return Response({"detail": "El colaborador no pertenece a esta organización."}, status=400)
 
         duration_minutes = int(service.service_duration_minutes or 0)
@@ -675,14 +611,6 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         return Response(
             {
                 "detail": "Cita reprogramada correctamente.",
-                "appointment": self.get_serializer(appointment).data,
+                "appointment": self._serialize_public_appointment(appointment),
             }
         )
-
-    def perform_create(self, serializer):
-        self.validate_organization_payload(serializer.validated_data["organization"].id)
-        serializer.save()
-
-    def perform_update(self, serializer):
-        self.validate_organization_payload(serializer.validated_data["organization"].id)
-        serializer.save()

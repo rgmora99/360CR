@@ -39,6 +39,13 @@ class LoyaltyTierSerializer(serializers.ModelSerializer):
         model = LoyaltyTier
         fields = ["id", "program", "code", "name", "rank", "min_lifetime_points", "multiplier", "benefits"]
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        program = attrs.get("program") or getattr(self.instance, "program", None)
+        if not program:
+            raise serializers.ValidationError({"program": "El programa es requerido."})
+        return attrs
+
 
 class LoyaltyRuleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -58,6 +65,13 @@ class LoyaltyRuleSerializer(serializers.ModelSerializer):
             "starts_at",
             "ends_at",
         ]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        program = attrs.get("program") or getattr(self.instance, "program", None)
+        if not program:
+            raise serializers.ValidationError({"program": "El programa es requerido."})
+        return attrs
 
 
 class LoyaltyMemberSerializer(serializers.ModelSerializer):
@@ -83,6 +97,23 @@ class LoyaltyMemberSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["enrolled_at", "updated_at"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        program = attrs.get("program") or getattr(self.instance, "program", None)
+        customer = attrs.get("customer") or getattr(self.instance, "customer", None)
+        tier = attrs.get("tier") or getattr(self.instance, "tier", None)
+
+        if not program:
+            raise serializers.ValidationError({"program": "El programa es requerido."})
+        if not customer:
+            raise serializers.ValidationError({"customer": "El cliente es requerido."})
+        if customer.organization_id != program.organization_id:
+            raise serializers.ValidationError({"customer": "El cliente debe pertenecer a la organizacion del programa."})
+        if tier and tier.program_id != program.id:
+            raise serializers.ValidationError({"tier": "El nivel debe pertenecer al mismo programa del miembro."})
+
+        return attrs
 
 
 class LoyaltyPointEntrySerializer(serializers.ModelSerializer):
@@ -120,6 +151,13 @@ class LoyaltyRewardSerializer(serializers.ModelSerializer):
             "starts_at",
             "ends_at",
         ]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        program = attrs.get("program") or getattr(self.instance, "program", None)
+        if not program:
+            raise serializers.ValidationError({"program": "El programa es requerido."})
+        return attrs
 
 
 class LoyaltyRedemptionSerializer(serializers.ModelSerializer):

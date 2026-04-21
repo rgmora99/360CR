@@ -25,18 +25,11 @@ class SupplierTypeViewSet(viewsets.ModelViewSet):
 class SupplierViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = SupplierSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("organization",)
 
     def get_queryset(self):
         queryset = Supplier.objects.select_related("organization", "supplier_type").all()
         return self.scope_queryset(queryset)
-
-    def perform_create(self, serializer):
-        self.validate_organization_payload(serializer.validated_data["organization"].id)
-        serializer.save()
-
-    def perform_update(self, serializer):
-        self.validate_organization_payload(serializer.validated_data["organization"].id)
-        serializer.save()
 
     @action(detail=False, methods=["get"], url_path="next-code")
     def next_code(self, request):
@@ -61,6 +54,7 @@ class SupplierContactViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet)
     organization_lookup_field = "supplier__organization_id"
     serializer_class = SupplierContactSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("supplier.organization_id",)
 
     def get_queryset(self):
         queryset = SupplierContact.objects.select_related("supplier").all()
@@ -75,6 +69,7 @@ class SupplierAddressViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet)
     organization_lookup_field = "supplier__organization_id"
     serializer_class = SupplierAddressSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("supplier.organization_id",)
 
     def get_queryset(self):
         queryset = SupplierAddress.objects.select_related("supplier").all()

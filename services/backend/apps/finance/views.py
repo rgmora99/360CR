@@ -936,19 +936,11 @@ def generate_receivable_payment_receipt_pdf(invoice, payment):
 class ProductViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("organization", "supplier.organization_id")
 
     def get_queryset(self):
         queryset = Product.objects.all()
         return self.scope_queryset(queryset)
-
-    def perform_create(self, serializer):
-        self.validate_organization_payload(serializer.validated_data["organization"].id)
-        serializer.save()
-
-    def perform_update(self, serializer):
-        self.validate_organization_payload(serializer.validated_data["organization"].id)
-        serializer.save()
-
 
 class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer

@@ -58,12 +58,12 @@
 
           <section class="self-book-panel">
             <h2>Tus datos</h2>
-            <p class="section-help">Usamos tu cédula para buscarte o crear tu perfil rápidamente. También verás tu historial de citas.</p>
+            <p class="section-help">Usamos tu cédula para crear o reutilizar tu perfil de cliente sin exponer tus datos en consultas públicas.</p>
             <div class="self-book-grid self-book-grid--single">
               <label>Cédula cliente<input id="self-tax-id" required placeholder="Ej: 1-1234-5678" /></label>
-              <label id="self-legal-name-wrap" class="is-hidden">Nombre completo<input id="self-legal-name" placeholder="Nombre legal" /></label>
-              <label id="self-email-wrap" class="is-hidden">Correo<input id="self-email" type="email" placeholder="correo@cliente.com" /></label>
-              <label id="self-phone-wrap" class="is-hidden">Teléfono<input id="self-phone" placeholder="8888-8888" /></label>
+              <label id="self-legal-name-wrap">Nombre completo<input id="self-legal-name" placeholder="Nombre legal" required /></label>
+              <label id="self-email-wrap">Correo<input id="self-email" type="email" placeholder="correo@cliente.com" /></label>
+              <label id="self-phone-wrap">Teléfono<input id="self-phone" placeholder="8888-8888" /></label>
             </div>
 
             <div class="booking-summary">
@@ -85,12 +85,17 @@
         <section class="self-book-history">
           <div class="history-header">
             <div>
-              <h2>Mis citas</h2>
-              <p class="section-help">Consulta tus próximas citas y el historial para dar seguimiento o evaluar el servicio recibido.</p>
+              <h2>Gestiona una cita</h2>
+              <p class="section-help">Cada reserva genera una referencia y un código de acceso. Los guardamos en este dispositivo para que puedas reprogramar o cancelar sin exponer tu cédula.</p>
             </div>
           </div>
+          <form id="manage-booking-form" class="manage-booking-form">
+            <label>Referencia de reserva<input id="manage-reference" placeholder="Ej: RES-7F3A9C2D" autocomplete="off" /></label>
+            <label>Código de acceso<input id="manage-access-code" placeholder="Ej: 8Q4L7M2P" autocomplete="off" /></label>
+            <button id="load-managed-booking" class="btn btn-primary" type="submit">Abrir reserva</button>
+          </form>
           <div id="history-list" class="history-list">
-            <p class="slot-list__empty">Escribe tu cédula para ver tus citas programadas e historial.</p>
+            <p class="slot-list__empty">Aquí verás tus reservas guardadas en este dispositivo o cualquier cita que abras con referencia y código.</p>
           </div>
         </section>
 

@@ -23,6 +23,7 @@ class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSe
     queryset = User.objects.all().order_by("id")
     serializer_class = ConfigurationUserSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("resolved_organization",)
 
     def get_queryset(self):
         allowed_ids = self.get_allowed_organization_ids()
@@ -31,13 +32,6 @@ class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSe
             .distinct()
             .order_by("id")
         )
-
-    def perform_create(self, serializer):
-        organization = serializer.validated_data.get("resolved_organization")
-        if organization:
-            self.validate_organization_payload(organization.id)
-        serializer.save()
-
 
 # Compatibilidad retroactiva:
 # algunas versiones del contenedor importan OrganizationCollaboratorView desde urls.py.
@@ -73,37 +67,25 @@ class UserPreferenceViewSet(viewsets.ModelViewSet):
 class UserRoleAssignmentViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = UserRoleAssignmentSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("organization",)
 
     def get_queryset(self):
         queryset = UserRoleAssignment.objects.select_related("user", "role", "organization").all()
         return self.scope_queryset(queryset)
 
     def perform_create(self, serializer):
-        organization = serializer.validated_data.get("organization")
-        if organization:
-            self.validate_organization_payload(organization.id)
+        self.validate_serializer_tenant_access(serializer)
         serializer.save(assigned_by=self.request.user)
 
 
 class OrganizationEmailInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = OrganizationEmailInboxSerializer
     permission_classes = [IsAuthenticated]
+    tenant_access_paths = ("organization",)
 
     def get_queryset(self):
         queryset = OrganizationEmailInbox.objects.all()
         return self.scope_queryset(queryset)
-
-    def perform_create(self, serializer):
-        organization = serializer.validated_data.get("organization")
-        if organization:
-            self.validate_organization_payload(organization.id)
-        serializer.save()
-
-    def perform_update(self, serializer):
-        organization = serializer.validated_data.get("organization") or serializer.instance.organization
-        if organization:
-            self.validate_organization_payload(organization.id)
-        serializer.save()
 
     @action(detail=False, methods=["post"], url_path="test-connection")
     def test_connection(self, request):
