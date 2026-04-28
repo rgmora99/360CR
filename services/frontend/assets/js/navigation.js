@@ -28,6 +28,18 @@
     };
   }
 
+  function getActiveOrganization(sessionData) {
+    const normalized = normalizeSession(sessionData);
+    const organizations = normalized.organizations || [];
+    const activeOrganizationId = Number(normalized.active_organization_id);
+    return organizations.find((item) => Number(item.id) === activeOrganizationId) || organizations[0] || null;
+  }
+
+  function getActiveModuleCodes(sessionData) {
+    const activeOrganization = getActiveOrganization(sessionData);
+    return new Set(Array.isArray(activeOrganization?.active_modules) ? activeOrganization.active_modules : []);
+  }
+
   window.AppSession = {
     getSession() {
       return normalizeSession(loadCachedSession());
@@ -43,6 +55,12 @@
     getActiveOrganizationId() {
       const session = this.getSession();
       return Number(session.active_organization_id) || null;
+    },
+    getActiveOrganization() {
+      return getActiveOrganization(this.getSession());
+    },
+    getActiveModuleCodes() {
+      return Array.from(getActiveModuleCodes(this.getSession()));
     },
     setActiveOrganizationId(organizationId) {
       const current = this.getSession();
@@ -114,7 +132,7 @@
     const payload = bodyText && contentType.includes('application/json') ? JSON.parse(bodyText) : {};
 
     if (!response.ok) {
-      throw new Error(payload?.detail || 'Sesión no disponible');
+      throw new Error(payload?.detail || 'Sesion no disponible');
     }
 
     return payload;
@@ -127,7 +145,7 @@
     });
 
     if (!response.ok && response.status !== 204) {
-      throw new Error('No fue posible cerrar la sesión.');
+      throw new Error('No fue posible cerrar la sesion.');
     }
   }
 
@@ -156,19 +174,96 @@
 
   function getTopbarState(sessionData) {
     const organizations = sessionData?.organizations || [];
-    const activeOrganizationId = Number(sessionData?.active_organization_id);
-    const activeOrganization = organizations.find((item) => item.id === activeOrganizationId) || organizations[0] || null;
+    const activeOrganization = getActiveOrganization(sessionData);
     const email = sessionData?.user?.email || 'Invitado';
     const userInfo = getUserNameParts(email);
 
     return {
       organizations,
       activeOrganizationId: activeOrganization?.id || '',
-      activeOrganizationName: activeOrganization?.name || 'Sin organización activa',
+      activeOrganizationName: activeOrganization?.name || 'Sin organizacion activa',
       userLabel: email,
       userDisplayName: userInfo.displayName,
       userInitials: userInfo.initials,
     };
+  }
+
+  function buildMenuItems() {
+    return [
+      { key: 'inicio', label: 'Inicio', href: '/dashboard.html', moduleCode: 'dashboard' },
+      {
+        key: 'clientes-menu',
+        label: 'Clientes',
+        children: [
+          { key: 'clientes-gestion', label: 'Gestion', href: '/customers.html', moduleCode: 'customers' },
+          { key: 'clientes-listado', label: 'Listado', href: '/customers-list.html', moduleCode: 'customers' },
+        ],
+      },
+      {
+        key: 'proveedores-menu',
+        label: 'Proveedores',
+        children: [
+          { key: 'proveedores-gestion', label: 'Gestion', href: '/suppliers.html', moduleCode: 'suppliers' },
+          { key: 'proveedores-listado', label: 'Listado', href: '/suppliers-list.html', moduleCode: 'suppliers' },
+        ],
+      },
+      {
+        key: 'agenda-menu',
+        label: 'Agenda',
+        children: [
+          { key: 'agenda-eventos', label: 'Eventos programados', href: '/agenda-eventos.html', moduleCode: 'agenda' },
+          { key: 'agenda-crear', label: 'Crear evento', href: '/agenda-crear.html', moduleCode: 'agenda' },
+        ],
+      },
+      {
+        key: 'facturacion-menu',
+        label: 'Facturacion',
+        children: [
+          { key: 'facturacion-listado', label: 'Listado de facturas', href: '/facturas.html', moduleCode: 'billing_basic' },
+          { key: 'facturacion-registrar', label: 'Registrar factura', href: '/facturacion.html', moduleCode: 'billing_basic' },
+          { key: 'facturacion-envios', label: 'Control de envios', href: '/envios.html', moduleCode: 'shipping' },
+          { key: 'facturacion-cxc', label: 'Cuentas x cobrar', href: '/cuentas-cobrar.html', moduleCode: 'receivables' },
+        ],
+      },
+      {
+        key: 'compras-menu',
+        label: 'Compras',
+        children: [
+          { key: 'compras-registrar', label: 'Registrar compra', href: '/compras.html', moduleCode: 'purchases' },
+          { key: 'compras-listado', label: 'Listado de compras', href: '/compras-listado.html', moduleCode: 'purchases' },
+          { key: 'bandeja-facturas', label: 'Bandeja facturas', href: '/bandeja-facturas.html', moduleCode: 'purchases' },
+          { key: 'impuestos', label: 'Impuestos RTS', href: '/impuestos.html', moduleCode: 'purchases' },
+        ],
+      },
+      { key: 'inventario', label: 'Inventario', href: '/inventario.html', moduleCode: 'inventory' },
+      { key: 'marketing', label: 'Marketing automatico', href: '#', moduleCode: 'campaigns' },
+      { key: 'fidelizacion', label: 'Fidelizacion de clientes', href: '/fidelizacion.html', moduleCode: 'loyalty' },
+      { key: 'configuraciones', label: 'Configuraciones', href: '/configuraciones.html', alwaysVisible: true },
+    ];
+  }
+
+  function filterMenuItemsByModules(menuItems, moduleCodes) {
+    return menuItems
+      .map((item) => {
+        if (item.alwaysVisible) {
+          return item;
+        }
+
+        if (item.children?.length) {
+          const filteredChildren = item.children.filter((child) => child.alwaysVisible || !child.moduleCode || moduleCodes.has(child.moduleCode));
+          if (!filteredChildren.length) {
+            return null;
+          }
+          return { ...item, children: filteredChildren };
+        }
+
+        if (!item.moduleCode || moduleCodes.has(item.moduleCode)) {
+          return item;
+        }
+
+        return null;
+      })
+      .filter(Boolean);
   }
 
   window.renderSharedNavigation = function renderSharedNavigation(options) {
@@ -184,64 +279,13 @@
 
     const cachedSession = window.AppSession.getSession();
     const topbarState = getTopbarState(cachedSession);
-
-    const menuItems = [
-      { key: 'inicio', label: 'Inicio', href: '/dashboard.html' },
-      {
-        key: 'clientes-menu',
-        label: 'Clientes',
-        children: [
-          { key: 'clientes-gestion', label: 'Gestion', href: '/customers.html' },
-          { key: 'clientes-listado', label: 'Listado', href: '/customers-list.html' },
-        ],
-      },
-      {
-        key: 'proveedores-menu',
-        label: 'Proveedores',
-        children: [
-          { key: 'proveedores-gestion', label: 'Gestion', href: '/suppliers.html' },
-          { key: 'proveedores-listado', label: 'Listado', href: '/suppliers-list.html' },
-        ],
-      },
-      {
-        key: 'agenda-menu',
-        label: 'Agenda',
-        children: [
-          { key: 'agenda-eventos', label: 'Eventos programados', href: '/agenda-eventos.html' },
-          { key: 'agenda-crear', label: 'Crear evento', href: '/agenda-crear.html' },
-        ],
-      },
-      {
-        key: 'facturacion-menu',
-        label: 'Facturación',
-        children: [
-          { key: 'facturacion-listado', label: 'Listado de facturas', href: '/facturas.html' },
-          { key: 'facturacion-registrar', label: 'Registrar factura', href: '/facturacion.html' },
-          { key: 'facturacion-envios', label: 'Control de envios', href: '/envios.html' },
-          { key: 'facturacion-cxc', label: 'Cuentas x cobrar', href: '/cuentas-cobrar.html' },
-        ],
-      },
-      {
-        key: 'compras-menu',
-        label: 'Compras',
-        children: [
-          { key: 'compras-registrar', label: 'Registrar compra', href: '/compras.html' },
-          { key: 'compras-listado', label: 'Listado de compras', href: '/compras-listado.html' },
-          { key: 'bandeja-facturas', label: 'Bandeja facturas', href: '/bandeja-facturas.html' },
-          { key: 'impuestos', label: 'Impuestos RTS', href: '/impuestos.html' },
-        ],
-      },
-      { key: 'inventario', label: 'Inventario', href: '/inventario.html' },
-      { key: 'marketing', label: 'Marketing automático', href: '#' },
-      { key: 'fidelizacion', label: 'Fidelización de clientes', href: '/fidelizacion.html' },
-      { key: 'configuraciones', label: 'Configuraciones', href: '/configuraciones.html' },
-    ];
+    const filteredMenuItems = filterMenuItemsByModules(buildMenuItems(), getActiveModuleCodes(cachedSession));
 
     if (cachedSession?.user?.is_system_owner) {
-      menuItems.push({ key: 'system-admin', label: 'Administración SaaS', href: '/saas-admin.html' });
+      filteredMenuItems.push({ key: 'system-admin', label: 'Administracion SaaS', href: '/saas-admin.html', alwaysVisible: true });
     }
 
-    const menuMarkup = menuItems
+    const menuMarkup = filteredMenuItems
       .map((item) => {
         if (item.children?.length) {
           const hasActiveChild = item.children.some((child) => child.key === activeModule);
@@ -271,7 +315,7 @@
       <div>
         <div class="logo-block">
           <strong>360CR</strong>
-          <p>Panel de operación</p>
+          <p>Panel de operacion</p>
         </div>
         <nav class="sidebar-nav">
           ${menuMarkup}
@@ -282,7 +326,7 @@
 
     topbar.className = 'topbar card';
     topbar.innerHTML = `
-      <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Abrir menú">☰</button>
+      <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Abrir menu">☰</button>
       <div class="workspace">
         <p class="label">Emprendimiento activo</p>
         <strong id="active-organization-name">${topbarState.activeOrganizationName}</strong>
@@ -322,7 +366,7 @@
             </div>
             <a class="profile-dropdown__item" href="/configuraciones.html#perfil" role="menuitem">Mi perfil</a>
             <a class="profile-dropdown__item" href="/configuraciones.html#preferencias" role="menuitem">Preferencias</a>
-            <button class="profile-dropdown__item profile-dropdown__item--danger" id="logout-button" type="button" role="menuitem">Cerrar sesión</button>
+            <button class="profile-dropdown__item profile-dropdown__item--danger" id="logout-button" type="button" role="menuitem">Cerrar sesion</button>
           </div>
         </div>
       </div>
@@ -335,7 +379,7 @@
     const overlay = document.createElement('button');
     overlay.type = 'button';
     overlay.className = 'sidebar-overlay';
-    overlay.setAttribute('aria-label', 'Cerrar menú');
+    overlay.setAttribute('aria-label', 'Cerrar menu');
     layout.appendChild(overlay);
 
     const toggleMenu = () => {
@@ -412,10 +456,10 @@
       }
       const currentSession = window.AppSession.getSession();
       window.AppSession.setActiveOrganizationId(selectedId);
-      const selected = (currentSession.organizations || []).find((org) => org.id === selectedId);
+      const selected = (currentSession.organizations || []).find((org) => Number(org.id) === selectedId);
       const nameNode = document.getElementById('active-organization-name');
       if (nameNode) {
-        nameNode.textContent = selected?.name || 'Sin organización activa';
+        nameNode.textContent = selected?.name || 'Sin organizacion activa';
       }
       sessionStorage.setItem(
         ORG_FLASH_KEY,
@@ -426,54 +470,11 @@
       );
       window.location.reload();
     });
-
-    fetchSession()
-      .then((sessionData) => {
-        const current = window.AppSession.getSession();
-        const preferredId = Number(current?.active_organization_id);
-        const mergedSession = {
-          ...sessionData,
-          active_organization_id: preferredId || sessionData?.active_organization_id,
-        };
-        const normalizedSession = window.AppSession.save(mergedSession);
-        localStorage.removeItem(LEGACY_ORG_KEY);
-        const refreshedState = getTopbarState(normalizedSession);
-        const orgNameNode = document.getElementById('active-organization-name');
-        const userNode = document.getElementById('active-user-label');
-        const userNameNode = document.getElementById('active-user-name');
-        const userAvatarNode = document.getElementById('profile-avatar');
-        const userDropdownNameNode = document.getElementById('profile-dropdown-name');
-        const userDropdownEmailNode = document.getElementById('profile-dropdown-email');
-        if (orgNameNode) {
-          orgNameNode.textContent = refreshedState.activeOrganizationName;
-        }
-        if (userNode) {
-          userNode.textContent = refreshedState.userLabel;
-        }
-        if (userNameNode) {
-          userNameNode.textContent = refreshedState.userDisplayName;
-        }
-        if (userAvatarNode) {
-          userAvatarNode.textContent = refreshedState.userInitials;
-        }
-        if (userDropdownNameNode) {
-          userDropdownNameNode.textContent = refreshedState.userDisplayName;
-        }
-        if (userDropdownEmailNode) {
-          userDropdownEmailNode.textContent = refreshedState.userLabel;
-        }
-        if (organizationSwitcher) {
-          organizationSwitcher.innerHTML = refreshedState.organizations
-            .map(
-              (org) =>
-                `<option value="${org.id}" ${org.id === refreshedState.activeOrganizationId ? 'selected' : ''}>${org.name}</option>`,
-            )
-            .join('');
-          if (!refreshedState.organizations.length) {
-            organizationSwitcher.innerHTML = '<option value="">Sin organizaciones</option>';
-          }
-        }
-      })
-      .catch((_error) => {});
   };
+
+  fetchSession()
+    .then((session) => {
+      window.AppSession.save(session);
+    })
+    .catch(() => null);
 })();

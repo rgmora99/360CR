@@ -1,6 +1,13 @@
 (function initSaasAdmin() {
   const $ = (id) => document.getElementById(id);
 
+  const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
+  const SOURCE_LABELS = {
+    plan: 'Plan',
+    addon: 'Add-on',
+    custom: 'Personalizado',
+  };
+
   const state = {
     session: null,
     overview: null,
@@ -11,6 +18,14 @@
     plans: [],
     subscriptions: [],
     flags: [],
+    pagination: {
+      organizations: { page: 1, size: 5 },
+      users: { page: 1, size: 5 },
+      memberships: { page: 1, size: 5 },
+      modules: { page: 1, size: 5 },
+      plans: { page: 1, size: 5 },
+      flags: { page: 1, size: 5 },
+    },
   };
 
   function request(path, options = {}) {
@@ -23,7 +38,14 @@
       const contentType = response.headers.get('content-type') || '';
       const payload = text && contentType.includes('application/json') ? JSON.parse(text) : null;
       if (!response.ok) {
-        throw new Error(payload?.detail || payload?.slug?.[0] || payload?.email?.[0] || payload?.non_field_errors?.[0] || text || 'No se pudo completar la acción.');
+        throw new Error(
+          payload?.detail ||
+            payload?.slug?.[0] ||
+            payload?.email?.[0] ||
+            payload?.non_field_errors?.[0] ||
+            text ||
+            'No se pudo completar la accion.',
+        );
       }
       return payload;
     });
@@ -71,6 +93,107 @@
     });
   }
 
+  function getSubscriptionByOrganizationId(organizationId) {
+    return state.subscriptions.find((item) => Number(item.organization) === Number(organizationId)) || null;
+  }
+
+  function getSelectedSubscription() {
+    const organizationId = Number($('subscription-organization').value);
+    return getSubscriptionByOrganizationId(organizationId);
+  }
+
+  function getPaginationSlice(key, rows) {
+    const config = state.pagination[key];
+    const size = Number(config?.size || 5);
+    const total = rows.length;
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    const page = Math.min(Math.max(Number(config?.page || 1), 1), totalPages);
+    const start = (page - 1) * size;
+    state.pagination[key] = { page, size };
+    return {
+      rows: rows.slice(start, start + size),
+      page,
+      size,
+      total,
+      totalPages,
+      start,
+    };
+  }
+
+  function buildPageButtons(page, totalPages) {
+    const pages = [];
+    if (totalPages <= 7) {
+      for (let current = 1; current <= totalPages; current += 1) {
+        pages.push(current);
+      }
+      return pages;
+    }
+
+    pages.push(1);
+    if (page > 3) pages.push('ellipsis-start');
+    for (let current = Math.max(2, page - 1); current <= Math.min(totalPages - 1, page + 1); current += 1) {
+      pages.push(current);
+    }
+    if (page < totalPages - 2) pages.push('ellipsis-end');
+    pages.push(totalPages);
+    return [...new Set(pages)];
+  }
+
+  function renderPaginator(key, targetId, total, page, size, totalPages) {
+    const target = $(targetId);
+    if (!target) return;
+
+    if (!total) {
+      target.innerHTML = '';
+      return;
+    }
+
+    const summaryStart = (page - 1) * size + 1;
+    const summaryEnd = Math.min(page * size, total);
+    const pageButtons = buildPageButtons(page, totalPages)
+      .map((item) => {
+        if (String(item).startsWith('ellipsis')) {
+          return '<span class="table-paginator__ellipsis">...</span>';
+        }
+        const isActive = Number(item) === page ? 'btn-primary' : 'btn-secondary';
+        return `<button class="btn ${isActive} table-paginator__button" type="button" data-page="${item}">${item}</button>`;
+      })
+      .join('');
+
+    target.innerHTML = `
+      <div class="table-paginator">
+        <div class="table-paginator__summary">Mostrando ${summaryStart}-${summaryEnd} de ${total} registros</div>
+        <div class="table-paginator__config">
+          <label class="table-paginator__size">
+            <span>Filas</span>
+            <select data-page-size>
+              ${PAGE_SIZE_OPTIONS.map((option) => `<option value="${option}" ${option === size ? 'selected' : ''}>${option}</option>`).join('')}
+            </select>
+          </label>
+          <div class="table-paginator__actions">
+            <button class="btn btn-secondary table-paginator__button" type="button" data-page="${Math.max(page - 1, 1)}" ${page === 1 ? 'disabled' : ''}>Anterior</button>
+            ${pageButtons}
+            <button class="btn btn-secondary table-paginator__button" type="button" data-page="${Math.min(page + 1, totalPages)}" ${page === totalPages ? 'disabled' : ''}>Siguiente</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    target.querySelectorAll('[data-page]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.pagination[key].page = Number(button.dataset.page);
+        renderAllDataViews();
+      });
+    });
+
+    const sizeSelect = target.querySelector('[data-page-size]');
+    sizeSelect?.addEventListener('change', () => {
+      state.pagination[key].size = Number(sizeSelect.value) || 5;
+      state.pagination[key].page = 1;
+      renderAllDataViews();
+    });
+  }
+
   function renderSummary() {
     const summary = state.overview?.summary || {};
     const stats = [
@@ -78,7 +201,7 @@
       ['Suscripciones', summary.subscriptions || 0],
       ['Activas', summary.active_subscriptions || 0],
       ['Usuarios', summary.users || 0],
-      ['Módulos', summary.modules || 0],
+      ['Modulos', summary.modules || 0],
       ['Planes', summary.plans || 0],
       ['Flags', summary.feature_flags || 0],
     ];
@@ -89,101 +212,208 @@
   }
 
   function renderSelectOptions(targetIds, rows, getLabel, includeEmptyLabel = '') {
-    const options = rows
-      .map((row) => `<option value="${row.id}">${escapeHtml(getLabel(row))}</option>`)
-      .join('');
+    const options = rows.map((row) => `<option value="${row.id}">${escapeHtml(getLabel(row))}</option>`).join('');
     targetIds.forEach((id) => {
-      $(id).innerHTML = (includeEmptyLabel ? `<option value="">${escapeHtml(includeEmptyLabel)}</option>` : '') + (options || `<option value="">Sin datos</option>`);
+      const node = $(id);
+      if (!node) return;
+      node.innerHTML = (includeEmptyLabel ? `<option value="">${escapeHtml(includeEmptyLabel)}</option>` : '') + (options || '<option value="">Sin datos</option>');
     });
   }
 
   function renderOrganizationsTable() {
-    $('organizations-body').innerHTML = state.organizations
-      .map((organization) => {
-        const subscription = state.subscriptions.find((item) => Number(item.organization) === Number(organization.id));
-        return `
-          <tr data-org-id="${organization.id}">
-            <td>${escapeHtml(organization.name)}</td>
-            <td>${escapeHtml(organization.slug)}</td>
-            <td>${escapeHtml(subscription?.plan_catalog_name || organization.subscription_plan_name || 'Sin plan')}</td>
-            <td>${escapeHtml(subscription?.status || organization.subscription_status || 'Sin suscripción')}</td>
-            <td>${escapeHtml(organization.memberships_count)}</td>
-          </tr>
-        `;
-      })
-      .join('') || '<tr><td colspan="5">No hay organizaciones registradas.</td></tr>';
+    const { rows, page, size, total, totalPages } = getPaginationSlice('organizations', state.organizations);
+    $('organizations-body').innerHTML =
+      rows
+        .map((organization) => {
+          const subscription = getSubscriptionByOrganizationId(organization.id);
+          return `
+            <tr data-org-id="${organization.id}">
+              <td>${escapeHtml(organization.name)}</td>
+              <td>${escapeHtml(organization.slug)}</td>
+              <td>${escapeHtml(subscription?.plan_catalog_name || organization.subscription_plan_name || 'Sin plan')}</td>
+              <td>${escapeHtml(subscription?.status || organization.subscription_status || 'Sin suscripcion')}</td>
+              <td>${escapeHtml(organization.memberships_count)}</td>
+            </tr>
+          `;
+        })
+        .join('') || '<tr><td colspan="5">No hay organizaciones registradas.</td></tr>';
+    renderPaginator('organizations', 'organizations-pagination', total, page, size, totalPages);
   }
 
   function renderUsersTable() {
-    $('users-body').innerHTML = state.users
-      .map((user) => {
-        const memberships = (user.memberships || []).map((membership) => `${membership.organization_name} (${membership.role})`).join(', ') || 'Sin accesos';
-        return `
-          <tr data-user-id="${user.id}">
-            <td>${escapeHtml(user.email || user.username)}</td>
-            <td>${user.is_active ? 'Activo' : 'Inactivo'}</td>
-            <td>${user.is_staff ? 'Sí' : 'No'}</td>
-            <td>${escapeHtml(memberships)}</td>
-          </tr>
-        `;
-      })
-      .join('') || '<tr><td colspan="4">No hay usuarios registrados.</td></tr>';
+    const { rows, page, size, total, totalPages } = getPaginationSlice('users', state.users);
+    $('users-body').innerHTML =
+      rows
+        .map((user) => {
+          const memberships = (user.memberships || []).map((membership) => `${membership.organization_name} (${membership.role})`).join(', ') || 'Sin accesos';
+          return `
+            <tr data-user-id="${user.id}">
+              <td>${escapeHtml(user.email || user.username)}</td>
+              <td>${user.is_active ? 'Activo' : 'Inactivo'}</td>
+              <td>${user.is_staff ? 'Si' : 'No'}</td>
+              <td>${escapeHtml(memberships)}</td>
+            </tr>
+          `;
+        })
+        .join('') || '<tr><td colspan="4">No hay usuarios registrados.</td></tr>';
+    renderPaginator('users', 'users-pagination', total, page, size, totalPages);
   }
 
   function renderMembershipsTable() {
-    $('memberships-body').innerHTML = state.memberships
-      .map(
-        (membership) => `
-          <tr data-membership-id="${membership.id}">
-            <td>${escapeHtml(membership.user_email)}</td>
-            <td>${escapeHtml(membership.organization_name)}</td>
-            <td>${escapeHtml(membership.role)}</td>
-          </tr>
-        `,
-      )
-      .join('') || '<tr><td colspan="3">No hay accesos registrados.</td></tr>';
+    const { rows, page, size, total, totalPages } = getPaginationSlice('memberships', state.memberships);
+    $('memberships-body').innerHTML =
+      rows
+        .map(
+          (membership) => `
+            <tr data-membership-id="${membership.id}">
+              <td>${escapeHtml(membership.user_email)}</td>
+              <td>${escapeHtml(membership.organization_name)}</td>
+              <td>${escapeHtml(membership.role)}</td>
+            </tr>
+          `,
+        )
+        .join('') || '<tr><td colspan="3">No hay accesos registrados.</td></tr>';
+    renderPaginator('memberships', 'memberships-pagination', total, page, size, totalPages);
   }
 
   function renderModulesList() {
-    $('modules-list').innerHTML = state.modules
-      .map(
-        (module) => `
-          <li data-module-id="${module.id}">
-            <strong>${escapeHtml(module.name)}</strong>
-            <span>${escapeHtml(module.code)} · ${escapeHtml(module.group)} · ${escapeHtml(module.route_hint || 'sin ruta')}</span>
-          </li>
-        `,
-      )
-      .join('') || '<li><span>Sin módulos.</span></li>';
+    const { rows, page, size, total, totalPages } = getPaginationSlice('modules', state.modules);
+    $('modules-list').innerHTML =
+      rows
+        .map(
+          (module) => `
+            <li data-module-id="${module.id}">
+              <strong>${escapeHtml(module.name)}</strong>
+              <span>${escapeHtml(module.code)} · ${escapeHtml(module.group)} · ${escapeHtml(module.route_hint || 'sin ruta')}</span>
+            </li>
+          `,
+        )
+        .join('') || '<li><span>Sin modulos.</span></li>';
+    renderPaginator('modules', 'modules-pagination', total, page, size, totalPages);
   }
 
   function renderPlansList() {
-    $('plans-list').innerHTML = state.plans
-      .map((plan) => {
-        const modules = (plan.modules_detail || []).map((item) => item.module_name).join(', ') || 'Sin módulos';
-        return `
-          <li data-plan-id="${plan.id}">
-            <strong>${escapeHtml(plan.name)}</strong>
-            <span>${escapeHtml(plan.code)} · CRC ${escapeHtml(plan.monthly_price)} mensual · ${escapeHtml(modules)}</span>
-          </li>
-        `;
-      })
-      .join('') || '<li><span>Sin planes.</span></li>';
+    const { rows, page, size, total, totalPages } = getPaginationSlice('plans', state.plans);
+    $('plans-list').innerHTML =
+      rows
+        .map((plan) => {
+          const modules = (plan.modules_detail || []).map((item) => item.module_name).join(', ') || 'Sin modulos';
+          return `
+            <li data-plan-id="${plan.id}">
+              <strong>${escapeHtml(plan.name)}</strong>
+              <span>${escapeHtml(plan.code)} · CRC ${escapeHtml(plan.monthly_price)} mensual · ${escapeHtml(modules)}</span>
+            </li>
+          `;
+        })
+        .join('') || '<li><span>Sin planes.</span></li>';
+    renderPaginator('plans', 'plans-pagination', total, page, size, totalPages);
   }
 
   function renderFlagsTable() {
-    $('flags-body').innerHTML = state.flags
-      .map(
-        (flag) => `
-          <tr data-flag-id="${flag.id}">
-            <td>${escapeHtml(flag.organization_name)}</td>
-            <td>${escapeHtml(flag.key)}</td>
-            <td>${escapeHtml(flag.module_name || 'General')}</td>
-            <td>${flag.is_enabled ? 'Activa' : 'Inactiva'}</td>
-          </tr>
-        `,
-      )
-      .join('') || '<tr><td colspan="4">No hay feature flags registradas.</td></tr>';
+    const { rows, page, size, total, totalPages } = getPaginationSlice('flags', state.flags);
+    $('flags-body').innerHTML =
+      rows
+        .map(
+          (flag) => `
+            <tr data-flag-id="${flag.id}">
+              <td>${escapeHtml(flag.organization_name)}</td>
+              <td>${escapeHtml(flag.key)}</td>
+              <td>${escapeHtml(flag.module_name || 'General')}</td>
+              <td>${flag.is_enabled ? 'Activa' : 'Inactiva'}</td>
+            </tr>
+          `,
+        )
+        .join('') || '<tr><td colspan="4">No hay feature flags registradas.</td></tr>';
+    renderPaginator('flags', 'flags-pagination', total, page, size, totalPages);
+  }
+
+  function renderSubscriptionModuleOptions() {
+    const subscription = getSelectedSubscription();
+    const linkedModuleIds = new Set((subscription?.active_modules || []).map((item) => Number(item.module)));
+    const availableModules = state.modules.filter((module) => !linkedModuleIds.has(Number(module.id)));
+    const select = $('subscription-module-select');
+
+    if (!select) return;
+
+    if (!availableModules.length) {
+      select.innerHTML = '<option value="">Todos los modulos ya estan asignados</option>';
+      return;
+    }
+
+    select.innerHTML = availableModules
+      .map((module) => `<option value="${module.id}">${escapeHtml(module.name)} (${escapeHtml(module.group)})</option>`)
+      .join('');
+  }
+
+  function getSubscriptionModuleBadgeClass(source, isEnabled) {
+    if (!isEnabled) return 'is-disabled';
+    if (source === 'plan') return 'is-plan';
+    if (source === 'addon') return 'is-addon';
+    return 'is-custom';
+  }
+
+  function renderSubscriptionModules() {
+    const subscription = getSelectedSubscription();
+    const list = $('subscription-modules-list');
+    if (!list) return;
+
+    if (!subscription) {
+      list.innerHTML = '<li class="saas-admin-empty-state">Selecciona o crea una suscripcion para administrar sus modulos.</li>';
+      renderSubscriptionModuleOptions();
+      return;
+    }
+
+    const modules = (subscription.active_modules || []).slice().sort((left, right) => {
+      if (left.is_enabled !== right.is_enabled) return left.is_enabled ? -1 : 1;
+      return String(left.module_name || '').localeCompare(String(right.module_name || ''));
+    });
+
+    if (!modules.length) {
+      list.innerHTML = '<li class="saas-admin-empty-state">Esta suscripcion aun no tiene modulos activos ni add-ons configurados.</li>';
+      renderSubscriptionModuleOptions();
+      return;
+    }
+
+    list.innerHTML = modules
+      .map((item) => {
+        const sourceLabel = SOURCE_LABELS[item.source] || item.source;
+        const enableLabel = item.is_enabled ? 'Desactivar' : 'Activar';
+        const enableAction = item.is_enabled ? 'disable' : 'enable';
+        const canRemove = item.source !== 'plan';
+        return `
+          <li>
+            <div class="subscription-module-card">
+              <div class="subscription-module-card__header">
+                <div>
+                  <strong>${escapeHtml(item.module_name)}</strong>
+                  <span>${escapeHtml(item.module_group)} · ${item.is_enabled ? 'Habilitado' : 'Deshabilitado'}</span>
+                </div>
+                <div class="subscription-module-card__meta">
+                  <span class="subscription-module-pill ${getSubscriptionModuleBadgeClass(item.source, item.is_enabled)}">${escapeHtml(sourceLabel)}</span>
+                </div>
+              </div>
+              <div class="subscription-module-card__actions">
+                <button class="btn btn-secondary" type="button" data-subscription-module-action="${enableAction}" data-subscription-module-id="${item.id}">${enableLabel}</button>
+                ${canRemove ? `<button class="btn btn-secondary" type="button" data-subscription-module-action="remove" data-subscription-module-id="${item.id}">Eliminar</button>` : ''}
+              </div>
+            </div>
+          </li>
+        `;
+      })
+      .join('');
+
+    renderSubscriptionModuleOptions();
+  }
+
+  function renderAllDataViews() {
+    renderOrganizationsTable();
+    renderUsersTable();
+    renderMembershipsTable();
+    renderModulesList();
+    renderPlansList();
+    renderFlagsTable();
+    renderSubscriptionModules();
+    bindInteractiveRows();
   }
 
   function resetOrganizationForm() {
@@ -239,7 +469,7 @@
   function hydrateOrganizationForm(organizationId) {
     const organization = state.organizations.find((item) => Number(item.id) === Number(organizationId));
     if (!organization) return;
-    const subscription = state.subscriptions.find((item) => Number(item.organization) === Number(organization.id));
+    const subscription = getSubscriptionByOrganizationId(organization.id);
 
     $('org-record-id').value = organization.id;
     $('org-name').value = organization.name || '';
@@ -254,6 +484,7 @@
     $('subscription-cycle').value = subscription?.billing_cycle || 'monthly';
     $('subscription-next-billing').value = subscription?.next_billing_date || '';
     $('subscription-base-price').value = subscription?.base_price || 0;
+    renderSubscriptionModules();
   }
 
   function hydrateUserForm(userId) {
@@ -356,14 +587,9 @@
     renderSelectOptions(['subscription-organization', 'membership-organization', 'flag-organization'], state.organizations, (item) => item.name);
     renderSelectOptions(['membership-user'], state.users, (item) => item.email || item.username);
     renderSelectOptions(['subscription-plan', 'plan-module-plan'], state.plans, (item) => item.name);
-    renderSelectOptions(['plan-module-module', 'flag-module'], state.modules, (item) => `${item.name} (${item.group})`, 'Sin módulo');
-    renderOrganizationsTable();
-    renderUsersTable();
-    renderMembershipsTable();
-    renderModulesList();
-    renderPlansList();
-    renderFlagsTable();
-    bindInteractiveRows();
+    renderSelectOptions(['plan-module-module', 'flag-module'], state.modules, (item) => `${item.name} (${item.group})`, 'Sin modulo');
+    renderSubscriptionModuleOptions();
+    renderAllDataViews();
   }
 
   async function ensureAccess() {
@@ -372,12 +598,12 @@
       state.session = session;
       window.AppSession?.save?.(session);
       if (!session?.user?.is_system_owner) {
-        setGuardState('Esta consola solo está disponible para el propietario del sistema.', true);
+        setGuardState('Esta consola solo esta disponible para el propietario del sistema.', true);
         return false;
       }
       return true;
     } catch (_error) {
-      setGuardState('Debes iniciar sesión con una cuenta del sistema para acceder a esta consola.', true);
+      setGuardState('Debes iniciar sesion con una cuenta del sistema para acceder a esta consola.', true);
       return false;
     }
   }
@@ -385,6 +611,77 @@
   function bindTabs() {
     document.querySelectorAll('[data-admin-tab]').forEach((button) => {
       button.addEventListener('click', () => activateTab(button.dataset.adminTab));
+    });
+  }
+
+  async function saveSubscriptionModule(entryId, payload, method = 'PATCH') {
+    await request(`/system-admin/subscription-modules/${entryId}/`, {
+      method,
+      body: JSON.stringify(payload),
+    });
+    await loadAll();
+    renderSubscriptionModules();
+  }
+
+  async function addSubscriptionModule() {
+    const subscription = getSelectedSubscription();
+    const moduleId = Number($('subscription-module-select').value);
+    if (!subscription?.id) {
+      setFeedback('subscription-feedback', 'Debes guardar o seleccionar una suscripcion antes de asignar modulos.', true);
+      return;
+    }
+    if (!moduleId) {
+      setFeedback('subscription-feedback', 'Selecciona un modulo disponible.', true);
+      return;
+    }
+
+    try {
+      await request('/system-admin/subscription-modules/', {
+        method: 'POST',
+        body: JSON.stringify({
+          subscription: subscription.id,
+          module: moduleId,
+          is_enabled: true,
+          source: $('subscription-module-source').value,
+        }),
+      });
+      await loadAll();
+      setFeedback('subscription-feedback', 'Modulo asignado correctamente a la suscripcion.');
+    } catch (error) {
+      setFeedback('subscription-feedback', error.message, true);
+    }
+  }
+
+  function bindSubscriptionModuleActions() {
+    $('subscription-modules-list').addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-subscription-module-action]');
+      if (!button) return;
+
+      const action = button.dataset.subscriptionModuleAction;
+      const entryId = Number(button.dataset.subscriptionModuleId);
+      const subscription = getSelectedSubscription();
+      const entry = (subscription?.active_modules || []).find((item) => Number(item.id) === entryId);
+      if (!entry) return;
+
+      try {
+        if (action === 'enable') {
+          await saveSubscriptionModule(entryId, { is_enabled: true });
+          setFeedback('subscription-feedback', `Modulo ${entry.module_name} activado correctamente.`);
+          return;
+        }
+        if (action === 'disable') {
+          await saveSubscriptionModule(entryId, { is_enabled: false });
+          setFeedback('subscription-feedback', `Modulo ${entry.module_name} desactivado correctamente.`);
+          return;
+        }
+        if (action === 'remove') {
+          await request(`/system-admin/subscription-modules/${entryId}/`, { method: 'DELETE' });
+          await loadAll();
+          setFeedback('subscription-feedback', `Modulo ${entry.module_name} eliminado de la suscripcion.`);
+        }
+      } catch (error) {
+        setFeedback('subscription-feedback', error.message, true);
+      }
     });
   }
 
@@ -396,7 +693,15 @@
     $('reset-plan-form').addEventListener('click', resetPlanForm);
     $('reset-flag-form').addEventListener('click', resetFlagForm);
 
-    $('subscription-organization').addEventListener('change', () => hydrateOrganizationForm($('subscription-organization').value));
+    $('subscription-organization').addEventListener('change', () => {
+      hydrateOrganizationForm($('subscription-organization').value);
+      renderSubscriptionModuleOptions();
+      renderSubscriptionModules();
+    });
+
+    $('add-subscription-module').addEventListener('click', () => {
+      addSubscriptionModule().catch(() => null);
+    });
 
     $('save-organization').addEventListener('click', async () => {
       const recordId = $('org-record-id').value;
@@ -413,7 +718,7 @@
         });
         await loadAll();
         resetOrganizationForm();
-        setFeedback('org-feedback', recordId ? 'Organización actualizada correctamente.' : 'Organización creada correctamente.');
+        setFeedback('org-feedback', recordId ? 'Organizacion actualizada correctamente.' : 'Organizacion creada correctamente.');
       } catch (error) {
         setFeedback('org-feedback', error.message, true);
       }
@@ -437,9 +742,12 @@
           body: JSON.stringify(payload),
         });
         await loadAll();
-        setFeedback('org-feedback', 'Suscripción guardada correctamente.');
+        if ($('subscription-organization').value) {
+          hydrateOrganizationForm($('subscription-organization').value);
+        }
+        setFeedback('subscription-feedback', 'Suscripcion guardada correctamente.');
       } catch (error) {
-        setFeedback('org-feedback', error.message, true);
+        setFeedback('subscription-feedback', error.message, true);
       }
     });
 
@@ -503,7 +811,7 @@
         });
         await loadAll();
         resetModuleForm();
-        setFeedback('catalog-feedback', recordId ? 'Módulo actualizado correctamente.' : 'Módulo creado correctamente.');
+        setFeedback('catalog-feedback', recordId ? 'Modulo actualizado correctamente.' : 'Modulo creado correctamente.');
       } catch (error) {
         setFeedback('catalog-feedback', error.message, true);
       }
@@ -547,7 +855,7 @@
           }),
         });
         await loadAll();
-        setFeedback('catalog-feedback', 'Módulo agregado al plan.');
+        setFeedback('catalog-feedback', 'Modulo agregado al plan.');
       } catch (error) {
         setFeedback('catalog-feedback', error.message, true);
       }
@@ -581,6 +889,7 @@
   async function bootstrap() {
     bindTabs();
     bindActions();
+    bindSubscriptionModuleActions();
     const allowed = await ensureAccess();
     if (!allowed) return;
 
@@ -593,6 +902,7 @@
       resetModuleForm();
       resetPlanForm();
       resetFlagForm();
+      renderSubscriptionModules();
     } catch (error) {
       setFeedback('system-admin-feedback', error.message, true);
     }

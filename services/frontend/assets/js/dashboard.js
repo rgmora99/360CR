@@ -1,6 +1,7 @@
 (function initDashboardNavigation() {
   const $ = (id) => document.getElementById(id);
-  const cards = document.querySelectorAll('.module-card[data-href]');
+  const cards = Array.from(document.querySelectorAll('.module-card'));
+  const emptyState = $('dashboard-modules-empty');
 
   async function request(path) {
     const response = await fetch(`/api${path}`, {
@@ -57,7 +58,7 @@
     const activityList = $('dashboard-activity-list');
     const items = Array.isArray(data?.recent_activity) ? data.recent_activity : [];
     if (!items.length) {
-      activityList.innerHTML = '<li>No hay actividad reciente para esta organización todavía.</li>';
+      activityList.innerHTML = '<li>No hay actividad reciente para esta organizacion todavia.</li>';
       return;
     }
 
@@ -67,6 +68,28 @@
           `<li><strong>${item.module}</strong>: ${item.title}<br /><span class="subtitle">${item.description || ''}${item.timestamp ? ` · ${formatWhen(item.timestamp)}` : ''}</span></li>`,
       )
       .join('');
+  }
+
+  function applyModuleVisibility() {
+    const session = window.AppSession?.getSession?.() || {};
+    const organizations = Array.isArray(session.organizations) ? session.organizations : [];
+    const activeOrganizationId = Number(session.active_organization_id);
+    const activeOrganization = organizations.find((item) => Number(item.id) === activeOrganizationId) || organizations[0] || null;
+    const activeModules = new Set(Array.isArray(activeOrganization?.active_modules) ? activeOrganization.active_modules : []);
+
+    let visibleCount = 0;
+    cards.forEach((card) => {
+      const moduleCode = card.dataset.moduleCode;
+      const isVisible = !moduleCode || activeModules.has(moduleCode);
+      card.hidden = !isVisible;
+      if (isVisible) {
+        visibleCount += 1;
+      }
+    });
+
+    if (emptyState) {
+      emptyState.hidden = visibleCount > 0;
+    }
   }
 
   async function loadDashboard() {
@@ -98,6 +121,8 @@
     });
   });
 
+  applyModuleVisibility();
+
   loadDashboard().catch((error) => {
     const activityList = $('dashboard-activity-list');
     if (activityList) {
@@ -106,11 +131,16 @@
   });
 
   document.getElementById('organization-switcher')?.addEventListener('change', () => {
+    applyModuleVisibility();
     loadDashboard().catch((error) => {
       const activityList = $('dashboard-activity-list');
       if (activityList) {
         activityList.innerHTML = `<li>${error.message}</li>`;
       }
     });
+  });
+
+  window.addEventListener('app:organization-changed', () => {
+    applyModuleVisibility();
   });
 })();
