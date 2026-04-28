@@ -11,7 +11,7 @@ from email.header import decode_header, make_header
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.mail import send_mail
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -1402,6 +1402,25 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         inbox.processed_at = timezone.now()
         inbox.save(update_fields=["status", "rejection_reason", "processed_at"])
         return Response(PurchaseInboxSerializer(inbox).data)
+
+    @action(detail=True, methods=["get"], url_path=r"attachments/(?P<attachment_id>[^/.]+)")
+    def attachment(self, request, pk=None, attachment_id=None):
+        inbox = self.get_object()
+        attachment = inbox.attachments.filter(id=attachment_id).first()
+        if not attachment or not attachment.file:
+            return Response({"detail": "El adjunto solicitado no existe para esta factura."}, status=404)
+
+        disposition = "attachment" if request.query_params.get("download") == "1" else "inline"
+        filename = attachment.original_filename or f"factura-{inbox.invoice_number}.pdf"
+        response = FileResponse(
+            attachment.file.open("rb"),
+            content_type=attachment.content_type or "application/pdf",
+            as_attachment=disposition == "attachment",
+            filename=filename,
+        )
+        response["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class TaxQuarterReportViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):

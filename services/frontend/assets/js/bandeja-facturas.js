@@ -161,14 +161,14 @@
     }
     if (result) {
       updateProgressFromStatus(result);
-    } else if (syncProgress) {
-      syncProgress.classList.remove('is-active');
     }
+    syncProgress?.classList.remove('is-active');
   }
 
   function updateProgressFromStatus(result) {
     if (!syncProgress) return;
-    syncProgress.classList.add('is-active');
+    const terminalStatuses = new Set(['completed', 'error', 'idle']);
+    syncProgress.classList.toggle('is-active', !terminalStatuses.has(result?.status));
     if (syncYear) syncYear.textContent = `Año ${result?.year || 2026}`;
     renderSyncRange(result?.date_from || '2026-01-01', result?.date_to || '2026-12-31');
     if (syncNewCount) syncNewCount.textContent = `Nuevas: ${result?.created || 0}`;
@@ -287,9 +287,28 @@
       : null;
     if (pdfAttachment || payload.has_pdf) {
       const fileName = pdfAttachment?.filename || payload.pdf_filename || `factura-${invoice.invoice_number}.pdf`;
+      const attachmentId = pdfAttachment?.id || payload.pdf_attachment_id || '';
+      const pdfUrl = attachmentId ? `/api/purchase-inbox/${invoice.id}/attachments/${attachmentId}/` : '';
       modalPdf.innerHTML = `
-        <p class="subtitle">${escapeHtml(fileName)}</p>
-        <p class="subtitle">PDF almacenado como adjunto seguro. ID: ${escapeHtml(pdfAttachment?.id || payload.pdf_attachment_id || 'pendiente')}</p>
+        <div class="invoice-modal__pdf-toolbar">
+          <div>
+            <strong>${escapeHtml(fileName)}</strong>
+            <span>Adjunto PDF seguro</span>
+          </div>
+          ${
+            pdfUrl
+              ? `<div class="invoice-modal__pdf-actions">
+                  <a class="btn btn-secondary" href="${pdfUrl}" target="_blank" rel="noopener">Abrir</a>
+                  <a class="btn btn-secondary" href="${pdfUrl}?download=1">Descargar</a>
+                </div>`
+              : ''
+          }
+        </div>
+        ${
+          pdfUrl
+            ? `<iframe class="invoice-modal__pdf" src="${pdfUrl}#toolbar=1&navpanes=0" title="PDF de factura ${escapeHtml(invoice.invoice_number)}"></iframe>`
+            : '<p class="subtitle">El PDF esta referenciado, pero aun no tiene una ruta disponible.</p>'
+        }
       `;
     } else {
       modalPdf.innerHTML = '<p class="subtitle">Esta factura no tiene PDF adjunto disponible.</p>';

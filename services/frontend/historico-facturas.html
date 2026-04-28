@@ -81,10 +81,37 @@
 
       .invoice-modal__pdf {
         width: 100%;
+        height: min(66vh, 720px);
         min-height: 520px;
         border: 1px solid rgba(148, 163, 184, 0.2);
         border-radius: 12px;
         background: #fff;
+      }
+
+      .invoice-modal__pdf-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .invoice-modal__pdf-toolbar strong,
+      .invoice-modal__pdf-toolbar span {
+        display: block;
+      }
+
+      .invoice-modal__pdf-toolbar span {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .invoice-modal__pdf-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
       }
 
       .invoice-modal__line {
@@ -102,6 +129,15 @@
       @media (max-width: 900px) {
         .invoice-modal__grid {
           grid-template-columns: 1fr;
+        }
+
+        .invoice-modal__pdf-toolbar {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .invoice-modal__pdf-actions {
+          justify-content: flex-start;
         }
       }
     </style>
