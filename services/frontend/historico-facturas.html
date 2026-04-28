@@ -25,7 +25,7 @@
       }
 
       .invoice-modal__panel {
-        width: min(1100px, 100%);
+        width: min(1280px, calc(100vw - 32px));
         max-height: 90vh;
         overflow: auto;
         background: #10192d;
@@ -45,11 +45,12 @@
 
       .invoice-modal__grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(260px, 0.85fr) minmax(360px, 1.15fr);
         gap: 20px;
       }
 
       .invoice-modal__card {
+        min-width: 0;
         padding: 16px;
         border-radius: 14px;
         background: rgba(15, 23, 42, 0.72);
@@ -81,6 +82,7 @@
 
       .invoice-modal__pdf {
         width: 100%;
+        max-width: 100%;
         height: min(66vh, 720px);
         min-height: 520px;
         border: 1px solid rgba(148, 163, 184, 0.2);
@@ -94,6 +96,7 @@
         justify-content: space-between;
         gap: 12px;
         margin-bottom: 12px;
+        min-width: 0;
       }
 
       .invoice-modal__pdf-toolbar strong,
@@ -107,11 +110,21 @@
         font-size: 0.85rem;
       }
 
+      .invoice-modal__pdf-toolbar > div:first-child {
+        min-width: 0;
+      }
+
+      .invoice-modal__pdf-toolbar strong {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
       .invoice-modal__pdf-actions {
         display: flex;
         gap: 8px;
         flex-wrap: wrap;
         justify-content: flex-end;
+        flex-shrink: 0;
       }
 
       .invoice-modal__line {
@@ -120,6 +133,13 @@
         gap: 12px;
         padding: 8px 0;
         border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+      }
+
+      .invoice-modal__line > div,
+      .invoice-modal__line strong {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       .invoice-modal__line:last-child {

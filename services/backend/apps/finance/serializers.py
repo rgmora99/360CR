@@ -1052,10 +1052,10 @@ class PurchaseSerializer(serializers.ModelSerializer):
 
 class PurchaseCreateSerializer(serializers.Serializer):
     organization = serializers.IntegerField()
-    supplier_name = serializers.CharField(max_length=200)
-    supplier_tax_id = serializers.CharField(max_length=50)
-    buyer_name = serializers.CharField(max_length=200)
-    buyer_tax_id = serializers.CharField(max_length=50)
+    supplier_name = serializers.CharField(max_length=200, allow_blank=True, required=False, default="")
+    supplier_tax_id = serializers.CharField(max_length=50, allow_blank=True, required=False, default="")
+    buyer_name = serializers.CharField(max_length=200, allow_blank=True, required=False, default="")
+    buyer_tax_id = serializers.CharField(max_length=50, allow_blank=True, required=False, default="")
     issue_date = serializers.DateField()
     invoice_number = serializers.CharField(max_length=40)
     numeric_key = serializers.RegexField(r"^\d{50}$")
@@ -1073,6 +1073,10 @@ class PurchaseCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("No tiene acceso a la organizacion seleccionada.")
         if not attrs["items"]:
             raise serializers.ValidationError("Debe incluir al menos una linea.")
+        attrs["supplier_name"] = (attrs.get("supplier_name") or "").strip() or "Proveedor no identificado"
+        attrs["supplier_tax_id"] = (attrs.get("supplier_tax_id") or "").strip() or "No disponible"
+        attrs["buyer_name"] = (attrs.get("buyer_name") or "").strip()
+        attrs["buyer_tax_id"] = (attrs.get("buyer_tax_id") or "").strip()
         subtotal = money(sum((item["unit_price"] * item["quantity"] for item in attrs["items"]), Decimal("0.00")))
         tax_total = money(attrs.get("tax_total", Decimal("0.00")))
         calculated_total = money(subtotal + tax_total)

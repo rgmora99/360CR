@@ -288,7 +288,8 @@
     if (pdfAttachment || payload.has_pdf) {
       const fileName = pdfAttachment?.filename || payload.pdf_filename || `factura-${invoice.invoice_number}.pdf`;
       const attachmentId = pdfAttachment?.id || payload.pdf_attachment_id || '';
-      const pdfUrl = attachmentId ? `/api/purchase-inbox/${invoice.id}/attachments/${attachmentId}/` : '';
+      const pdfUrl = attachmentId ? `/api/purchase-inbox/${invoice.id}/attachments/${attachmentId}/?organization_id=${orgId()}` : '';
+      const downloadUrl = pdfUrl ? `${pdfUrl}&download=1` : '';
       modalPdf.innerHTML = `
         <div class="invoice-modal__pdf-toolbar">
           <div>
@@ -299,7 +300,7 @@
             pdfUrl
               ? `<div class="invoice-modal__pdf-actions">
                   <a class="btn btn-secondary" href="${pdfUrl}" target="_blank" rel="noopener">Abrir</a>
-                  <a class="btn btn-secondary" href="${pdfUrl}?download=1">Descargar</a>
+                  <a class="btn btn-secondary" href="${downloadUrl}">Descargar</a>
                 </div>`
               : ''
           }
