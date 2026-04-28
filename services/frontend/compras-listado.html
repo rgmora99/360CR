@@ -14,9 +14,43 @@
     <style>
       .purchase-filters-grid {
         display: grid;
-        grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) repeat(2, minmax(150px, 1fr)) auto auto;
+        grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) repeat(2, minmax(150px, 1fr)) auto;
         gap: 0.8rem;
         align-items: end;
+      }
+
+      .purchase-summary-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(220px, 1fr));
+        gap: 16px;
+      }
+
+      .purchase-summary-card {
+        min-height: 126px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .purchase-summary-card--primary {
+        border-color: rgba(96, 165, 250, 0.42);
+        background: linear-gradient(135deg, rgba(29, 78, 216, 0.24), rgba(15, 23, 42, 0.76));
+      }
+
+      .purchase-summary-card__eyebrow {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .purchase-summary-card__value {
+        display: block;
+        margin: 8px 0;
+        font-size: clamp(1.8rem, 3vw, 2.45rem);
+        line-height: 1;
+        overflow-wrap: anywhere;
       }
 
       .purchase-detail-modal {
@@ -100,6 +134,10 @@
         .purchase-filters-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+
+        .purchase-summary-grid {
+          grid-template-columns: 1fr;
+        }
       }
 
       @media (max-width: 900px) {
@@ -134,9 +172,26 @@
               <label>Hasta
                 <input id="purchase-date-to" type="date" />
               </label>
-              <button class="btn btn-primary" id="reload-purchases" type="button">Recargar</button>
               <a class="btn btn-secondary" href="/compras.html">Registrar compra</a>
             </div>
+          </section>
+
+          <section class="purchase-summary-grid">
+            <article class="card purchase-summary-card purchase-summary-card--primary">
+              <span class="purchase-summary-card__eyebrow">Gasto visible</span>
+              <strong id="purchase-summary-total" class="purchase-summary-card__value">CRC 0.00</strong>
+              <p id="purchase-summary-caption" class="subtitle">Calculado con los filtros actuales.</p>
+            </article>
+            <article class="card purchase-summary-card">
+              <span class="purchase-summary-card__eyebrow">IVA registrado</span>
+              <strong id="purchase-summary-tax" class="purchase-summary-card__value">CRC 0.00</strong>
+              <p class="subtitle">Impuesto acumulado en las compras visibles.</p>
+            </article>
+            <article class="card purchase-summary-card">
+              <span class="purchase-summary-card__eyebrow">Compras visibles</span>
+              <strong id="purchase-summary-count" class="purchase-summary-card__value">0</strong>
+              <p id="purchase-summary-average" class="subtitle">Promedio: CRC 0.00</p>
+            </article>
           </section>
 
           <section class="card">

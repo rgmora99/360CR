@@ -13,6 +13,11 @@
   const purchaseDetailExtra = $('purchase-detail-extra');
   const purchaseDetailLines = $('purchase-detail-lines');
   const purchaseDetailDocument = $('purchase-detail-document');
+  const purchaseSummaryTotal = $('purchase-summary-total');
+  const purchaseSummaryTax = $('purchase-summary-tax');
+  const purchaseSummaryCount = $('purchase-summary-count');
+  const purchaseSummaryAverage = $('purchase-summary-average');
+  const purchaseSummaryCaption = $('purchase-summary-caption');
   const purchasesPager = window.TablePaginator?.create({
     key: 'purchases',
     tableBody: $('purchases-body'),
@@ -99,6 +104,8 @@
       return matchesText && matchesFrom && matchesTo;
     });
 
+    updatePurchaseSummary(filtered);
+
     if (purchasesPager) {
       purchasesPager.update(filtered);
     } else {
@@ -121,6 +128,34 @@
           .join('') || '<tr><td colspan="7">Sin compras registradas.</td></tr>';
     }
 
+  }
+
+  function updatePurchaseSummary(rows) {
+    if (!purchaseSummaryTotal || !purchaseSummaryTax || !purchaseSummaryCount || !purchaseSummaryAverage) return;
+    const totalsByCurrency = rows.reduce((acc, item) => {
+      const currency = item.currency || 'CRC';
+      if (!acc[currency]) {
+        acc[currency] = { total: 0, tax: 0, count: 0 };
+      }
+      acc[currency].total += Number(item.total || 0);
+      acc[currency].tax += Number(item.tax_total || 0);
+      acc[currency].count += 1;
+      return acc;
+    }, {});
+    const preferredCurrency = totalsByCurrency.CRC ? 'CRC' : Object.keys(totalsByCurrency)[0] || 'CRC';
+    const summary = totalsByCurrency[preferredCurrency] || { total: 0, tax: 0, count: 0 };
+    const average = summary.count ? summary.total / summary.count : 0;
+    purchaseSummaryTotal.textContent = formatMoney(summary.total, preferredCurrency);
+    purchaseSummaryTax.textContent = formatMoney(summary.tax, preferredCurrency);
+    purchaseSummaryCount.textContent = String(rows.length);
+    purchaseSummaryAverage.textContent = `Promedio: ${formatMoney(average, preferredCurrency)}`;
+    if (purchaseSummaryCaption) {
+      const currencyCount = Object.keys(totalsByCurrency).length;
+      purchaseSummaryCaption.textContent =
+        currencyCount > 1
+          ? `Mostrando ${preferredCurrency}; hay compras visibles en ${currencyCount} monedas.`
+          : 'Calculado con los filtros actuales.';
+    }
   }
 
   function openPurchaseDetail(purchase) {
@@ -320,10 +355,6 @@
         syncNameFromPadron('buyer-tax-id', 'buyer-name', 'comprador').catch(() => null);
       }, 250);
     });
-  }
-
-  if ($('reload-purchases')) {
-    $('reload-purchases').addEventListener('click', () => loadPurchases().catch((error) => setFeedback(error.message, true)));
   }
 
   purchaseSearchInput?.addEventListener('input', applyPurchaseFilters);
