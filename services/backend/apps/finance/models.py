@@ -1,8 +1,11 @@
+import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 from apps.customers.models import Customer
 from apps.suppliers.models import Supplier
@@ -10,6 +13,12 @@ from apps.tenants.models import Organization
 
 SHIPMENT_OWN_COURIER = "own_courier"
 SHIPMENT_CORREOS_CR = "correos_cr"
+
+
+def purchase_inbox_attachment_upload_to(instance, filename):
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    safe_extension = extension[:12] or "bin"
+    return f"purchase-inbox/{instance.inbox_invoice.organization_id}/{uuid.uuid4()}.{safe_extension}"
 
 
 class Category(models.Model):
@@ -306,6 +315,39 @@ class PurchaseInboxInvoice(models.Model):
                 name="uq_purchase_inbox_org_numeric_key",
             )
         ]
+
+
+class PurchaseInboxAttachment(models.Model):
+    TYPE_PDF = "pdf"
+    TYPE_CHOICES = [
+        (TYPE_PDF, "PDF"),
+    ]
+
+    inbox_invoice = models.ForeignKey(PurchaseInboxInvoice, on_delete=models.CASCADE, related_name="attachments")
+    attachment_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default=TYPE_PDF)
+    original_filename = models.CharField(max_length=255, blank=True)
+    file = models.FileField(upload_to=purchase_inbox_attachment_upload_to)
+    content_type = models.CharField(max_length=120, blank=True, default="application/pdf")
+    size_bytes = models.PositiveIntegerField(default=0)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
+
+    @classmethod
+    def default_expires_at(cls):
+        return timezone.now() + timedelta(days=getattr(settings, "PURCHASE_INBOX_ATTACHMENT_RETENTION_DAYS", 90))
+
+    @classmethod
+    def cleanup_expired(cls):
+        deleted_count = 0
+        for attachment in cls.objects.filter(expires_at__lt=timezone.now()).iterator():
+            if attachment.file:
+                attachment.file.delete(save=False)
+            attachment.delete()
+            deleted_count += 1
+        return deleted_count
 
 
 class TaxReport(models.Model):

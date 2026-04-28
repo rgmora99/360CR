@@ -1,5 +1,4 @@
 import email
-import base64
 import imaplib
 import logging
 import threading
@@ -10,6 +9,7 @@ from decimal import Decimal
 from email.header import decode_header, make_header
 
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.http import HttpResponse
 from django.utils import timezone
@@ -20,7 +20,7 @@ from rest_framework.response import Response
 
 from apps.configuration.models import OrganizationEmailInbox
 from apps.customers.models import Customer
-from apps.finance.models import Invoice, Product, Purchase, PurchaseInboxInvoice, TaxReport
+from apps.finance.models import Invoice, Product, Purchase, PurchaseInboxAttachment, PurchaseInboxInvoice, TaxReport
 from apps.finance.serializers import (
     build_customer_credit_summary,
     build_customer_shipping_summary,
@@ -30,8 +30,10 @@ from apps.finance.serializers import (
     InvoiceSerializer,
     ProductSerializer,
     PurchaseCreateSerializer,
+    PurchaseInboxSyncSerializer,
     PurchaseInboxSerializer,
     PurchaseSerializer,
+    TaxQuarterReportCreateSerializer,
     TaxReportSerializer,
 )
 from apps.loyalty.models import LoyaltyMember
@@ -442,7 +444,7 @@ def _fetch_email_invoice_payloads(inbox, date_from, date_to, max_messages=SYNC_M
                     continue
                 if attachments["pdf_payload"]:
                     payload["pdf_filename"] = attachments["pdf_filename"] or "factura.pdf"
-                    payload["pdf_base64"] = base64.b64encode(attachments["pdf_payload"]).decode("ascii")
+                    payload["pdf_content"] = attachments["pdf_payload"]
                 payloads.append(payload)
                 if progress_key:
                     _increment_sync_progress(progress_key, processed_messages=1)
@@ -475,6 +477,7 @@ def _fetch_email_invoice_payloads(inbox, date_from, date_to, max_messages=SYNC_M
 
 
 def _sync_email_invoices_for_organization(organization_id, date_from, date_to, limit=SYNC_MAX_MESSAGES, progress_key=None):
+    PurchaseInboxAttachment.cleanup_expired()
     inboxes = OrganizationEmailInbox.objects.filter(organization_id=organization_id, is_active=True).order_by("-is_primary", "id")
     if not inboxes.exists():
         return {
@@ -552,13 +555,20 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
             has_more = has_more or inbox_total_candidates > inbox_scanned_messages
             errors.extend(f"{inbox.email}: {error}" for error in inbox_errors)
             for payload in payloads:
+                pdf_content = payload.get("pdf_content")
+                pdf_filename = payload.get("pdf_filename", "")
                 inbox_payload = _serialize_json_safe(
                     {
                         "items": payload["items"],
                         "inbox_email": inbox.email,
-                        "pdf_filename": payload.get("pdf_filename", ""),
-                        "pdf_base64": payload.get("pdf_base64", ""),
+                        "pdf_filename": pdf_filename,
+                        "has_pdf": bool(pdf_content),
                         "document_type": payload.get("document_type", ""),
+                        "subtotal": payload["subtotal"],
+                        "tax_total": payload["tax_total"],
+                        "total": payload["total"],
+                        "currency": payload["currency"],
+                        "exchange_rate": payload["exchange_rate"],
                     }
                 )
                 defaults = {
@@ -582,6 +592,28 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
                     numeric_key=payload["numeric_key"],
                     defaults=defaults,
                 )
+                if pdf_content:
+                    for old_attachment in invoice.attachments.filter(attachment_type=PurchaseInboxAttachment.TYPE_PDF):
+                        if old_attachment.file:
+                            old_attachment.file.delete(save=False)
+                        old_attachment.delete()
+                    attachment = PurchaseInboxAttachment(
+                        inbox_invoice=invoice,
+                        attachment_type=PurchaseInboxAttachment.TYPE_PDF,
+                        original_filename=pdf_filename or f"factura-{invoice.invoice_number}.pdf",
+                        content_type="application/pdf",
+                        size_bytes=len(pdf_content),
+                        expires_at=PurchaseInboxAttachment.default_expires_at(),
+                    )
+                    attachment.file.save(attachment.original_filename, ContentFile(pdf_content), save=True)
+                    invoice.payload = {
+                        **(invoice.payload or {}),
+                        "has_pdf": True,
+                        "pdf_filename": attachment.original_filename,
+                        "pdf_attachment_id": attachment.id,
+                    }
+                    invoice.save(update_fields=["payload"])
+                    defaults["payload"] = invoice.payload
                 if was_created:
                     created += 1
                     if progress_key:
@@ -1193,7 +1225,7 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = PurchaseInboxSerializer
 
     def get_queryset(self):
-        queryset = PurchaseInboxInvoice.objects.select_related("purchase")
+        queryset = PurchaseInboxInvoice.objects.select_related("purchase").prefetch_related("attachments")
         queryset = self.scope_queryset(queryset)
         bucket = self.request.query_params.get("bucket", "inbox")
         status_filter = self.request.query_params.get("status")
@@ -1217,26 +1249,23 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="sync")
     def sync(self, request):
-        organization_id = request.data.get("organization") or request.query_params.get("organization_id")
-        organization_id = self.validate_organization_payload(organization_id)
         default_date_from = datetime(SYNC_TARGET_YEAR, 1, 1).date()
         default_date_to = datetime(SYNC_TARGET_YEAR, 12, 31).date()
-        date_from_raw = request.data.get("date_from") or request.query_params.get("date_from") or default_date_from.isoformat()
-        date_to_raw = request.data.get("date_to") or request.query_params.get("date_to") or default_date_to.isoformat()
-        limit = request.data.get("limit") or request.query_params.get("limit") or SYNC_MAX_MESSAGES
-        try:
-            date_from = _parse_sync_date(date_from_raw, default_date_from)
-            date_to = _parse_sync_date(date_to_raw, default_date_to)
-        except (TypeError, ValueError):
-            return Response({"detail": "Los parametros de fecha son invalidos. Usa YYYY-MM-DD."}, status=400)
-        try:
-            limit = max(1, min(int(limit), SYNC_MAX_BATCH_SIZE))
-        except (TypeError, ValueError):
-            return Response({"detail": "El parametro limit es invalido."}, status=400)
-        if date_from > date_to:
-            return Response({"detail": "La fecha inicial no puede ser mayor a la fecha final."}, status=400)
-        if date_from.year != SYNC_TARGET_YEAR or date_to.year != SYNC_TARGET_YEAR:
-            return Response({"detail": f"Solo se permite sincronizar fechas del {SYNC_TARGET_YEAR}."}, status=400)
+        serializer = PurchaseInboxSyncSerializer(
+            data={
+                "organization": request.data.get("organization") or request.query_params.get("organization_id"),
+                "date_from": request.data.get("date_from") or request.query_params.get("date_from") or default_date_from.isoformat(),
+                "date_to": request.data.get("date_to") or request.query_params.get("date_to") or default_date_to.isoformat(),
+                "limit": request.data.get("limit") or request.query_params.get("limit") or SYNC_MAX_MESSAGES,
+            },
+            context={"request": request, "target_year": SYNC_TARGET_YEAR, "max_limit": SYNC_MAX_BATCH_SIZE},
+        )
+        serializer.is_valid(raise_exception=True)
+        params = serializer.validated_data
+        organization_id = params["organization"]
+        date_from = params["date_from"]
+        date_to = params["date_to"]
+        limit = params["limit"]
         progress_key = _build_sync_progress_key(organization_id, date_from, date_to, limit)
         current_progress = _get_sync_progress(progress_key)
         if current_progress and current_progress.get("status") == "running":
@@ -1282,13 +1311,34 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="sync-status")
     def sync_status(self, request):
-        organization_id = request.query_params.get("organization_id")
-        organization_id = self.validate_organization_payload(organization_id)
         default_date_from = datetime(SYNC_TARGET_YEAR, 1, 1).date()
         default_date_to = datetime(SYNC_TARGET_YEAR, 12, 31).date()
-        date_from = _parse_sync_date(request.query_params.get("date_from"), default_date_from)
-        date_to = _parse_sync_date(request.query_params.get("date_to"), default_date_to)
-        limit = max(1, min(int(request.query_params.get("limit") or SYNC_MAX_MESSAGES), SYNC_MAX_BATCH_SIZE))
+        serializer = PurchaseInboxSyncSerializer(
+            data={
+                "organization": request.query_params.get("organization_id"),
+                "date_from": request.query_params.get("date_from") or default_date_from.isoformat(),
+                "date_to": request.query_params.get("date_to") or default_date_to.isoformat(),
+                "limit": request.query_params.get("limit") or SYNC_MAX_MESSAGES,
+            },
+            context={"request": request, "target_year": SYNC_TARGET_YEAR, "max_limit": SYNC_MAX_BATCH_SIZE},
+        )
+        try:
+            is_valid = serializer.is_valid()
+        except (TypeError, ValueError):
+            return Response({"detail": "Parametros de sincronizacion invalidos. Usa fechas YYYY-MM-DD y limit numerico."}, status=400)
+        if not is_valid:
+            return Response(
+                {
+                    "detail": "Parametros de sincronizacion invalidos. Usa fechas YYYY-MM-DD y un limit numerico dentro del rango permitido.",
+                    "errors": serializer.errors,
+                },
+                status=400,
+            )
+        params = serializer.validated_data
+        organization_id = params["organization"]
+        date_from = params["date_from"]
+        date_to = params["date_to"]
+        limit = params["limit"]
         progress_key = _build_sync_progress_key(organization_id, date_from, date_to, limit)
         progress = _get_sync_progress(progress_key)
         if not progress:
@@ -1325,6 +1375,7 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             "currency": inbox.currency,
             "exchange_rate": inbox.exchange_rate,
             "tax_total": inbox.tax_total,
+            "total": inbox.total,
             "source": "inbox",
             "items": inbox.payload.get("items") or [{"description": "Factura electrónica", "unit_price": inbox.subtotal, "quantity": "1.000"}],
         }
@@ -1362,11 +1413,12 @@ class TaxQuarterReportViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet
         return self.scope_queryset(queryset)
 
     def create(self, request, *args, **kwargs):
-        organization_id = request.data.get("organization")
-        self.validate_organization_payload(organization_id)
-
-        year = int(request.data.get("year"))
-        quarter = int(request.data.get("quarter"))
+        input_serializer = TaxQuarterReportCreateSerializer(data=request.data, context={"request": request})
+        input_serializer.is_valid(raise_exception=True)
+        params = input_serializer.validated_data
+        organization_id = params["organization"]
+        year = params["year"]
+        quarter = params["quarter"]
         start_month = (quarter - 1) * 3 + 1
         end_month = start_month + 2
 
@@ -1380,7 +1432,7 @@ class TaxQuarterReportViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet
         taxes = sum((p.tax_total for p in purchases), start=Decimal("0.00"))
         total = sum((p.total for p in purchases), start=Decimal("0.00"))
 
-        rts_factor = Decimal(str(request.data.get("rts_factor")))
+        rts_factor = params["rts_factor"]
         estimated_tax = (subtotal * rts_factor).quantize(Decimal("0.01"))
         due_month = end_month + 1 if end_month < 12 else 1
         due_year = year if due_month != 1 else year + 1
@@ -1389,7 +1441,7 @@ class TaxQuarterReportViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet
             organization_id=organization_id,
             year=year,
             quarter=quarter,
-            economic_activity=request.data.get("economic_activity"),
+            economic_activity=params["economic_activity"],
             rts_factor=rts_factor,
             purchases_subtotal=subtotal,
             purchases_tax=taxes,

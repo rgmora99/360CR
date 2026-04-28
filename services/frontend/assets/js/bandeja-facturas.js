@@ -282,12 +282,14 @@
           .join('')
       : '<p class="subtitle">No hay líneas detalladas para esta factura.</p>';
 
-    if (payload.pdf_base64) {
-      const pdfSrc = `data:application/pdf;base64,${payload.pdf_base64}`;
-      const fileName = payload.pdf_filename || `factura-${invoice.invoice_number}.pdf`;
+    const pdfAttachment = Array.isArray(invoice.attachments)
+      ? invoice.attachments.find((attachment) => attachment.type === 'pdf')
+      : null;
+    if (pdfAttachment || payload.has_pdf) {
+      const fileName = pdfAttachment?.filename || payload.pdf_filename || `factura-${invoice.invoice_number}.pdf`;
       modalPdf.innerHTML = `
         <p class="subtitle">${escapeHtml(fileName)}</p>
-        <iframe class="invoice-modal__pdf" src="${pdfSrc}" title="PDF de factura"></iframe>
+        <p class="subtitle">PDF almacenado como adjunto seguro. ID: ${escapeHtml(pdfAttachment?.id || payload.pdf_attachment_id || 'pendiente')}</p>
       `;
     } else {
       modalPdf.innerHTML = '<p class="subtitle">Esta factura no tiene PDF adjunto disponible.</p>';

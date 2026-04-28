@@ -85,6 +85,9 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+PURCHASE_INBOX_ATTACHMENT_RETENTION_DAYS = int(os.getenv("PURCHASE_INBOX_ATTACHMENT_RETENTION_DAYS", "90"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")

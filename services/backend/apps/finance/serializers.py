@@ -1007,9 +1007,15 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
 
 class PurchaseItemWriteSerializer(serializers.Serializer):
-    description = serializers.CharField(max_length=220)
-    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2)
-    quantity = serializers.DecimalField(max_digits=12, decimal_places=3)
+    description = serializers.CharField(max_length=220, trim_whitespace=True)
+    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    quantity = serializers.DecimalField(max_digits=12, decimal_places=3, min_value=Decimal("0.001"))
+
+    def validate_description(self, value):
+        clean_value = (value or "").strip()
+        if len(clean_value) < 2:
+            raise serializers.ValidationError("La descripcion debe tener al menos 2 caracteres.")
+        return clean_value
 
 
 class PurchaseItemSerializer(serializers.ModelSerializer):
@@ -1055,7 +1061,8 @@ class PurchaseCreateSerializer(serializers.Serializer):
     numeric_key = serializers.RegexField(r"^\d{50}$")
     currency = serializers.RegexField(r"^[A-Z]{3}$", required=False, default="CRC")
     exchange_rate = serializers.DecimalField(max_digits=10, decimal_places=4, required=False, default=Decimal("1.0000"))
-    tax_total = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, default=Decimal("0.00"))
+    tax_total = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, default=Decimal("0.00"), min_value=Decimal("0.00"))
+    total = serializers.DecimalField(max_digits=14, decimal_places=2, required=False)
     source = serializers.CharField(max_length=20, required=False, default="manual")
     items = PurchaseItemWriteSerializer(many=True)
 
@@ -1063,9 +1070,22 @@ class PurchaseCreateSerializer(serializers.Serializer):
         request = self.context.get("request")
         has_access = Membership.objects.filter(user=request.user, organization_id=attrs["organization"]).exists()
         if not has_access:
-            raise serializers.ValidationError("No tiene acceso a la organización seleccionada.")
+            raise serializers.ValidationError("No tiene acceso a la organizacion seleccionada.")
         if not attrs["items"]:
-            raise serializers.ValidationError("Debe incluir al menos una línea.")
+            raise serializers.ValidationError("Debe incluir al menos una linea.")
+        subtotal = money(sum((item["unit_price"] * item["quantity"] for item in attrs["items"]), Decimal("0.00")))
+        tax_total = money(attrs.get("tax_total", Decimal("0.00")))
+        calculated_total = money(subtotal + tax_total)
+        expected_total = attrs.get("total")
+        if expected_total is not None and abs(money(expected_total) - calculated_total) > Decimal("0.01"):
+            raise serializers.ValidationError(
+                {
+                    "total": (
+                        "El total no coincide con subtotal + impuestos. "
+                        f"Calculado: {calculated_total}, recibido: {money(expected_total)}."
+                    )
+                }
+            )
         return attrs
 
     @transaction.atomic
@@ -1073,6 +1093,7 @@ class PurchaseCreateSerializer(serializers.Serializer):
         validated_data["organization_id"] = validated_data.pop("organization")
         items = validated_data.pop("items")
         tax_total = validated_data.pop("tax_total", Decimal("0.00"))
+        validated_data.pop("total", None)
         subtotal = Decimal("0.00")
         purchase = Purchase.objects.create(**validated_data)
         for idx, item in enumerate(items, start=1):
@@ -1116,13 +1137,79 @@ class PurchaseCreateSerializer(serializers.Serializer):
 
 class PurchaseInboxSerializer(serializers.ModelSerializer):
     status_label = serializers.CharField(source="get_status_display", read_only=True)
+    attachments = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseInboxInvoice
         fields = "__all__"
+
+    def get_attachments(self, obj):
+        return [
+            {
+                "id": attachment.id,
+                "type": attachment.attachment_type,
+                "filename": attachment.original_filename,
+                "content_type": attachment.content_type,
+                "size_bytes": attachment.size_bytes,
+                "expires_at": attachment.expires_at,
+            }
+            for attachment in obj.attachments.all()
+        ]
 
 
 class TaxReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaxReport
         fields = "__all__"
+
+
+class TaxQuarterReportCreateSerializer(serializers.Serializer):
+    organization = serializers.IntegerField(min_value=1)
+    year = serializers.IntegerField(min_value=2000, max_value=2100)
+    quarter = serializers.IntegerField(min_value=1, max_value=4)
+    economic_activity = serializers.CharField(max_length=120, trim_whitespace=True)
+    rts_factor = serializers.DecimalField(max_digits=8, decimal_places=4, min_value=Decimal("0.0001"))
+
+    def validate_economic_activity(self, value):
+        clean_value = (value or "").strip()
+        if len(clean_value) < 3:
+            raise serializers.ValidationError("La actividad economica debe tener al menos 3 caracteres.")
+        return clean_value
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        organization_id = attrs["organization"]
+        if request and request.user.is_authenticated:
+            has_access = Membership.objects.filter(user=request.user, organization_id=organization_id).exists()
+            if not has_access:
+                raise serializers.ValidationError({"organization": "No tiene acceso a la organizacion seleccionada."})
+        if TaxReport.objects.filter(organization_id=organization_id, year=attrs["year"], quarter=attrs["quarter"]).exists():
+            raise serializers.ValidationError({"quarter": "Ya existe un reporte para esa organizacion, anio y trimestre."})
+        return attrs
+
+
+class PurchaseInboxSyncSerializer(serializers.Serializer):
+    organization = serializers.IntegerField(min_value=1)
+    date_from = serializers.DateField()
+    date_to = serializers.DateField()
+    limit = serializers.IntegerField(min_value=1)
+
+    def validate_limit(self, value):
+        max_limit = self.context.get("max_limit")
+        if max_limit and value > max_limit:
+            raise serializers.ValidationError(f"El limite maximo permitido es {max_limit}.")
+        return value
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        target_year = self.context.get("target_year")
+        organization_id = attrs["organization"]
+        if request and request.user.is_authenticated:
+            has_access = Membership.objects.filter(user=request.user, organization_id=organization_id).exists()
+            if not has_access:
+                raise serializers.ValidationError({"organization": "No tiene acceso a la organizacion seleccionada."})
+        if attrs["date_from"] > attrs["date_to"]:
+            raise serializers.ValidationError({"date_from": "La fecha inicial no puede ser mayor a la fecha final."})
+        if target_year and (attrs["date_from"].year != target_year or attrs["date_to"].year != target_year):
+            raise serializers.ValidationError({"date_from": f"Solo se permite sincronizar fechas del {target_year}."})
+        return attrs
