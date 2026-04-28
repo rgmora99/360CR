@@ -1,13 +1,3 @@
-.page-wrap {
-  display: grid;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.module-header h1 {
-  margin: 0.7rem 0;
-}
-
 .quick-actions {
   display: flex;
   gap: 0.6rem;
@@ -21,24 +11,6 @@
   align-items: end;
 }
 
-label {
-  display: grid;
-  gap: 0.35rem;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-input,
-select,
-textarea {
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(13, 22, 41, 0.9);
-  color: var(--txt);
-  padding: 0.65rem;
-}
-
 .grid {
   display: grid;
   grid-template-columns: 1.1fr 1fr;
@@ -49,7 +21,6 @@ textarea {
   grid-template-columns: 1fr;
 }
 
-.form-grid,
 .self-book-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -67,35 +38,6 @@ textarea {
   width: auto;
 }
 
-.actions {
-  margin-top: 0.9rem;
-  display: flex;
-  gap: 0.6rem;
-}
-
-.table-wrap {
-  overflow: auto;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th,
-td {
-  text-align: left;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0.7rem 0.4rem;
-}
-
-td .btn {
-  padding: 0.4rem 0.65rem;
-  font-size: 0.8rem;
-  margin-right: 0.35rem;
-  margin-bottom: 0.35rem;
-}
-
 .table-inline-note {
   display: inline-flex;
   align-items: center;
@@ -105,6 +47,10 @@ td .btn {
   color: var(--muted);
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(15, 23, 42, 0.72);
+}
+
+td .btn {
+  margin-bottom: 0.35rem;
 }
 
 .self-book-card {
@@ -141,7 +87,6 @@ td .btn {
 
 @media (max-width: 800px) {
   .filters,
-  .form-grid,
   .self-book-grid {
     grid-template-columns: 1fr;
   }

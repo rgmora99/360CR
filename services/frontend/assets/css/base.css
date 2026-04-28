@@ -1,31 +1,75 @@
 :root {
-  --bg: #070b14;
-  --muted: #9aa8c7;
-  --txt: #e8f0ff;
-  --accent: #5ca0ff;
-  --accent-2: #7af7d7;
+  --color-bg: #070b14;
+  --color-bg-elevated: #0d1629;
+  --color-bg-panel: #0a1222;
+  --color-text: #e8f0ff;
+  --color-text-muted: #9aa8c7;
+  --color-accent: #5ca0ff;
+  --color-accent-strong: #7b8cff;
+  --color-accent-2: #7af7d7;
+  --color-success: #8af4b1;
+  --color-warning: #ffd27b;
+  --color-danger: #ff9c9c;
+  --color-danger-strong: #ff6b81;
+  --color-surface-border: rgba(255, 255, 255, 0.08);
+  --color-control-border: rgba(255, 255, 255, 0.2);
+  --color-overlay: rgba(4, 8, 18, 0.72);
+  --gradient-page: radial-gradient(circle at top right, #10203d 0%, var(--color-bg) 50%);
+  --gradient-card: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  --gradient-panel: linear-gradient(180deg, rgba(18, 28, 49, 0.96), rgba(11, 18, 34, 0.98));
+  --gradient-primary: linear-gradient(120deg, var(--color-accent), var(--color-accent-strong));
+  --gradient-success: linear-gradient(90deg, var(--color-accent), var(--color-accent-2));
+  --font-family-base: 'Inter', sans-serif;
+  --font-size-xs: 0.72rem;
+  --font-size-sm: 0.8rem;
+  --font-size-md: 0.9rem;
+  --font-size-lg: 1rem;
+  --font-size-xl: 1.2rem;
+  --space-1: 0.25rem;
+  --space-2: 0.35rem;
+  --space-3: 0.55rem;
+  --space-4: 0.75rem;
+  --space-5: 1rem;
+  --space-6: 1.2rem;
+  --space-7: 1.5rem;
+  --space-8: 2rem;
+  --space-page-x: 6vw;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-modal: 22px;
+  --radius-pill: 999px;
+  --shadow-card: 0 16px 36px rgba(8, 14, 29, 0.45);
+  --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.45);
+
+  --bg: var(--color-bg);
+  --muted: var(--color-text-muted);
+  --txt: var(--color-text);
+  --accent: var(--color-accent);
+  --accent-2: var(--color-accent-2);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: 'Inter', sans-serif;
-  background: radial-gradient(circle at top right, #10203d 0%, var(--bg) 50%);
-  color: var(--txt);
+  font-family: var(--font-family-base);
+  background: var(--gradient-page);
+  color: var(--color-text);
 }
 
 .container {
-  padding: 3rem 6vw;
+  padding: 3rem var(--space-page-x);
 }
 
 .subtitle {
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
 
 .footer {
   margin-top: 3rem;
   text-align: center;
-  color: var(--muted);
-  padding: 1.2rem;
+  color: var(--color-text-muted);
+  padding: var(--space-6);
 }
