@@ -24,6 +24,7 @@
     prefillAgendaEventId: null,
     shipment: null,
     shipmentServiceProductId: null,
+    enabledModules: new Set(),
   };
 
   const apiBase = () => '/api';
@@ -122,6 +123,34 @@
   function setShipmentRequested(nextValue) {
     const checked = Boolean(nextValue);
     if ($('requires-shipment')) $('requires-shipment').checked = checked;
+  }
+
+  function hasModule(moduleCode) {
+    return state.enabledModules.has(moduleCode);
+  }
+
+  function syncModuleVisibility() {
+    state.enabledModules = new Set(window.AppSession?.getActiveModuleCodes?.() || []);
+    document.querySelectorAll('[data-module-code]').forEach((element) => {
+      const moduleCode = element.dataset.moduleCode;
+      element.classList.toggle('hidden', Boolean(moduleCode) && !hasModule(moduleCode));
+    });
+
+    const loyaltyEnabled = hasModule('loyalty');
+    $('points-option-card')?.classList.toggle('hidden', !loyaltyEnabled);
+    $('points-modal')?.classList.toggle('hidden', !loyaltyEnabled);
+    if (!loyaltyEnabled && $('pay-with-points')) {
+      $('pay-with-points').checked = false;
+      $('pay-with-points').disabled = true;
+    }
+
+    const shippingEnabled = hasModule('shipping');
+    $('shipment-option-card')?.classList.toggle('hidden', !shippingEnabled);
+    if (!shippingEnabled) {
+      setShipmentRequested(false);
+      removeShipmentServiceLine();
+      state.shipment = emptyShipment();
+    }
   }
 
   function getBillingPrefill() {
@@ -289,7 +318,7 @@
     }
 
     const credit = customer.credit || null;
-    const loyaltyHtml = customer.loyalty?.program_name
+    const loyaltyHtml = hasModule('loyalty') && customer.loyalty?.program_name
       ? `
         <div class="customer-meta-chip">
           <span class="customer-meta-chip__label">Fidelización</span>
@@ -297,13 +326,13 @@
           <small>${Number(customer.loyalty.available_points || 0)} pts disponibles</small>
         </div>
       `
-      : `
+      : hasModule('loyalty') ? `
         <div class="customer-meta-chip customer-meta-chip--muted">
           <span class="customer-meta-chip__label">Fidelización</span>
           <strong>Sin membresía</strong>
           <small>No hay programa activo</small>
         </div>
-      `;
+      ` : '';
 
     const creditHtml = credit
       ? `
@@ -566,6 +595,15 @@
     const subtotal = calculateSubtotal();
     const requiredPoints = Math.round(subtotal);
 
+    if (!hasModule('loyalty')) {
+      checkbox.checked = false;
+      checkbox.disabled = true;
+      card.classList.add('is-disabled');
+      detailButton.disabled = true;
+      confirmButton.disabled = true;
+      return;
+    }
+
     $('points-customer-name').textContent = customer?.legal_name || 'Sin cliente seleccionado';
     $('points-available').textContent = `${availablePoints} pts`;
     $('points-required').textContent = `${requiredPoints || 0} pts`;
@@ -634,8 +672,15 @@
 
   function shipmentIsComplete() {
     if (!shipmentRequested()) return false;
+    if (!hasModule('shipping')) return false;
     ensureShipmentState();
     if (!state.shipment?.recipient_name || !state.shipment?.address_line_1 || !state.shipment?.city || !state.shipment?.phone_primary) {
+      return false;
+    }
+    if (state.shipment.recipient_name.length < 3 || state.shipment.address_line_1.length < 8 || state.shipment.city.length < 2) {
+      return false;
+    }
+    if (state.shipment.phone_primary.replace(/\D/g, '').length < 8) {
       return false;
     }
     if (state.shipment.method === SHIPMENT_CORREOS_CR && !state.shipment.correos_branch) {
@@ -697,6 +742,12 @@
 
   function syncShipmentUI() {
     const card = $('shipment-option-card');
+    if (!hasModule('shipping')) {
+      setShipmentRequested(false);
+      removeShipmentServiceLine();
+      card?.classList.add('hidden');
+      return;
+    }
     const checked = shipmentRequested();
     const shippable = hasShippableLines();
     const serviceProduct = findShipmentServiceProduct();
@@ -777,6 +828,12 @@
 
   function syncShipmentUI() {
     const card = $('shipment-option-card');
+    if (!hasModule('shipping')) {
+      setShipmentRequested(false);
+      removeShipmentServiceLine();
+      card?.classList.add('hidden');
+      return;
+    }
     const checked = shipmentRequested();
     const shippable = hasShippableLines();
     const serviceProduct = findShipmentServiceProduct();
@@ -853,6 +910,7 @@
   }
 
   function openPointsModal() {
+    if (!hasModule('loyalty')) return;
     syncPointsPaymentUI();
     openModal('points-modal', 'confirm-points-usage');
   }
@@ -926,6 +984,10 @@
   $('payment-method').addEventListener('change', syncInstallmentsUI);
 
   $('pay-with-points').addEventListener('change', () => {
+    if (!hasModule('loyalty')) {
+      $('pay-with-points').checked = false;
+      return;
+    }
     if ($('pay-with-points').checked) {
       $('payment-method').value = '03';
       syncInstallmentsUI();
@@ -934,6 +996,11 @@
   });
 
   function handleShipmentToggleChange(checked) {
+    if (checked && !hasModule('shipping')) {
+      setShipmentRequested(false);
+      setFeedback('El modulo de envios no esta activo para esta organizacion.', true);
+      return;
+    }
     setShipmentRequested(checked);
     if (checked) {
       ensureShipmentState();
@@ -986,6 +1053,18 @@
 
     if (!shipment.recipient_name || !shipment.address_line_1 || !shipment.city || !shipment.phone_primary) {
       setFeedback('Completa persona que recibe, direccion principal, ciudad y telefono principal para guardar el envio.', true);
+      return;
+    }
+    if (shipment.recipient_name.length < 3) {
+      setFeedback('La persona que recibe debe tener al menos 3 caracteres.', true);
+      return;
+    }
+    if (shipment.address_line_1.length < 8) {
+      setFeedback('La direccion principal debe ser mas especifica.', true);
+      return;
+    }
+    if (shipment.phone_primary.replace(/\D/g, '').length < 8) {
+      setFeedback('El telefono principal debe tener al menos 8 digitos.', true);
       return;
     }
     if (shipment.method === SHIPMENT_CORREOS_CR && !shipment.correos_branch) {
@@ -1056,6 +1135,10 @@
       }
 
       if (shipmentRequested()) {
+        if (!hasModule('shipping')) {
+          setShipmentRequested(false);
+          return setFeedback('El modulo de envios no esta activo para esta organizacion.', true);
+        }
         if (!hasShippableLines()) {
           return setFeedback('El envio solo se puede solicitar cuando hay productos fisicos en la factura.', true);
         }
@@ -1094,7 +1177,7 @@
         exchange_rate: 1,
         notes: $('notes').value.trim(),
         items: buildPayloadLines(),
-        use_loyalty_points: $('pay-with-points').checked,
+        use_loyalty_points: hasModule('loyalty') && $('pay-with-points').checked,
         shipment_required: shipmentRequested(),
         shipment_details: shipmentRequested() ? state.shipment : {},
       };
@@ -1124,10 +1207,12 @@
 
   syncInstallmentsUI();
   renderOrganizations();
+  syncModuleVisibility();
   resetInvoiceForm();
 
   $('organization-id').addEventListener('change', () => {
     window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
+    syncModuleVisibility();
     clearCustomerSelection();
     Promise.all([loadProducts(), loadCustomers()]).catch((error) => setFeedback(error.message, true));
   });

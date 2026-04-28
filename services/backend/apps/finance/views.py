@@ -35,6 +35,7 @@ from apps.finance.serializers import (
     PurchaseSerializer,
     TaxQuarterReportCreateSerializer,
     TaxReportSerializer,
+    organization_has_enabled_module,
 )
 from apps.loyalty.models import LoyaltyMember
 from apps.tenants.access import OrganizationScopedViewMixin
@@ -1056,6 +1057,7 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             return Response({"detail": "organization_id inválido"}, status=400)
         self.validate_organization_payload(organization_id_int)
 
+        loyalty_enabled = organization_has_enabled_module(organization_id_int, "loyalty")
         queryset = Customer.objects.filter(organization_id=organization_id_int, status=Customer.STATUS_ACTIVE)
         if term:
             queryset = queryset.filter(legal_name__icontains=term) | queryset.filter(tax_id__icontains=term)
@@ -1071,6 +1073,8 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
                 program__is_active=True,
             )
             .order_by("id")
+            if loyalty_enabled
+            else []
         )
         members_by_customer = {}
         for member in members:
@@ -1103,8 +1107,18 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="shipments")
     def shipments(self, request):
+        organization_id = request.query_params.get("organization_id")
+        try:
+            organization_id_int = int(organization_id)
+        except (TypeError, ValueError):
+            return Response({"detail": "organization_id es requerido y debe ser numerico."}, status=400)
+        self.validate_organization_payload(organization_id_int)
+        if not organization_has_enabled_module(organization_id_int, "shipping"):
+            return Response({"detail": "El modulo de envios no esta activo para esta organizacion."}, status=403)
+
         queryset = (
             self.get_queryset()
+            .filter(organization_id=organization_id_int)
             .filter(shipment_required=True)
             .order_by("-issue_date", "-id")
         )
@@ -1135,17 +1149,27 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="shipment-status")
     def shipment_status(self, request, pk=None):
         invoice = self.get_object()
+        if not organization_has_enabled_module(invoice.organization_id, "shipping"):
+            return Response({"detail": "El modulo de envios no esta activo para esta organizacion."}, status=403)
         if not invoice.shipment_required:
             return Response({"detail": "La factura seleccionada no tiene envio configurado."}, status=400)
 
         status_value = str(request.data.get("status") or "").strip().lower()
         if status_value not in SHIPMENT_STATUS_LABELS:
             return Response({"detail": "Estado de envio invalido."}, status=400)
+        status_note = str(request.data.get("status_note") or "").strip()
+        if len(status_note) > 300:
+            return Response({"detail": "La nota de envio no debe superar 300 caracteres."}, status=400)
+        if status_value == "delivered":
+            guide = str((_normalize_shipment_details(invoice).get("correos_guide") or "")).strip()
+            method = str((_normalize_shipment_details(invoice).get("method") or "")).strip()
+            if method == Invoice.SHIPMENT_CORREOS_CR and not guide:
+                return Response({"detail": "Para marcar como entregado por Correos registra primero la guia o referencia."}, status=400)
 
         shipment = _normalize_shipment_details(invoice)
         shipment["status"] = status_value
         shipment["status_updated_at"] = timezone.now().isoformat()
-        shipment["status_note"] = str(request.data.get("status_note") or "").strip()
+        shipment["status_note"] = status_note
         if status_value == "delivered":
             shipment["delivered_at"] = timezone.now().isoformat()
         elif status_value != "delivered":

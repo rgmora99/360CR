@@ -20,7 +20,7 @@ from apps.finance.models import (
 )
 from apps.loyalty.models import LoyaltyMember, LoyaltyPointEntry, LoyaltyRule
 from apps.suppliers.models import Supplier
-from apps.tenants.models import Membership, Organization
+from apps.tenants.models import Membership, Organization, Subscription, SubscriptionModule
 
 
 def money(value):
@@ -30,6 +30,19 @@ def money(value):
 MAX_CREATE_RETRIES = 3
 SUPPORTED_INVOICE_SALE_CONDITIONS = {"01", "02"}
 SUPPORTED_INVOICE_CURRENCIES = {"CRC", "USD"}
+MODULE_LOYALTY = "loyalty"
+MODULE_SHIPPING = "shipping"
+
+
+def organization_has_enabled_module(organization_id, module_code):
+    return SubscriptionModule.objects.filter(
+        subscription__organization_id=organization_id,
+        subscription__is_active=True,
+        subscription__status__in=[Subscription.STATUS_TRIAL, Subscription.STATUS_ACTIVE],
+        is_enabled=True,
+        module__code=module_code,
+        module__is_active=True,
+    ).exists()
 
 
 def build_installment_amounts(total, installment_count):
@@ -656,7 +669,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
                 {"shipment_details": "Para Correos de Costa Rica debes indicar la sucursal o referencia principal."}
             )
 
-        attrs["shipment_details"] = {
+        normalized = {
             "method": method,
             "status": "pending",
             "recipient_name": str(shipment.get("recipient_name") or "").strip(),
@@ -675,6 +688,37 @@ class InvoiceCreateSerializer(serializers.Serializer):
             "delivered_at": None,
             "status_updated_at": None,
         }
+        length_limits = {
+            "recipient_name": 160,
+            "address_line_1": 180,
+            "address_line_2": 180,
+            "city": 80,
+            "state": 80,
+            "country": 80,
+            "postal_code": 20,
+            "phone_primary": 30,
+            "phone_secondary": 30,
+            "contact_reference": 160,
+            "delivery_notes": 300,
+            "correos_branch": 120,
+            "correos_guide": 80,
+        }
+        for field, max_length in length_limits.items():
+            if len(normalized[field]) > max_length:
+                raise serializers.ValidationError({"shipment_details": f"{field} no debe superar {max_length} caracteres."})
+
+        phone_digits = "".join(char for char in normalized["phone_primary"] if char.isdigit())
+        if len(phone_digits) < 8:
+            raise serializers.ValidationError({"shipment_details": "El telefono principal debe tener al menos 8 digitos."})
+
+        if len(normalized["recipient_name"]) < 3:
+            raise serializers.ValidationError({"shipment_details": "La persona que recibe debe tener al menos 3 caracteres."})
+        if len(normalized["address_line_1"]) < 8:
+            raise serializers.ValidationError({"shipment_details": "La direccion principal debe ser mas especifica."})
+        if len(normalized["city"]) < 2:
+            raise serializers.ValidationError({"shipment_details": "La ciudad o canton debe tener al menos 2 caracteres."})
+
+        attrs["shipment_details"] = normalized
 
     def _validate_customer_credit(self, customer, organization_id, invoice_total):
         if not customer.credit_approved:
@@ -726,6 +770,21 @@ class InvoiceCreateSerializer(serializers.Serializer):
             has_access = Membership.objects.filter(user=request.user, organization_id=attrs["organization"]).exists()
             if not has_access:
                 raise serializers.ValidationError("No tiene acceso a la organización seleccionada.")
+
+        loyalty_enabled = organization_has_enabled_module(attrs["organization"], MODULE_LOYALTY)
+        shipping_enabled = organization_has_enabled_module(attrs["organization"], MODULE_SHIPPING)
+        attrs["loyalty_enabled"] = loyalty_enabled
+
+        if attrs.get("use_loyalty_points") and not loyalty_enabled:
+            raise serializers.ValidationError({"use_loyalty_points": "El modulo de fidelizacion no esta activo para esta organizacion."})
+        if not loyalty_enabled:
+            attrs["use_loyalty_points"] = False
+
+        if attrs.get("shipment_required") and not shipping_enabled:
+            raise serializers.ValidationError({"shipment_required": "El modulo de envios no esta activo para esta organizacion."})
+        if not shipping_enabled:
+            attrs["shipment_required"] = False
+            attrs["shipment_details"] = {}
 
         if not attrs["items"]:
             raise serializers.ValidationError("Debe incluir al menos una línea.")
@@ -939,7 +998,7 @@ class InvoiceCreateSerializer(serializers.Serializer):
         invoice.loyalty_redeemed_points = redeemed_points
         invoice.loyalty_awarded_points = (
             0
-            if redeemed_points > 0
+            if redeemed_points > 0 or not validated_data.get("loyalty_enabled")
             else self._accrue_loyalty_points(
                 organization_id=organization_id,
                 customer_id=validated_data["customer"],
