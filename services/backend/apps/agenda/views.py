@@ -22,6 +22,20 @@ from apps.tenants.models import Membership, Organization
 User = get_user_model()
 
 
+def _parse_positive_int(value, field_name, required=False):
+    if value in (None, ""):
+        if required:
+            raise ValueError(f"{field_name} es requerido.")
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} debe ser un numero entero valido.")
+    if parsed < 1:
+        raise ValueError(f"{field_name} debe ser mayor a cero.")
+    return parsed
+
+
 def _collaborator_public_label(collaborator):
     if not collaborator:
         return "Especialista por confirmar"
@@ -128,14 +142,24 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
         status_filter = self.request.query_params.get("status")
         if status_filter:
+            if status_filter not in dict(AgendaEvent.STATUS_CHOICES):
+                return queryset.none()
             queryset = queryset.filter(status=status_filter)
 
         service_id = self.request.query_params.get("service_id")
         if service_id:
+            try:
+                service_id = _parse_positive_int(service_id, "service_id")
+            except ValueError:
+                return queryset.none()
             queryset = queryset.filter(service_id=service_id)
 
         collaborator_id = self.request.query_params.get("collaborator_id")
         if collaborator_id:
+            try:
+                collaborator_id = _parse_positive_int(collaborator_id, "collaborator_id")
+            except ValueError:
+                return queryset.none()
             queryset = queryset.filter(collaborator_id=collaborator_id)
 
         date_from = self.request.query_params.get("date_from")
@@ -226,14 +250,26 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             return Response({"detail": "organization_id, collaborator_id y date son requeridos."}, status=400)
 
         try:
-            organization = Organization.objects.get(id=int(organization_id))
-            collaborator = User.objects.get(id=int(collaborator_id))
-        except (TypeError, ValueError, Organization.DoesNotExist, User.DoesNotExist):
+            organization_id_int = _parse_positive_int(organization_id, "organization_id", required=True)
+            collaborator_id_int = _parse_positive_int(collaborator_id, "collaborator_id", required=True)
+            organization = Organization.objects.get(id=organization_id_int)
+            collaborator = User.objects.get(id=collaborator_id_int)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        except (Organization.DoesNotExist, User.DoesNotExist):
             return Response({"detail": "Parámetros inválidos."}, status=400)
+
+        if not Membership.objects.filter(user_id=collaborator.id, organization_id=organization.id).exists():
+            return Response({"detail": "El colaborador no pertenece a esta organizacion."}, status=400)
 
         day = parse_date(date_value)
         if not day:
             return Response({"detail": "date inválida. Use formato YYYY-MM-DD."}, status=400)
+
+        try:
+            exclude_event_id_int = _parse_positive_int(exclude_event_id, "exclude_event_id") if exclude_event_id else None
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
 
         service = None
         duration_minutes = 0
@@ -241,12 +277,14 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         if service_id:
             try:
                 service = Product.objects.get(
-                    id=int(service_id),
+                    id=_parse_positive_int(service_id, "service_id", required=True),
                     organization=organization,
                     product_type=Product.TYPE_SERVICE,
                     is_active=True,
                 )
-            except (TypeError, ValueError, Product.DoesNotExist):
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=400)
+            except Product.DoesNotExist:
                 return Response({"detail": "El servicio seleccionado no existe para esta organización."}, status=400)
             duration_minutes = int(service.service_duration_minutes or 0)
             if duration_minutes <= 0:
@@ -256,18 +294,19 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         start_of_day = timezone.make_aware(datetime.combine(day, datetime.min.time()), tz)
         end_of_day = start_of_day + timedelta(days=1)
 
-        occupied_events = list(
+        occupied_events_queryset = (
             AgendaEvent.objects.filter(
                 organization=organization,
                 collaborator=collaborator,
                 starts_at__lt=end_of_day,
                 ends_at__gt=start_of_day,
             )
-            .exclude(id=exclude_event_id) 
             .exclude(status=AgendaEvent.STATUS_CANCELLED)
             .order_by("starts_at")
-            .values("starts_at", "ends_at")
         )
+        if exclude_event_id_int:
+            occupied_events_queryset = occupied_events_queryset.exclude(id=exclude_event_id_int)
+        occupied_events = list(occupied_events_queryset.values("starts_at", "ends_at"))
         weekday = agenda_weekday_for_date(day)
         availability = CollaboratorAvailability.objects.filter(
             organization=organization,
@@ -298,16 +337,15 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             else:
                 requested_start_at = timezone.make_aware(datetime.combine(day, requested_start_time), tz)
                 requested_end_at = timezone.make_aware(datetime.combine(day, requested_end_time), tz)
-                slot_conflicts = (
-                    AgendaEvent.objects.filter(
-                        organization=organization,
-                        collaborator=collaborator,
-                        starts_at__lt=requested_end_at,
-                        ends_at__gt=requested_start_at,
-                    )
-                    .exclude(status=AgendaEvent.STATUS_CANCELLED)
-                    .exists()
-                )
+                slot_conflicts_queryset = AgendaEvent.objects.filter(
+                    organization=organization,
+                    collaborator=collaborator,
+                    starts_at__lt=requested_end_at,
+                    ends_at__gt=requested_start_at,
+                ).exclude(status=AgendaEvent.STATUS_CANCELLED)
+                if exclude_event_id_int:
+                    slot_conflicts_queryset = slot_conflicts_queryset.exclude(id=exclude_event_id_int)
+                slot_conflicts = slot_conflicts_queryset.exists()
                 slot_is_available = not slot_conflicts
                 slot_message = (
                     "Horario disponible para reservar."

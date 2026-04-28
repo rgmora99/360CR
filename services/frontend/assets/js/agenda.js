@@ -104,7 +104,18 @@
     const bodyText = await response.text();
 
     if (!response.ok) {
-      throw new Error(bodyText || 'Error inesperado del servidor.');
+      let parsedError = '';
+      try {
+        const payload = JSON.parse(bodyText);
+        if (payload.detail) parsedError = payload.detail;
+        const firstKey = Object.keys(payload)[0];
+        const firstValue = payload[firstKey];
+        if (!parsedError && Array.isArray(firstValue)) parsedError = `${firstKey}: ${firstValue.join(', ')}`;
+        if (!parsedError && typeof firstValue === 'string') parsedError = `${firstKey}: ${firstValue}`;
+      } catch (_error) {
+        parsedError = '';
+      }
+      throw new Error(parsedError || bodyText || 'Error inesperado del servidor.');
     }
 
     if (response.status === 204 || !bodyText) {
@@ -140,6 +151,27 @@
 
   function getServiceName(id) {
     return services.find((item) => item.id === Number(id))?.name || '-';
+  }
+
+  function getSelectedService() {
+    return services.find((item) => item.id === Number(fields.serviceId?.value || 0)) || null;
+  }
+
+  function addMinutesToDateTimeLocal(value, minutes) {
+    if (!value || !minutes) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const next = new Date(date.getTime() + Number(minutes) * 60000);
+    const timezoneOffset = next.getTimezoneOffset() * 60000;
+    return new Date(next.getTime() - timezoneOffset).toISOString().slice(0, 16);
+  }
+
+  function syncEndFromService() {
+    if (!fields.startsAt || !fields.endsAt) return;
+    const service = getSelectedService();
+    const duration = Number(service?.service_duration_minutes || 0) || 30;
+    if (!fields.startsAt.value || !service) return;
+    fields.endsAt.value = addMinutesToDateTimeLocal(fields.startsAt.value, duration);
   }
 
   function getCollaboratorName(id) {
@@ -281,15 +313,31 @@
   }
 
   function validateFormPayload(payload) {
+    if (!payload.title || payload.title.length < 3) {
+      throw new Error('El título debe tener al menos 3 caracteres.');
+    }
     if (!payload.service || !payload.collaborator) {
       throw new Error('Debes seleccionar servicio y colaborador para evitar agendas ambiguas.');
+    }
+    if (!fields.startsAt.value || !fields.endsAt.value) {
+      throw new Error('Debes indicar inicio y fin de la cita.');
     }
     if (payload.ends_at <= payload.starts_at) {
       throw new Error('La hora de fin debe ser mayor a la hora de inicio.');
     }
+    if (payload.status === 'pending' && new Date(payload.starts_at) < new Date()) {
+      throw new Error('No se pueden crear citas pendientes en el pasado.');
+    }
+    if (payload.customer && payload.supplier) {
+      throw new Error('Relaciona la cita con cliente o proveedor, no con ambos.');
+    }
+    if (payload.reminder_minutes > 1440) {
+      throw new Error('El recordatorio no puede superar 1440 minutos.');
+    }
   }
 
   function buildPayload() {
+    syncEndFromService();
     const payload = {
       organization: getOrganizationId(),
       event_type: Number(fields.eventType.value),
@@ -310,6 +358,26 @@
 
     validateFormPayload(payload);
     return payload;
+  }
+
+  async function validateBackendAvailability(payload) {
+    const startValue = fields.startsAt.value;
+    const endValue = fields.endsAt.value;
+    const params = new URLSearchParams({
+      organization_id: String(payload.organization),
+      collaborator_id: String(payload.collaborator),
+      service_id: String(payload.service),
+      date: startValue.slice(0, 10),
+      start_time: startValue.slice(11, 16),
+      end_time: endValue.slice(11, 16),
+    });
+    if (fields.id.value) {
+      params.set('exclude_event_id', fields.id.value);
+    }
+    const result = await request(`${getApiBase()}/agenda-events/availability/?${params.toString()}`);
+    if (!result.slot_available) {
+      throw new Error(result.slot_message || 'Ese espacio no está disponible.');
+    }
   }
 
   function buildSelfBookingLink() {
@@ -389,6 +457,7 @@
     try {
       const id = fields.id.value;
       const payload = buildPayload();
+      await validateBackendAvailability(payload);
 
       if (id) {
         await request(`${getApiBase()}/agenda-events/${id}/`, {
@@ -474,6 +543,9 @@
   dateFromFilter?.addEventListener('change', loadEvents);
   dateToFilter?.addEventListener('change', loadEvents);
   loadButton?.addEventListener('click', loadEvents);
+  fields.serviceId?.addEventListener('change', syncEndFromService);
+  fields.startsAt?.addEventListener('change', syncEndFromService);
+  fields.endsAt?.setAttribute('readonly', 'readonly');
 
   openSelfBookLinkButton?.addEventListener('click', () => {
     if (selfBookLinkInput.value) {
