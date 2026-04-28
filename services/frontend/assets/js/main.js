@@ -18,8 +18,20 @@
     carousel.scrollBy({ left: getStep() * direction, behavior: 'smooth' });
   };
 
+  const syncControls = () => {
+    const maxScrollLeft = carousel.scrollWidth - carousel.clientWidth;
+    const atStart = carousel.scrollLeft <= 8;
+    const atEnd = carousel.scrollLeft >= maxScrollLeft - 8;
+
+    prevBtn.disabled = atStart;
+    nextBtn.disabled = atEnd;
+  };
+
   prevBtn.addEventListener('click', () => scrollCards(-1));
   nextBtn.addEventListener('click', () => scrollCards(1));
+  carousel.addEventListener('scroll', syncControls, { passive: true });
+  window.addEventListener('resize', syncControls);
+  syncControls();
 
   const cards = carousel.querySelectorAll('.card');
   if (!('IntersectionObserver' in window)) {
