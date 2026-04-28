@@ -7,6 +7,20 @@
     addon: 'Add-on',
     custom: 'Personalizado',
   };
+  const STATUS_LABELS = {
+    trial: 'Prueba',
+    active: 'Activa',
+    past_due: 'Pendiente',
+    suspended: 'Suspendida',
+    cancelled: 'Cancelada',
+  };
+  const CYCLE_LABELS = {
+    monthly: 'Mensual',
+    annual: 'Anual',
+    custom: 'Personalizado',
+  };
+  const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const state = {
     session: null,
@@ -38,17 +52,34 @@
       const contentType = response.headers.get('content-type') || '';
       const payload = text && contentType.includes('application/json') ? JSON.parse(text) : null;
       if (!response.ok) {
-        throw new Error(
-          payload?.detail ||
-            payload?.slug?.[0] ||
-            payload?.email?.[0] ||
-            payload?.non_field_errors?.[0] ||
-            text ||
-            'No se pudo completar la accion.',
-        );
+        const error = new Error(formatApiError(payload, text));
+        error.payload = payload;
+        throw error;
       }
       return payload;
     });
+  }
+
+  function formatApiError(payload, fallback = '') {
+    if (!payload) {
+      return fallback || 'No se pudo completar la accion.';
+    }
+    if (typeof payload === 'string') {
+      return payload;
+    }
+    if (payload.detail) {
+      return payload.detail;
+    }
+    if (payload.non_field_errors?.length) {
+      return payload.non_field_errors[0];
+    }
+    const firstField = Object.entries(payload).find(([, value]) => Array.isArray(value) ? value.length : Boolean(value));
+    if (!firstField) {
+      return fallback || 'No se pudo completar la accion.';
+    }
+    const [field, value] = firstField;
+    const message = Array.isArray(value) ? value[0] : value;
+    return `${field}: ${message}`;
   }
 
   function escapeHtml(value) {
@@ -64,9 +95,105 @@
     const node = $(id);
     if (!node) return;
     node.textContent = message;
-    node.style.color = isError ? '#ff8f8f' : 'var(--muted)';
+    node.classList.add('saas-admin-feedback');
+    node.classList.toggle('is-error', Boolean(isError));
+    node.classList.toggle('is-success', Boolean(message && !isError && !message.startsWith('Sin ')));
+    node.style.color = isError ? '#ffb4b4' : 'var(--muted)';
     if (message && window.appAlerts?.toast) {
       window.appAlerts.toast(message, isError ? 'error' : 'success');
+    }
+  }
+
+  function clearFieldErrors(fieldIds = []) {
+    fieldIds.forEach((id) => {
+      const field = $(id);
+      if (!field) return;
+      field.classList.remove('is-invalid');
+      field.removeAttribute('aria-invalid');
+      const error = document.getElementById(`${id}-error`);
+      if (error) {
+        error.textContent = '';
+      }
+    });
+  }
+
+  function setFieldError(id, message) {
+    const field = $(id);
+    if (!field) return false;
+    field.classList.add('is-invalid');
+    field.setAttribute('aria-invalid', 'true');
+    let error = document.getElementById(`${id}-error`);
+    if (!error) {
+      error = document.createElement('span');
+      error.id = `${id}-error`;
+      error.className = 'field-error';
+      field.insertAdjacentElement('afterend', error);
+      field.setAttribute('aria-describedby', error.id);
+    }
+    error.textContent = message;
+    return false;
+  }
+
+  function requireText(id, message, minLength = 1) {
+    const value = $(id)?.value.trim() || '';
+    if (value.length < minLength) {
+      return setFieldError(id, message);
+    }
+    return true;
+  }
+
+  function requireSelect(id, message) {
+    if (!$(id)?.value) {
+      return setFieldError(id, message);
+    }
+    return true;
+  }
+
+  function validateSlugField(id, required = true) {
+    const value = $(id)?.value.trim() || '';
+    if (!value && !required) return true;
+    if (!SLUG_PATTERN.test(value)) {
+      return setFieldError(id, 'Usa minusculas, numeros y guiones. Ej: plan-base');
+    }
+    return true;
+  }
+
+  function validateDigitsField(id, length) {
+    const value = $(id)?.value.trim() || '';
+    if (!new RegExp(`^\\d{${length}}$`).test(value)) {
+      return setFieldError(id, `Debe contener exactamente ${length} digitos.`);
+    }
+    return true;
+  }
+
+  function validateMoneyField(id) {
+    const value = Number($(id)?.value || 0);
+    if (!Number.isFinite(value) || value < 0) {
+      return setFieldError(id, 'Ingresa un monto valido mayor o igual a 0.');
+    }
+    return true;
+  }
+
+  function validateEmailField(id) {
+    const value = $(id)?.value.trim() || '';
+    if (!EMAIL_PATTERN.test(value)) {
+      return setFieldError(id, 'Ingresa un correo valido.');
+    }
+    return true;
+  }
+
+  async function withButtonLock(button, callback) {
+    if (!button || button.disabled) return;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.classList.add('is-loading');
+    button.textContent = 'Guardando...';
+    try {
+      await callback();
+    } finally {
+      button.disabled = false;
+      button.classList.remove('is-loading');
+      button.textContent = originalText;
     }
   }
 
@@ -100,6 +227,62 @@
   function getSelectedSubscription() {
     const organizationId = Number($('subscription-organization').value);
     return getSubscriptionByOrganizationId(organizationId);
+  }
+
+  function getPlanById(planId) {
+    return state.plans.find((plan) => Number(plan.id) === Number(planId)) || null;
+  }
+
+  function getPlanPrice(planId, billingCycle) {
+    const plan = getPlanById(planId);
+    if (!plan) return 0;
+    if (billingCycle === 'annual') return Number(plan.annual_price || 0);
+    if (billingCycle === 'monthly') return Number(plan.monthly_price || 0);
+    return Number($('subscription-base-price')?.value || plan.monthly_price || 0);
+  }
+
+  function updateSubscriptionPriceFromPlan(force = false) {
+    const planId = Number($('subscription-plan')?.value || 0);
+    const cycle = $('subscription-cycle')?.value || 'monthly';
+    const priceField = $('subscription-base-price');
+    if (!priceField || !planId) return;
+    const suggestedPrice = getPlanPrice(planId, cycle);
+    if (force || !priceField.value || Number(priceField.value) === 0) {
+      priceField.value = suggestedPrice.toFixed(2);
+    }
+  }
+
+  function renderSubscriptionOverview() {
+    const target = $('subscription-overview');
+    if (!target) return;
+    const organization = state.organizations.find((item) => Number(item.id) === Number($('subscription-organization')?.value));
+    const subscription = getSelectedSubscription();
+    const plan = getPlanById($('subscription-plan')?.value);
+
+    if (!organization) {
+      target.innerHTML = '<span>Selecciona una organizacion para revisar su plan.</span>';
+      return;
+    }
+
+    target.innerHTML = `
+      <strong>${escapeHtml(organization.name)}</strong>
+      <span class="subscription-overview__chip">${escapeHtml(plan?.name || subscription?.plan_catalog_name || 'Sin plan')}</span>
+      <span class="subscription-overview__chip">${escapeHtml(STATUS_LABELS[$('subscription-status')?.value] || 'Sin estado')}</span>
+      <span class="subscription-overview__chip">${escapeHtml(CYCLE_LABELS[$('subscription-cycle')?.value] || 'Ciclo')}</span>
+    `;
+  }
+
+  function renderSubscriptionModuleSummary(modules = []) {
+    const target = $('subscription-modules-summary');
+    if (!target) return;
+    const enabled = modules.filter((item) => item.is_enabled).length;
+    const addons = modules.filter((item) => item.source === 'addon').length;
+    const custom = modules.filter((item) => item.source === 'custom').length;
+    target.innerHTML = `
+      <span>${enabled} activos</span>
+      <span>${addons} add-ons</span>
+      <span>${custom} personalizados</span>
+    `;
   }
 
   function getPaginationSlice(key, rows) {
@@ -222,16 +405,17 @@
 
   function renderOrganizationsTable() {
     const { rows, page, size, total, totalPages } = getPaginationSlice('organizations', state.organizations);
+    const selectedId = Number($('org-record-id')?.value || 0);
     $('organizations-body').innerHTML =
       rows
         .map((organization) => {
           const subscription = getSubscriptionByOrganizationId(organization.id);
           return `
-            <tr data-org-id="${organization.id}">
+            <tr data-org-id="${organization.id}" class="${selectedId === Number(organization.id) ? 'is-selected' : ''}">
               <td>${escapeHtml(organization.name)}</td>
               <td>${escapeHtml(organization.slug)}</td>
               <td>${escapeHtml(subscription?.plan_catalog_name || organization.subscription_plan_name || 'Sin plan')}</td>
-              <td>${escapeHtml(subscription?.status || organization.subscription_status || 'Sin suscripcion')}</td>
+              <td>${escapeHtml(STATUS_LABELS[subscription?.status || organization.subscription_status] || 'Sin suscripcion')}</td>
               <td>${escapeHtml(organization.memberships_count)}</td>
             </tr>
           `;
@@ -332,17 +516,20 @@
     const linkedModuleIds = new Set((subscription?.active_modules || []).map((item) => Number(item.module)));
     const availableModules = state.modules.filter((module) => !linkedModuleIds.has(Number(module.id)));
     const select = $('subscription-module-select');
+    const addButton = $('add-subscription-module');
 
     if (!select) return;
 
     if (!availableModules.length) {
       select.innerHTML = '<option value="">Todos los modulos ya estan asignados</option>';
+      if (addButton) addButton.disabled = true;
       return;
     }
 
     select.innerHTML = availableModules
       .map((module) => `<option value="${module.id}">${escapeHtml(module.name)} (${escapeHtml(module.group)})</option>`)
       .join('');
+    if (addButton) addButton.disabled = !subscription?.id;
   }
 
   function getSubscriptionModuleBadgeClass(source, isEnabled) {
@@ -359,7 +546,9 @@
 
     if (!subscription) {
       list.innerHTML = '<li class="saas-admin-empty-state">Selecciona o crea una suscripcion para administrar sus modulos.</li>';
+      renderSubscriptionModuleSummary([]);
       renderSubscriptionModuleOptions();
+      renderSubscriptionOverview();
       return;
     }
 
@@ -370,7 +559,9 @@
 
     if (!modules.length) {
       list.innerHTML = '<li class="saas-admin-empty-state">Esta suscripcion aun no tiene modulos activos ni add-ons configurados.</li>';
+      renderSubscriptionModuleSummary([]);
       renderSubscriptionModuleOptions();
+      renderSubscriptionOverview();
       return;
     }
 
@@ -402,7 +593,9 @@
       })
       .join('');
 
+    renderSubscriptionModuleSummary(modules);
     renderSubscriptionModuleOptions();
+    renderSubscriptionOverview();
   }
 
   function renderAllDataViews() {
@@ -416,15 +609,133 @@
     bindInteractiveRows();
   }
 
+  function validateOrganizationForm() {
+    const fields = ['org-name', 'org-slug', 'org-branch', 'org-terminal'];
+    clearFieldErrors(fields);
+    const recordId = Number($('org-record-id').value || 0);
+    let isValid = true;
+    isValid = requireText('org-name', 'Ingresa un nombre de al menos 3 caracteres.', 3) && isValid;
+    isValid = validateSlugField('org-slug', false) && isValid;
+    isValid = validateDigitsField('org-branch', 3) && isValid;
+    isValid = validateDigitsField('org-terminal', 5) && isValid;
+
+    const name = $('org-name').value.trim().toLowerCase();
+    const slug = $('org-slug').value.trim().toLowerCase();
+    const branch = $('org-branch').value.trim();
+    const terminal = $('org-terminal').value.trim();
+    if (state.organizations.some((item) => Number(item.id) !== recordId && item.name.toLowerCase() === name)) {
+      isValid = setFieldError('org-name', 'Ya existe una organizacion con este nombre.') && isValid;
+    }
+    if (slug && state.organizations.some((item) => Number(item.id) !== recordId && item.slug === slug)) {
+      isValid = setFieldError('org-slug', 'Este slug ya esta en uso.') && isValid;
+    }
+    if (state.organizations.some((item) => Number(item.id) !== recordId && item.hacienda_branch_code === branch && item.hacienda_terminal_code === terminal)) {
+      isValid = setFieldError('org-terminal', 'Esta sucursal y terminal ya estan asignadas a otra organizacion.') && isValid;
+    }
+    return isValid;
+  }
+
+  function validateSubscriptionForm() {
+    const fields = ['subscription-organization', 'subscription-plan', 'subscription-status', 'subscription-cycle', 'subscription-next-billing', 'subscription-base-price'];
+    clearFieldErrors(fields);
+    let isValid = true;
+    isValid = requireSelect('subscription-organization', 'Selecciona una organizacion.') && isValid;
+    isValid = requireSelect('subscription-plan', 'Selecciona un plan.') && isValid;
+    isValid = requireSelect('subscription-status', 'Selecciona un estado.') && isValid;
+    isValid = requireSelect('subscription-cycle', 'Selecciona un ciclo.') && isValid;
+    isValid = validateMoneyField('subscription-base-price') && isValid;
+    if (['active', 'past_due'].includes($('subscription-status').value) && !$('subscription-next-billing').value) {
+      isValid = setFieldError('subscription-next-billing', 'Indica el proximo cobro para estados activos o pendientes.') && isValid;
+    }
+    return isValid;
+  }
+
+  function validateUserForm() {
+    const fields = ['user-email', 'user-first-name', 'user-last-name'];
+    clearFieldErrors(fields);
+    const recordId = Number($('user-record-id').value || 0);
+    let isValid = validateEmailField('user-email');
+    const email = $('user-email').value.trim().toLowerCase();
+    if (state.users.some((item) => Number(item.id) !== recordId && String(item.email || item.username).toLowerCase() === email)) {
+      isValid = setFieldError('user-email', 'Ya existe un usuario con este correo.') && isValid;
+    }
+    return isValid;
+  }
+
+  function validateMembershipForm() {
+    const fields = ['membership-user', 'membership-organization', 'membership-role'];
+    clearFieldErrors(fields);
+    const recordId = Number($('membership-record-id').value || 0);
+    const userId = Number($('membership-user').value);
+    const organizationId = Number($('membership-organization').value);
+    let isValid = true;
+    isValid = requireSelect('membership-user', 'Selecciona un usuario.') && isValid;
+    isValid = requireSelect('membership-organization', 'Selecciona una organizacion.') && isValid;
+    if (state.memberships.some((item) => Number(item.id) !== recordId && Number(item.user) === userId && Number(item.organization) === organizationId)) {
+      isValid = setFieldError('membership-user', 'Este usuario ya tiene acceso a esa organizacion.') && isValid;
+    }
+    return isValid;
+  }
+
+  function validateModuleForm() {
+    const fields = ['module-code', 'module-name', 'module-route'];
+    clearFieldErrors(fields);
+    const recordId = Number($('module-record-id').value || 0);
+    let isValid = true;
+    isValid = validateSlugField('module-code') && isValid;
+    isValid = requireText('module-name', 'Ingresa un nombre de al menos 3 caracteres.', 3) && isValid;
+    if ($('module-route').value.trim() && !$('module-route').value.trim().startsWith('/')) {
+      isValid = setFieldError('module-route', 'La ruta debe iniciar con /.') && isValid;
+    }
+    if (state.modules.some((item) => Number(item.id) !== recordId && item.code === $('module-code').value.trim().toLowerCase())) {
+      isValid = setFieldError('module-code', 'Ya existe un modulo con este codigo.') && isValid;
+    }
+    return isValid;
+  }
+
+  function validatePlanForm() {
+    const fields = ['plan-code', 'plan-name', 'plan-monthly-price', 'plan-annual-price'];
+    clearFieldErrors(fields);
+    const recordId = Number($('plan-record-id').value || 0);
+    let isValid = true;
+    isValid = validateSlugField('plan-code') && isValid;
+    isValid = requireText('plan-name', 'Ingresa un nombre de al menos 3 caracteres.', 3) && isValid;
+    isValid = validateMoneyField('plan-monthly-price') && isValid;
+    isValid = validateMoneyField('plan-annual-price') && isValid;
+    if (state.plans.some((item) => Number(item.id) !== recordId && item.code === $('plan-code').value.trim().toLowerCase())) {
+      isValid = setFieldError('plan-code', 'Ya existe un plan con este codigo.') && isValid;
+    }
+    return isValid;
+  }
+
+  function validateFlagForm() {
+    const fields = ['flag-organization', 'flag-key', 'flag-label'];
+    clearFieldErrors(fields);
+    const recordId = Number($('flag-record-id').value || 0);
+    const organizationId = Number($('flag-organization').value);
+    const key = $('flag-key').value.trim().toLowerCase();
+    let isValid = true;
+    isValid = requireSelect('flag-organization', 'Selecciona una organizacion.') && isValid;
+    isValid = validateSlugField('flag-key') && isValid;
+    isValid = requireText('flag-label', 'Ingresa una etiqueta de al menos 3 caracteres.', 3) && isValid;
+    if (state.flags.some((item) => Number(item.id) !== recordId && Number(item.organization) === organizationId && item.key === key)) {
+      isValid = setFieldError('flag-key', 'Esta organizacion ya tiene una flag con esa key.') && isValid;
+    }
+    return isValid;
+  }
+
   function resetOrganizationForm() {
+    clearFieldErrors(['org-name', 'org-slug', 'org-branch', 'org-terminal']);
     $('org-record-id').value = '';
     $('org-name').value = '';
     $('org-slug').value = '';
     $('org-branch').value = '001';
     $('org-terminal').value = '00001';
+    renderOrganizationsTable();
   }
 
   function resetUserForm() {
+    clearFieldErrors(['user-email', 'user-first-name', 'user-last-name']);
     $('user-record-id').value = '';
     $('user-email').value = '';
     $('user-first-name').value = '';
@@ -433,6 +744,7 @@
   }
 
   function resetMembershipForm() {
+    clearFieldErrors(['membership-user', 'membership-organization', 'membership-role']);
     $('membership-record-id').value = '';
     if ($('membership-user').options.length) $('membership-user').selectedIndex = 0;
     if ($('membership-organization').options.length) $('membership-organization').selectedIndex = 0;
@@ -440,6 +752,7 @@
   }
 
   function resetModuleForm() {
+    clearFieldErrors(['module-code', 'module-name', 'module-route']);
     $('module-record-id').value = '';
     $('module-code').value = '';
     $('module-name').value = '';
@@ -449,6 +762,7 @@
   }
 
   function resetPlanForm() {
+    clearFieldErrors(['plan-code', 'plan-name', 'plan-monthly-price', 'plan-annual-price']);
     $('plan-record-id').value = '';
     $('plan-code').value = '';
     $('plan-name').value = '';
@@ -458,6 +772,7 @@
   }
 
   function resetFlagForm() {
+    clearFieldErrors(['flag-organization', 'flag-key', 'flag-label']);
     $('flag-record-id').value = '';
     $('flag-key').value = '';
     $('flag-label').value = '';
@@ -484,6 +799,8 @@
     $('subscription-cycle').value = subscription?.billing_cycle || 'monthly';
     $('subscription-next-billing').value = subscription?.next_billing_date || '';
     $('subscription-base-price').value = subscription?.base_price || 0;
+    renderOrganizationsTable();
+    renderSubscriptionOverview();
     renderSubscriptionModules();
   }
 
@@ -588,6 +905,9 @@
     renderSelectOptions(['membership-user'], state.users, (item) => item.email || item.username);
     renderSelectOptions(['subscription-plan', 'plan-module-plan'], state.plans, (item) => item.name);
     renderSelectOptions(['plan-module-module', 'flag-module'], state.modules, (item) => `${item.name} (${item.group})`, 'Sin modulo');
+    if (state.organizations.length) {
+      hydrateOrganizationForm(state.organizations[0].id);
+    }
     renderSubscriptionModuleOptions();
     renderAllDataViews();
   }
@@ -626,12 +946,17 @@
   async function addSubscriptionModule() {
     const subscription = getSelectedSubscription();
     const moduleId = Number($('subscription-module-select').value);
+    clearFieldErrors(['subscription-module-select']);
     if (!subscription?.id) {
       setFeedback('subscription-feedback', 'Debes guardar o seleccionar una suscripcion antes de asignar modulos.', true);
       return;
     }
     if (!moduleId) {
-      setFeedback('subscription-feedback', 'Selecciona un modulo disponible.', true);
+      setFieldError('subscription-module-select', 'Selecciona un modulo disponible.');
+      return;
+    }
+    if ((subscription.active_modules || []).some((item) => Number(item.module) === moduleId)) {
+      setFieldError('subscription-module-select', 'Este modulo ya esta asignado.');
       return;
     }
 
@@ -686,6 +1011,11 @@
   }
 
   function bindActions() {
+    document.querySelectorAll('.saas-admin-form-grid input, .saas-admin-form-grid select, .saas-admin-form-grid textarea').forEach((field) => {
+      field.addEventListener('input', () => clearFieldErrors([field.id]));
+      field.addEventListener('change', () => clearFieldErrors([field.id]));
+    });
+
     $('reset-organization-form').addEventListener('click', resetOrganizationForm);
     $('reset-user-form').addEventListener('click', resetUserForm);
     $('reset-membership-form').addEventListener('click', resetMembershipForm);
@@ -699,11 +1029,24 @@
       renderSubscriptionModules();
     });
 
-    $('add-subscription-module').addEventListener('click', () => {
-      addSubscriptionModule().catch(() => null);
+    $('subscription-plan').addEventListener('change', () => {
+      updateSubscriptionPriceFromPlan(true);
+      renderSubscriptionOverview();
     });
 
-    $('save-organization').addEventListener('click', async () => {
+    $('subscription-cycle').addEventListener('change', () => {
+      updateSubscriptionPriceFromPlan(true);
+      renderSubscriptionOverview();
+    });
+
+    $('subscription-status').addEventListener('change', renderSubscriptionOverview);
+
+    $('add-subscription-module').addEventListener('click', (event) => {
+      withButtonLock(event.currentTarget, addSubscriptionModule).catch(() => null);
+    });
+
+    $('save-organization').addEventListener('click', async (event) => withButtonLock(event.currentTarget, async () => {
+      if (!validateOrganizationForm()) return;
       const recordId = $('org-record-id').value;
       const payload = {
         name: $('org-name').value.trim(),
@@ -722,9 +1065,10 @@
       } catch (error) {
         setFeedback('org-feedback', error.message, true);
       }
-    });
+    }));
 
-    $('save-subscription').addEventListener('click', async () => {
+    $('save-subscription').addEventListener('click', async (event) => withButtonLock(event.currentTarget, async () => {
+      if (!validateSubscriptionForm()) return;
       const recordId = $('subscription-record-id').value;
       const payload = {
         organization: Number($('subscription-organization').value),
@@ -749,9 +1093,10 @@
       } catch (error) {
         setFeedback('subscription-feedback', error.message, true);
       }
-    });
+    }));
 
-    $('save-user').addEventListener('click', async () => {
+    $('save-user').addEventListener('click', async (event) => withButtonLock(event.currentTarget, async () => {
+      if (!validateUserForm()) return;
       const recordId = $('user-record-id').value;
       const payload = {
         email: $('user-email').value.trim(),
@@ -771,9 +1116,10 @@
       } catch (error) {
         setFeedback('user-feedback', error.message, true);
       }
-    });
+    }));
 
-    $('save-membership').addEventListener('click', async () => {
+    $('save-membership').addEventListener('click', async (event) => withButtonLock(event.currentTarget, async () => {
+      if (!validateMembershipForm()) return;
       const recordId = $('membership-record-id').value;
       const payload = {
         user: Number($('membership-user').value),
@@ -791,9 +1137,10 @@
       } catch (error) {
         setFeedback('user-feedback', error.message, true);
       }
-    });
+    }));
 
-    $('save-module').addEventListener('click', async () => {
+    $('save-module').addEventListener('click', async (event) => withButtonLock(event.currentTarget, async () => {
+      if (!validateModuleForm()) return;
       const recordId = $('module-record-id').value;
       const payload = {
         code: $('module-code').value.trim(),
@@ -815,9 +1162,10 @@
       } catch (error) {
         setFeedback('catalog-feedback', error.message, true);
       }
-    });
+    }));
 
-    $('save-plan').addEventListener('click', async () => {
+    $('save-plan').addEventListener('click', async (event) => withButtonLock(event.currentTarget, async () => {
+      if (!validatePlanForm()) return;
       const recordId = $('plan-record-id').value;
       const payload = {
         code: $('plan-code').value.trim(),
@@ -838,18 +1186,28 @@
       } catch (error) {
         setFeedback('catalog-feedback', error.message, true);
       }
-    });
+    }));
 
-    $('link-plan-module').addEventListener('click', async () => {
+    $('link-plan-module').addEventListener('click', async (event) => withButtonLock(event.currentTarget, async () => {
+      clearFieldErrors(['plan-module-plan', 'plan-module-module']);
+      let isValid = true;
+      isValid = requireSelect('plan-module-plan', 'Selecciona un plan.') && isValid;
+      isValid = requireSelect('plan-module-module', 'Selecciona un modulo.') && isValid;
+      if (!isValid) return;
       try {
         const planId = Number($('plan-module-plan').value);
         const existingPlan = state.plans.find((plan) => Number(plan.id) === planId);
+        const moduleId = Number($('plan-module-module').value);
+        if (existingPlan?.modules_detail?.some((item) => Number(item.module) === moduleId)) {
+          setFieldError('plan-module-module', 'Este modulo ya esta incluido en el plan.');
+          return;
+        }
         const nextSortOrder = (existingPlan?.modules_detail?.length || 0) + 1;
         await request('/system-admin/plan-modules/', {
           method: 'POST',
           body: JSON.stringify({
             plan: planId,
-            module: Number($('plan-module-module').value),
+            module: moduleId,
             is_included: true,
             sort_order: nextSortOrder,
           }),
@@ -859,9 +1217,10 @@
       } catch (error) {
         setFeedback('catalog-feedback', error.message, true);
       }
-    });
+    }));
 
-    $('save-flag').addEventListener('click', async () => {
+    $('save-flag').addEventListener('click', async (event) => withButtonLock(event.currentTarget, async () => {
+      if (!validateFlagForm()) return;
       const recordId = $('flag-record-id').value;
       const payload = {
         organization: Number($('flag-organization').value),
@@ -883,7 +1242,7 @@
       } catch (error) {
         setFeedback('flag-feedback', error.message, true);
       }
-    });
+    }));
   }
 
   async function bootstrap() {

@@ -38,27 +38,27 @@
           </nav>
 
           <section class="saas-admin-panel is-active" data-admin-panel="organizations">
-            <div class="saas-admin-grid">
-              <article class="card">
+            <div class="saas-admin-grid saas-admin-grid--setup">
+              <article class="card saas-admin-card--compact">
                 <div class="section-heading">
                   <div>
                     <h2>Organizaciones</h2>
-                    <p class="subtitle">Crea y actualiza negocios. Al seleccionar una fila, los datos vuelven al formulario para editarlos.</p>
+                    <p class="subtitle">Datos minimos del negocio. Selecciona una fila para editar.</p>
                   </div>
                 </div>
                 <input id="org-record-id" type="hidden" />
                 <div class="saas-admin-form-grid">
                   <label>Nombre
-                    <input id="org-name" type="text" placeholder="Ej: Barberia Central" />
+                    <input id="org-name" type="text" placeholder="Ej: Barberia Central" minlength="3" maxlength="200" required />
                   </label>
                   <label>Slug opcional
-                    <input id="org-slug" type="text" placeholder="barberia-central" />
+                    <input id="org-slug" type="text" placeholder="barberia-central" pattern="[a-z0-9-]+" maxlength="80" />
                   </label>
                   <label>Sucursal Hacienda
-                    <input id="org-branch" type="text" maxlength="3" value="001" />
+                    <input id="org-branch" type="text" inputmode="numeric" pattern="[0-9]{3}" maxlength="3" value="001" required />
                   </label>
                   <label>Terminal Hacienda
-                    <input id="org-terminal" type="text" maxlength="5" value="00001" />
+                    <input id="org-terminal" type="text" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" value="00001" required />
                   </label>
                 </div>
                 <div class="saas-admin-actions">
@@ -68,23 +68,26 @@
                 <p id="org-feedback" class="subtitle">Sin acciones recientes.</p>
               </article>
 
-              <article class="card">
+              <article class="card saas-admin-subscription-card">
                 <div class="section-heading">
                   <div>
                     <h2>Suscripcion</h2>
-                    <p class="subtitle">Selecciona una organizacion existente para revisar o editar su plan y su estado comercial.</p>
+                    <p class="subtitle">Plan, cobro y modulos quedan sincronizados desde aqui.</p>
                   </div>
                 </div>
                 <input id="subscription-record-id" type="hidden" />
+                <div class="subscription-overview" id="subscription-overview">
+                  <span>Selecciona una organizacion para revisar su plan.</span>
+                </div>
                 <div class="saas-admin-form-grid compact">
                   <label>Organizacion
-                    <select id="subscription-organization"></select>
+                    <select id="subscription-organization" required></select>
                   </label>
                   <label>Plan
-                    <select id="subscription-plan"></select>
+                    <select id="subscription-plan" required></select>
                   </label>
                   <label>Estado
-                    <select id="subscription-status">
+                    <select id="subscription-status" required>
                       <option value="trial">Prueba</option>
                       <option value="active">Activa</option>
                       <option value="past_due">Pendiente de pago</option>
@@ -103,20 +106,21 @@
                     <input id="subscription-next-billing" type="date" />
                   </label>
                   <label>Precio base
-                    <input id="subscription-base-price" type="number" step="0.01" min="0" />
+                    <input id="subscription-base-price" type="number" step="0.01" min="0" placeholder="0.00" required />
                   </label>
                 </div>
                 <div class="saas-admin-actions">
                   <button class="btn btn-primary" id="save-subscription" type="button">Guardar suscripcion</button>
                 </div>
                 <div class="saas-admin-inline-manager">
-                  <div class="section-heading section-heading--compact">
+                  <div class="section-heading section-heading--compact subscription-modules-heading">
                     <div>
-                      <h3>Modulos activos para esta suscripcion</h3>
-                      <p class="subtitle">Los modulos del plan se sincronizan automaticamente. Aqui puedes agregar add-ons o activar/desactivar modulos puntuales.</p>
+                      <h3>Modulos</h3>
+                      <p class="subtitle">Los del plan se sincronizan solos; agrega solo excepciones o add-ons.</p>
                     </div>
+                    <div class="subscription-modules-summary" id="subscription-modules-summary"></div>
                   </div>
-                  <div class="saas-admin-form-grid compact with-divider">
+                  <div class="saas-admin-form-grid compact with-divider subscription-add-module-row">
                     <label>Modulo disponible
                       <select id="subscription-module-select"></select>
                     </label>
@@ -126,7 +130,7 @@
                         <option value="custom">Personalizado</option>
                       </select>
                     </label>
-                    <button class="btn btn-secondary" id="add-subscription-module" type="button">Agregar modulo</button>
+                    <button class="btn btn-secondary" id="add-subscription-module" type="button">Agregar</button>
                   </div>
                   <ul id="subscription-modules-list" class="settings-list subscription-modules-list"></ul>
                 </div>

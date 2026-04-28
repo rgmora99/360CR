@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from django.db import transaction
+from django.utils.text import slugify
 from rest_framework import serializers
 
 from apps.configuration.models import OrganizationEmailInbox, RoleCatalog, SystemSetting, UserPreference, UserRoleAssignment
@@ -295,6 +296,11 @@ class SystemAdminUserSerializer(serializers.ModelSerializer):
         normalized = (value or "").strip().lower()
         if not normalized:
             raise serializers.ValidationError("El correo es requerido.")
+        queryset = User.objects.filter(email__iexact=normalized)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError("Ya existe un usuario con este correo.")
         return normalized
 
     def create(self, validated_data):
@@ -313,6 +319,23 @@ class SystemAdminMembershipSerializer(serializers.ModelSerializer):
     class Meta:
         model = Membership
         fields = ["id", "user", "user_email", "organization", "organization_name", "role"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        user = attrs.get("user", getattr(self.instance, "user", None))
+        organization = attrs.get("organization", getattr(self.instance, "organization", None))
+
+        if not user:
+            raise serializers.ValidationError({"user": "Selecciona un usuario."})
+        if not organization:
+            raise serializers.ValidationError({"organization": "Selecciona una organizaciÃ³n."})
+
+        queryset = Membership.objects.filter(user=user, organization=organization)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError({"user": "Este usuario ya tiene acceso a esta organizaciÃ³n."})
+        return attrs
 
 
 class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
@@ -342,6 +365,45 @@ class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
     def get_memberships_count(self, obj):
         return obj.membership_set.count()
 
+    def validate_name(self, value):
+        clean_value = (value or "").strip()
+        if len(clean_value) < 3:
+            raise serializers.ValidationError("El nombre debe tener al menos 3 caracteres.")
+        return clean_value
+
+    def validate_slug(self, value):
+        clean_value = (value or "").strip().lower()
+        if not clean_value:
+            return clean_value
+        slug = slugify(clean_value)
+        if slug != clean_value:
+            raise serializers.ValidationError("Usa solo minÃºsculas, nÃºmeros y guiones.")
+        queryset = Organization.objects.filter(slug=clean_value)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError("Ya existe una organizaciÃ³n con este slug.")
+        return clean_value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        branch = attrs.get("hacienda_branch_code", getattr(self.instance, "hacienda_branch_code", "001"))
+        terminal = attrs.get("hacienda_terminal_code", getattr(self.instance, "hacienda_terminal_code", "00001"))
+
+        if not str(branch).isdigit() or len(str(branch)) != 3:
+            raise serializers.ValidationError({"hacienda_branch_code": "Debe contener exactamente 3 dÃ­gitos."})
+        if not str(terminal).isdigit() or len(str(terminal)) != 5:
+            raise serializers.ValidationError({"hacienda_terminal_code": "Debe contener exactamente 5 dÃ­gitos."})
+
+        queryset = Organization.objects.filter(hacienda_branch_code=branch, hacienda_terminal_code=terminal)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError({
+                "hacienda_terminal_code": "Ya existe una organizaciÃ³n con esta sucursal y terminal de Hacienda."
+            })
+        return attrs
+
 
 class SaaSModuleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -360,6 +422,31 @@ class SaaSModuleSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate_code(self, value):
+        clean_value = (value or "").strip().lower()
+        if len(clean_value) < 2:
+            raise serializers.ValidationError("El cÃ³digo debe tener al menos 2 caracteres.")
+        if slugify(clean_value) != clean_value:
+            raise serializers.ValidationError("Usa solo minÃºsculas, nÃºmeros y guiones.")
+        queryset = SaaSModule.objects.filter(code=clean_value)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError("Ya existe un mÃ³dulo con este cÃ³digo.")
+        return clean_value
+
+    def validate_name(self, value):
+        clean_value = (value or "").strip()
+        if len(clean_value) < 3:
+            raise serializers.ValidationError("El nombre debe tener al menos 3 caracteres.")
+        return clean_value
+
+    def validate_route_hint(self, value):
+        clean_value = (value or "").strip()
+        if clean_value and not clean_value.startswith("/"):
+            raise serializers.ValidationError("La ruta debe iniciar con /.")
+        return clean_value
+
 
 class SaaSPlanModuleSerializer(serializers.ModelSerializer):
     module_name = serializers.CharField(source="module.name", read_only=True)
@@ -368,6 +455,21 @@ class SaaSPlanModuleSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaaSPlanModule
         fields = ["id", "plan", "module", "module_name", "module_group", "is_included", "sort_order"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        plan = attrs.get("plan", getattr(self.instance, "plan", None))
+        module = attrs.get("module", getattr(self.instance, "module", None))
+        if not plan:
+            raise serializers.ValidationError({"plan": "Selecciona un plan."})
+        if not module:
+            raise serializers.ValidationError({"module": "Selecciona un mÃ³dulo."})
+        queryset = SaaSPlanModule.objects.filter(plan=plan, module=module)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError({"module": "Este mÃ³dulo ya estÃ¡ incluido en el plan."})
+        return attrs
 
 
 class SaaSPlanSerializer(serializers.ModelSerializer):
@@ -390,6 +492,35 @@ class SaaSPlanSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate_code(self, value):
+        clean_value = (value or "").strip().lower()
+        if len(clean_value) < 2:
+            raise serializers.ValidationError("El cÃ³digo debe tener al menos 2 caracteres.")
+        if slugify(clean_value) != clean_value:
+            raise serializers.ValidationError("Usa solo minÃºsculas, nÃºmeros y guiones.")
+        queryset = SaaSPlan.objects.filter(code=clean_value)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError("Ya existe un plan con este cÃ³digo.")
+        return clean_value
+
+    def validate_name(self, value):
+        clean_value = (value or "").strip()
+        if len(clean_value) < 3:
+            raise serializers.ValidationError("El nombre debe tener al menos 3 caracteres.")
+        return clean_value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        monthly = attrs.get("monthly_price", getattr(self.instance, "monthly_price", 0))
+        annual = attrs.get("annual_price", getattr(self.instance, "annual_price", 0))
+        if monthly is not None and monthly < 0:
+            raise serializers.ValidationError({"monthly_price": "El precio mensual no puede ser negativo."})
+        if annual is not None and annual < 0:
+            raise serializers.ValidationError({"annual_price": "El precio anual no puede ser negativo."})
+        return attrs
+
 
 class SubscriptionModuleSerializer(serializers.ModelSerializer):
     module_name = serializers.CharField(source="module.name", read_only=True)
@@ -408,6 +539,26 @@ class SubscriptionModuleSerializer(serializers.ModelSerializer):
             "activated_at",
             "updated_at",
         ]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        subscription = attrs.get("subscription", getattr(self.instance, "subscription", None))
+        module = attrs.get("module", getattr(self.instance, "module", None))
+        source = attrs.get("source", getattr(self.instance, "source", SubscriptionModule.SOURCE_PLAN))
+
+        if not subscription:
+            raise serializers.ValidationError({"subscription": "Selecciona una suscripciÃ³n."})
+        if not module:
+            raise serializers.ValidationError({"module": "Selecciona un mÃ³dulo."})
+        if source == SubscriptionModule.SOURCE_PLAN and not subscription.plan_catalog_id:
+            raise serializers.ValidationError({"source": "Solo los planes sincronizados pueden crear mÃ³dulos con origen Plan."})
+
+        queryset = SubscriptionModule.objects.filter(subscription=subscription, module=module)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError({"module": "Este mÃ³dulo ya estÃ¡ asignado a la suscripciÃ³n."})
+        return attrs
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):
@@ -435,6 +586,33 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "notes",
             "active_modules",
         ]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        organization = attrs.get("organization", getattr(self.instance, "organization", None))
+        plan_catalog = attrs.get("plan_catalog", getattr(self.instance, "plan_catalog", None))
+        status = attrs.get("status", getattr(self.instance, "status", Subscription.STATUS_TRIAL))
+        billing_cycle = attrs.get("billing_cycle", getattr(self.instance, "billing_cycle", Subscription.BILLING_MONTHLY))
+        base_price = attrs.get("base_price", getattr(self.instance, "base_price", 0))
+        next_billing_date = attrs.get("next_billing_date", getattr(self.instance, "next_billing_date", None))
+
+        if not organization:
+            raise serializers.ValidationError({"organization": "Selecciona una organizaciÃ³n."})
+        if not plan_catalog:
+            raise serializers.ValidationError({"plan_catalog": "Selecciona un plan."})
+        if base_price is not None and base_price < 0:
+            raise serializers.ValidationError({"base_price": "El precio base no puede ser negativo."})
+        if status in [Subscription.STATUS_ACTIVE, Subscription.STATUS_PAST_DUE] and not next_billing_date:
+            raise serializers.ValidationError({"next_billing_date": "Indica la fecha del prÃ³ximo cobro para suscripciones activas o pendientes."})
+        if status == Subscription.STATUS_CANCELLED:
+            attrs["is_active"] = False
+        elif status in [Subscription.STATUS_TRIAL, Subscription.STATUS_ACTIVE]:
+            attrs["is_active"] = True
+        if billing_cycle == Subscription.BILLING_ANNUAL and plan_catalog and base_price == 0:
+            attrs["base_price"] = plan_catalog.annual_price
+        elif billing_cycle == Subscription.BILLING_MONTHLY and plan_catalog and base_price == 0:
+            attrs["base_price"] = plan_catalog.monthly_price
+        return attrs
 
     def create(self, validated_data):
         with transaction.atomic():
@@ -468,3 +646,30 @@ class OrganizationFeatureFlagSerializer(serializers.ModelSerializer):
             "config",
             "updated_at",
         ]
+
+    def validate_key(self, value):
+        clean_value = (value or "").strip().lower()
+        if len(clean_value) < 2:
+            raise serializers.ValidationError("La key debe tener al menos 2 caracteres.")
+        if slugify(clean_value) != clean_value:
+            raise serializers.ValidationError("Usa solo minÃºsculas, nÃºmeros y guiones.")
+        return clean_value
+
+    def validate_label(self, value):
+        clean_value = (value or "").strip()
+        if len(clean_value) < 3:
+            raise serializers.ValidationError("La etiqueta debe tener al menos 3 caracteres.")
+        return clean_value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        organization = attrs.get("organization", getattr(self.instance, "organization", None))
+        key = attrs.get("key", getattr(self.instance, "key", ""))
+        if not organization:
+            raise serializers.ValidationError({"organization": "Selecciona una organizaciÃ³n."})
+        queryset = OrganizationFeatureFlag.objects.filter(organization=organization, key=key)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError({"key": "Esta organizaciÃ³n ya tiene una feature flag con esa key."})
+        return attrs
