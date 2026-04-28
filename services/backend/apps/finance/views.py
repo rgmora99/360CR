@@ -5,7 +5,7 @@ import threading
 import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from email.header import decode_header, make_header
 
 from django.conf import settings
@@ -72,6 +72,10 @@ SHIPMENT_STATUS_LABELS = {
     "delivered": "Entregado",
     "cancelled": "Cancelado",
 }
+
+
+def _money(value):
+    return Decimal(value or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _normalize_shipment_details(invoice):
@@ -350,9 +354,13 @@ def _parse_invoice_xml(xml_bytes):
         description = _xml_find_text(item_node, f"{prefix}Detalle", ns) or f"Linea {index}"
         quantity = _parse_decimal(_xml_find_text(item_node, f"{prefix}Cantidad", ns), default="1.000")
         unit_price = _parse_decimal(_xml_find_text(item_node, f"{prefix}PrecioUnitario", ns))
-        if unit_price == Decimal("0.00"):
-            subtotal = _parse_decimal(_xml_find_text(item_node, f"{prefix}SubTotal", ns))
-            unit_price = (subtotal / quantity).quantize(Decimal("0.01")) if quantity > 0 else subtotal
+        line_subtotal = _parse_decimal(_xml_find_text(item_node, f"{prefix}SubTotal", ns))
+        if line_subtotal <= Decimal("0.00"):
+            line_total = _parse_decimal(_xml_find_text(item_node, f"{prefix}MontoTotalLinea", ns))
+            line_tax = _parse_decimal(_xml_find_text(item_node, f".//{prefix}Impuesto/{prefix}Monto", ns))
+            line_subtotal = max(line_total - line_tax, Decimal("0.00"))
+        if line_subtotal > Decimal("0.00") and quantity > Decimal("0.000"):
+            unit_price = (line_subtotal / quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         data["items"].append(
             {
@@ -380,6 +388,49 @@ def _parse_invoice_xml(xml_bytes):
         raise ValueError("El XML no incluye el nombre del emisor.")
 
     return data
+
+
+def _build_inbox_purchase_items(inbox):
+    payload_items = list((inbox.payload or {}).get("items") or [])
+    target_subtotal = _money(inbox.total - inbox.tax_total)
+    if target_subtotal <= Decimal("0.00"):
+        target_subtotal = _money(inbox.subtotal)
+
+    normalized_items = []
+    for index, item in enumerate(payload_items, start=1):
+        description = str(item.get("description") or f"Linea {index}").strip()
+        try:
+            quantity = Decimal(str(item.get("quantity") or "1.000")).quantize(Decimal("0.001"))
+            unit_price = Decimal(str(item.get("unit_price") or "0.00")).quantize(Decimal("0.01"))
+        except Exception:
+            continue
+        if not description or quantity <= Decimal("0.000") or unit_price <= Decimal("0.00"):
+            continue
+        normalized_items.append({"description": description[:220], "quantity": quantity, "unit_price": unit_price})
+
+    calculated_subtotal = _money(sum((item["unit_price"] * item["quantity"] for item in normalized_items), Decimal("0.00")))
+    if normalized_items and abs(calculated_subtotal - target_subtotal) <= Decimal("0.01"):
+        return normalized_items
+
+    if normalized_items and calculated_subtotal < target_subtotal:
+        adjustment = _money(target_subtotal - calculated_subtotal)
+        if adjustment >= Decimal("0.01"):
+            normalized_items.append(
+                {
+                    "description": "Ajuste fiscal por cargos globales",
+                    "quantity": Decimal("1.000"),
+                    "unit_price": adjustment,
+                }
+            )
+            return normalized_items
+
+    return [
+        {
+            "description": f"Factura electronica {inbox.invoice_number}".strip()[:220],
+            "quantity": Decimal("1.000"),
+            "unit_price": target_subtotal,
+        }
+    ]
 
 
 def _fetch_email_invoice_payloads(inbox, date_from, date_to, max_messages=SYNC_MAX_MESSAGES, progress_key=None):
@@ -1377,7 +1428,7 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             "tax_total": inbox.tax_total,
             "total": inbox.total,
             "source": "inbox",
-            "items": inbox.payload.get("items") or [{"description": "Factura electrónica", "unit_price": inbox.subtotal, "quantity": "1.000"}],
+            "items": _build_inbox_purchase_items(inbox),
         }
         serializer = PurchaseCreateSerializer(data=payload, context={"request": request})
         serializer.is_valid(raise_exception=True)

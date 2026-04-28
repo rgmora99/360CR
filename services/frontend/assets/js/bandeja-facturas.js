@@ -59,7 +59,21 @@
       ...options,
     });
     const text = await response.text();
-    if (!response.ok) throw new Error(text || 'Error de API');
+    if (!response.ok) {
+      let message = text || 'Error de API';
+      try {
+        const payload = JSON.parse(text);
+        if (payload?.detail) {
+          message = payload.detail;
+        } else if (payload && typeof payload === 'object') {
+          message = Object.entries(payload)
+            .map(([field, value]) => `${field}: ${Array.isArray(value) ? value.join(', ') : value}`)
+            .join(' | ');
+        }
+      } catch (_error) {
+      }
+      throw new Error(message);
+    }
     return text ? JSON.parse(text) : null;
   }
 
