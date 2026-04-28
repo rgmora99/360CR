@@ -28,6 +28,8 @@ def money(value):
 
 
 MAX_CREATE_RETRIES = 3
+SUPPORTED_INVOICE_SALE_CONDITIONS = {"01", "02"}
+SUPPORTED_INVOICE_CURRENCIES = {"CRC", "USD"}
 
 
 def build_installment_amounts(total, installment_count):
@@ -314,9 +316,21 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class InvoiceItemWriteSerializer(serializers.Serializer):
     product = serializers.IntegerField()
-    quantity = serializers.DecimalField(max_digits=12, decimal_places=3)
-    unit_price = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
-    discount_percent = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, default=Decimal("0.00"))
+    quantity = serializers.DecimalField(max_digits=12, decimal_places=3, min_value=Decimal("0.001"))
+    unit_price = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        required=False,
+    )
+    discount_percent = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal("0.00"),
+        max_value=Decimal("100.00"),
+        required=False,
+        default=Decimal("0.00"),
+    )
 
 
 class InvoiceItemSerializer(serializers.ModelSerializer):
@@ -531,8 +545,13 @@ class InvoiceCreateSerializer(serializers.Serializer):
     installment_count = serializers.IntegerField(required=False, min_value=1, default=1)
     installment_interval_days = serializers.IntegerField(required=False, min_value=1, default=30)
     currency = serializers.RegexField(r"^[A-Z]{3}$", default="CRC")
-    exchange_rate = serializers.DecimalField(max_digits=10, decimal_places=4, default=Decimal("1.0000"))
-    notes = serializers.CharField(required=False, allow_blank=True)
+    exchange_rate = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        min_value=Decimal("0.0001"),
+        default=Decimal("1.0000"),
+    )
+    notes = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True, max_length=500)
     use_loyalty_points = serializers.BooleanField(required=False, default=False)
     shipment_required = serializers.BooleanField(required=False, default=False)
     shipment_details = serializers.JSONField(required=False, default=dict)
@@ -711,12 +730,49 @@ class InvoiceCreateSerializer(serializers.Serializer):
         if not attrs["items"]:
             raise serializers.ValidationError("Debe incluir al menos una línea.")
 
+        if attrs["sale_condition"] not in SUPPORTED_INVOICE_SALE_CONDITIONS:
+            raise serializers.ValidationError(
+                {
+                    "sale_condition": (
+                        "Este flujo solo soporta contado (01) y credito (02). "
+                        "Otras condiciones de Hacienda requieren datos adicionales antes de emitir."
+                    )
+                }
+            )
+
+        if attrs["currency"] not in SUPPORTED_INVOICE_CURRENCIES:
+            raise serializers.ValidationError({"currency": "Moneda no soportada para facturacion en este flujo. Use CRC o USD."})
+
+        if attrs["currency"] == "CRC" and attrs["exchange_rate"] != Decimal("1.0000"):
+            raise serializers.ValidationError({"exchange_rate": "Para facturas en CRC el tipo de cambio debe ser 1.0000."})
+
+        if attrs["document_type"] == Invoice.DOCUMENT_CREDIT_NOTE:
+            raise serializers.ValidationError(
+                {
+                    "document_type": (
+                        "Las notas de credito requieren informacion de referencia del comprobante original. "
+                        "Este flujo todavia no debe emitirlas directamente."
+                    )
+                }
+            )
+
         customer = Customer.objects.filter(id=attrs["customer"], organization_id=attrs["organization"]).first()
         if not customer:
             raise serializers.ValidationError("El cliente no existe en la organización seleccionada.")
 
         if customer.status != Customer.STATUS_ACTIVE:
             raise serializers.ValidationError("Solo se puede facturar clientes activos.")
+
+        customer_name = (customer.legal_name or "").strip()
+        customer_tax_id = (customer.tax_id or "").strip()
+        if not customer_name:
+            raise serializers.ValidationError({"customer": "El cliente debe tener nombre o razon social antes de facturar."})
+        if len(customer_name) > 100:
+            raise serializers.ValidationError({"customer": "El nombre del cliente excede el maximo permitido para comprobantes."})
+        if not customer_tax_id:
+            raise serializers.ValidationError({"customer": "El cliente debe tener identificacion registrada antes de emitir factura electronica."})
+        if len(customer_tax_id) > 20:
+            raise serializers.ValidationError({"customer": "La identificacion del cliente no debe exceder 20 caracteres."})
 
         invoice_breakdown = self._build_invoice_lines(
             organization_id=attrs["organization"],
