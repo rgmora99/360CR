@@ -59,6 +59,9 @@ class ConfigurationUserSerializer(serializers.ModelSerializer):
     organization_id = serializers.IntegerField(write_only=True, required=False)
     membership_role = serializers.ChoiceField(choices=Membership.ROLE_CHOICES, write_only=True, required=False)
     requires_password_setup = serializers.SerializerMethodField(read_only=True)
+    organization_membership_role = serializers.SerializerMethodField(read_only=True)
+    organization_name = serializers.SerializerMethodField(read_only=True)
+    role_assignments = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = User
@@ -71,12 +74,54 @@ class ConfigurationUserSerializer(serializers.ModelSerializer):
             "is_active",
             "is_staff",
             "requires_password_setup",
+            "organization_membership_role",
+            "organization_name",
+            "role_assignments",
             "organization_id",
             "membership_role",
         ]
 
     def get_requires_password_setup(self, obj):
         return not obj.has_usable_password()
+
+    def _get_context_organization_id(self):
+        request = self.context.get("request")
+        raw_id = request.query_params.get("organization_id") if request else None
+        try:
+            return int(raw_id) if raw_id else None
+        except (TypeError, ValueError):
+            return None
+
+    def _get_context_membership(self, obj):
+        organization_id = self._get_context_organization_id()
+        queryset = obj.membership_set.select_related("organization")
+        if organization_id:
+            queryset = queryset.filter(organization_id=organization_id)
+        return queryset.order_by("organization__name").first()
+
+    def get_organization_membership_role(self, obj):
+        membership = self._get_context_membership(obj)
+        return membership.role if membership else ""
+
+    def get_organization_name(self, obj):
+        membership = self._get_context_membership(obj)
+        return membership.organization.name if membership else ""
+
+    def get_role_assignments(self, obj):
+        organization_id = self._get_context_organization_id()
+        queryset = obj.role_assignments.select_related("role").filter(is_active=True)
+        if organization_id:
+            queryset = queryset.filter(organization_id=organization_id)
+        return [
+            {
+                "id": assignment.id,
+                "role": assignment.role_id,
+                "role_name": assignment.role.name,
+                "role_code": assignment.role.code,
+                "organization": assignment.organization_id,
+            }
+            for assignment in queryset.order_by("role__name")
+        ]
 
     def validate_email(self, value):
         normalized = (value or "").strip().lower()
@@ -97,11 +142,7 @@ class ConfigurationUserSerializer(serializers.ModelSerializer):
         except (TypeError, ValueError, Organization.DoesNotExist):
             raise serializers.ValidationError({"organization_id": "Organización inválida."}) from None
 
-        root_org = organization
-        while root_org.parent_organization_id:
-            root_org = root_org.parent_organization
-
-        attrs["resolved_organization"] = root_org
+        attrs["resolved_organization"] = organization
         attrs["membership_role"] = attrs.get("membership_role") or Membership.ROLE_VIEWER
         return attrs
 

@@ -148,6 +148,29 @@
   color: var(--color-muted);
 }
 
+.settings-user-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.inline-role-assignment,
+.settings-list .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.inline-role-assignment select {
+  flex: 1 1 220px;
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(145, 167, 235, 0.35);
+  background: rgba(8, 17, 33, 0.95);
+  color: var(--color-text);
+  padding: 0.52rem 0.62rem;
+  font: inherit;
+}
+
 .availability-user-grid {
   display: grid;
   gap: 0.4rem;

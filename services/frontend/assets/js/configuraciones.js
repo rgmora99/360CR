@@ -22,6 +22,7 @@
   const newRoleDescriptionInput = document.getElementById('new-role-description');
   const newRoleScenariosInput = document.getElementById('new-role-scenarios');
   const createRoleButton = document.getElementById('create-role');
+  const cancelRoleEditButton = document.getElementById('cancel-role-edit');
   const assignRoleUserSelect = document.getElementById('assign-role-user');
   const assignRoleRoleSelect = document.getElementById('assign-role-role');
   const assignRoleButton = document.getElementById('assign-role');
@@ -61,6 +62,7 @@
   let collaboratorsCache = [];
   let availabilityRulesCache = [];
   let editingEmailInboxId = null;
+  let editingRoleId = null;
 
   if (
     !usersList ||
@@ -84,6 +86,7 @@
     !newRoleDescriptionInput ||
     !newRoleScenariosInput ||
     !createRoleButton ||
+    !cancelRoleEditButton ||
     !assignRoleUserSelect ||
     !assignRoleRoleSelect ||
     !assignRoleButton ||
@@ -139,6 +142,26 @@
     5: 'Viernes',
     6: 'Sábado',
   };
+  const addonPanelRequirements = {
+    disponibilidad: 'agenda',
+    correo: 'purchases',
+  };
+  const addonSettingRequirements = {
+    finance: ['billing_basic', 'purchases', 'receivables'],
+    notifications: ['purchases', 'reminders', 'campaigns'],
+    operations: ['agenda', 'inventory', 'suppliers', 'shipping'],
+  };
+
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+  const getActiveOrganizationId = () => Number(window.AppSession?.getActiveOrganizationId?.()) || null;
+  const getActiveModuleCodes = () => new Set(window.AppSession?.getActiveModuleCodes?.() || []);
+  const hasActiveModule = (moduleCode) => !moduleCode || getActiveModuleCodes().has(moduleCode);
 
   const showError = (message) => {
     if (window.showErrorAlert) {
@@ -226,6 +249,19 @@
     return settingsSections.includes(section) ? section : 'usuarios';
   };
 
+  const getEnabledSettingsSections = () => settingsSections.filter((section) => hasActiveModule(addonPanelRequirements[section]));
+
+  const applyAddonVisibility = () => {
+    const enabledSections = new Set(getEnabledSettingsSections());
+    settingsTabs.forEach((button) => {
+      button.hidden = !enabledSections.has(button.dataset.settingsTab);
+    });
+    document.querySelectorAll('.sidebar-nav a[href^="/configuraciones.html#"]').forEach((link) => {
+      const section = (link.getAttribute('href') || '').split('#')[1];
+      link.hidden = Boolean(section) && !enabledSections.has(section);
+    });
+  };
+
   const syncSettingsSidebarSection = (section) => {
     const targetHref = `/configuraciones.html#${section}`;
     document.querySelectorAll('.sidebar-nav a[href^="/configuraciones.html#"]').forEach((link) => {
@@ -240,7 +276,8 @@
   };
 
   const activateSettingsPanel = (section) => {
-    const targetPanel = settingsSections.includes(section) ? section : 'usuarios';
+    const enabledSections = getEnabledSettingsSections();
+    const targetPanel = enabledSections.includes(section) ? section : 'usuarios';
     settingsTabs.forEach((button) => {
       const isActive = button.dataset.settingsTab === targetPanel;
       button.classList.toggle('is-active', isActive);
@@ -253,6 +290,7 @@
   };
 
   const setupSubmenuTabs = () => {
+    applyAddonVisibility();
     settingsTabs.forEach((tabButton) => {
       tabButton.addEventListener('click', () => {
         const targetPanel = tabButton.dataset.settingsTab;
@@ -379,6 +417,11 @@
   };
 
   const loadEmailInboxes = async () => {
+    if (!hasActiveModule('purchases')) {
+      renderEmailInboxes([]);
+      setEmailFeedback('Correo de facturas requiere el add-on de compras activo.', true);
+      return;
+    }
     const organizationId = Number(emailOrgSelect.value || window.AppSession?.getActiveOrganizationId?.());
     if (!organizationId) {
       renderEmailInboxes([]);
@@ -576,7 +619,9 @@
       orgTerminalCodeInput.value = '00001';
       setOrgFeedback(`Organización creada: ${created.name} (#${created.id}).`);
       await loadOrganizations();
-    await loadEmailInboxes();
+      if (hasActiveModule('purchases')) {
+        await loadEmailInboxes();
+      }
     } catch (error) {
       setOrgFeedback(error.message || 'No fue posible crear la organización.', true);
     }
@@ -584,18 +629,33 @@
 
   const renderUsers = (users) => {
     if (!users.length) {
-      usersList.innerHTML = '<li>Sin usuarios registrados por ahora.</li>';
+      usersList.innerHTML = '<li>Sin usuarios registrados para este negocio.</li>';
       return;
     }
 
     usersList.innerHTML = users
-      .map(
-        (user) => `<li>
-          <strong>${user.email || user.username}</strong>
-          <span>${user.is_active ? 'Activo' : 'Inactivo'} · ${user.is_staff ? 'Staff' : 'Operativo'}</span>
-          <small>${user.requires_password_setup ? 'Pendiente: debe crear contraseña al primer ingreso.' : 'Acceso con contraseña configurada.'}</small>
-        </li>`,
-      )
+      .map((user) => {
+        const assignedRoles = Array.isArray(user.role_assignments) && user.role_assignments.length
+          ? user.role_assignments.map((assignment) => escapeHtml(assignment.role_name)).join(', ')
+          : 'Sin rol especifico';
+        const roleOptions = rolesCache
+          .map((role) => `<option value="${role.id}">${escapeHtml(role.name)}</option>`)
+          .join('');
+        return `<li class="settings-user-row" data-user-id="${user.id}">
+          <div>
+            <strong>${escapeHtml(user.email || user.username)}</strong>
+            <span>${user.is_active ? 'Activo' : 'Inactivo'} - ${escapeHtml(user.organization_membership_role || 'viewer')} - ${escapeHtml(user.organization_name || 'Negocio activo')}</span>
+            <small>${user.requires_password_setup ? 'Pendiente: debe crear contrasena al primer ingreso.' : 'Acceso con contrasena configurada.'}</small>
+            <small>Roles especificos: ${assignedRoles}</small>
+          </div>
+          <div class="inline-role-assignment">
+            <select data-user-role-select="${user.id}">
+              ${roleOptions || '<option value="">Sin roles disponibles</option>'}
+            </select>
+            <button class="btn btn-secondary" type="button" data-user-role-assign="${user.id}">Asignar rol</button>
+          </div>
+        </li>`;
+      })
       .join('');
   };
 
@@ -668,14 +728,19 @@
     rolesGroups.innerHTML = Object.entries(grouped)
       .map(
         ([persona, roleList]) => `<section class="role-group">
-          <h3>${personaLabels[persona] || persona}</h3>
+          <h3>${escapeHtml(personaLabels[persona] || persona)}</h3>
           <ul class="settings-list">
             ${roleList
               .map(
                 (role) => `<li>
-                    <strong>${role.name}</strong>
-                    <span>${role.description}</span>
-                    <small>Escenarios: ${role.typical_scenarios}</small>
+                    <strong>${escapeHtml(role.name)}</strong>
+                    <span>${escapeHtml(role.description)}</span>
+                    <small>Escenarios: ${escapeHtml(role.typical_scenarios)}</small>
+                    <small>${role.is_system_default ? 'Rol base' : 'Rol personalizado'} - Permisos: ${escapeHtml((role.default_permissions || []).join(', ') || 'Sin permisos definidos')}</small>
+                    <div class="actions">
+                      <button class="btn btn-secondary" type="button" data-role-edit="${role.id}">Editar</button>
+                      ${role.is_system_default ? '' : `<button class="btn btn-secondary" type="button" data-role-delete="${role.id}">Eliminar</button>`}
+                    </div>
                   </li>`,
               )
               .join('')}
@@ -692,7 +757,7 @@
     }
 
     assignRoleRoleSelect.innerHTML = roles
-      .map((role) => `<option value="${role.id}">${role.name}</option>`)
+      .map((role) => `<option value="${role.id}">${escapeHtml(role.name)}</option>`)
       .join('');
   };
 
@@ -702,13 +767,15 @@
       return;
     }
     assignRoleUserSelect.innerHTML = users
-      .map((user) => `<option value="${user.id}">${user.email || user.username}</option>`)
+      .map((user) => `<option value="${user.id}">${escapeHtml(user.email || user.username)}</option>`)
       .join('');
   };
 
   const renderRoleAssignments = async () => {
     try {
-      const response = await fetch('/api/config/user-role-assignments/', { credentials: 'include' });
+      const organizationId = getActiveOrganizationId();
+      const query = organizationId ? `?organization_id=${organizationId}` : '';
+      const response = await fetch(`/api/config/user-role-assignments/${query}`, { credentials: 'include' });
       if (!response.ok) throw new Error('No fue posible cargar asociaciones de roles.');
       const assignments = await response.json();
       if (!assignments.length) {
@@ -720,9 +787,9 @@
         .map((assignment) => {
           const assignedUser = usersCache.find((user) => Number(user.id) === Number(assignment.user));
           return `<li>
-            <strong>${assignment.role_detail?.name || 'Rol'}</strong>
-            <span>${assignedUser?.email || assignedUser?.username || `Usuario #${assignment.user}`}${assignment.organization ? ` · Organización #${assignment.organization}` : ''}</span>
-            <small>${assignment.is_active ? 'Asociación activa' : 'Asociación inactiva'}</small>
+            <strong>${escapeHtml(assignment.role_detail?.name || 'Rol')}</strong>
+            <span>${escapeHtml(assignedUser?.email || assignedUser?.username || `Usuario #${assignment.user}`)}</span>
+            <small>${assignment.is_active ? 'Asociacion activa' : 'Asociacion inactiva'}</small>
           </li>`;
         })
         .join('');
@@ -731,7 +798,54 @@
     }
   };
 
-  const createRole = async () => {
+  const resetRoleForm = () => {
+    editingRoleId = null;
+    newRoleNameInput.value = '';
+    newRoleCodeInput.value = '';
+    newRoleCodeInput.disabled = false;
+    newRolePermissionsInput.value = '';
+    newRoleDescriptionInput.value = '';
+    newRoleScenariosInput.value = '';
+    createRoleButton.textContent = 'Guardar rol';
+    cancelRoleEditButton.hidden = true;
+  };
+
+  const startRoleEdit = (roleId) => {
+    const role = rolesCache.find((item) => Number(item.id) === Number(roleId));
+    if (!role) return;
+    editingRoleId = role.id;
+    newRoleNameInput.value = role.name || '';
+    newRoleCodeInput.value = role.code || '';
+    newRoleCodeInput.disabled = Boolean(role.is_system_default);
+    newRolePersonaSelect.value = role.persona || 'business_manager';
+    newRolePermissionsInput.value = (role.default_permissions || []).join(', ');
+    newRoleDescriptionInput.value = role.description || '';
+    newRoleScenariosInput.value = role.typical_scenarios || '';
+    createRoleButton.textContent = 'Actualizar rol';
+    cancelRoleEditButton.hidden = false;
+    window.location.hash = 'roles';
+    activateSettingsPanel('roles');
+  };
+
+  const deleteRole = async (roleId) => {
+    try {
+      const response = await fetch(`/api/config/roles/${roleId}/`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok && response.status !== 204) {
+        const message = await response.text();
+        throw new Error(message || 'No fue posible eliminar el rol.');
+      }
+      setTeamFeedback('Rol eliminado correctamente.');
+      resetRoleForm();
+      await loadData();
+    } catch (error) {
+      setTeamFeedback(error.message || 'Error al eliminar rol.', true);
+    }
+  };
+
+  const saveRole = async () => {
     const name = newRoleNameInput.value.trim();
     const code = newRoleCodeInput.value.trim().toLowerCase().replace(/\s+/g, '_');
     const persona = newRolePersonaSelect.value;
@@ -748,40 +862,39 @@
     }
 
     try {
-      const response = await fetch('/api/config/roles/', {
-        method: 'POST',
+      const payload = {
+        name,
+        code,
+        persona,
+        description,
+        typical_scenarios: typicalScenarios,
+        default_permissions: defaultPermissions,
+      };
+      if (!editingRoleId) {
+        payload.is_system_default = false;
+      }
+      const response = await fetch(editingRoleId ? `/api/config/roles/${editingRoleId}/` : '/api/config/roles/', {
+        method: editingRoleId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          name,
-          code,
-          persona,
-          description,
-          typical_scenarios: typicalScenarios,
-          default_permissions: defaultPermissions,
-          is_system_default: false,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) {
         const message = await response.text();
-        throw new Error(message || 'No fue posible crear el rol.');
+        throw new Error(message || 'No fue posible guardar el rol.');
       }
-      setTeamFeedback(`Rol ${name} creado correctamente.`);
-      newRoleNameInput.value = '';
-      newRoleCodeInput.value = '';
-      newRolePermissionsInput.value = '';
-      newRoleDescriptionInput.value = '';
-      newRoleScenariosInput.value = '';
+      setTeamFeedback(`Rol ${name} guardado correctamente.`);
+      resetRoleForm();
       await loadData();
     } catch (error) {
-      setTeamFeedback(error.message || 'Error al crear rol.', true);
+      setTeamFeedback(error.message || 'Error al guardar rol.', true);
     }
   };
 
-  const assignRole = async () => {
-    const userId = Number(assignRoleUserSelect.value);
-    const roleId = Number(assignRoleRoleSelect.value);
-    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+  const assignRole = async (userIdOverride = null, roleIdOverride = null) => {
+    const userId = Number(userIdOverride || assignRoleUserSelect.value);
+    const roleId = Number(roleIdOverride || assignRoleRoleSelect.value);
+    const organizationId = getActiveOrganizationId();
 
     if (!userId || !roleId) {
       setTeamFeedback('Selecciona usuario y rol para asociarlos.', true);
@@ -807,7 +920,7 @@
       const selectedUser = usersCache.find((user) => Number(user.id) === userId);
       const selectedRole = rolesCache.find((role) => Number(role.id) === roleId);
       setTeamFeedback(`Rol ${selectedRole?.name || roleId} asociado a ${selectedUser?.email || selectedUser?.username}.`);
-      renderRoleAssignments();
+      await loadData();
     } catch (error) {
       setTeamFeedback(error.message || 'Error al asociar rol.', true);
     }
@@ -954,7 +1067,15 @@
   };
 
   const loadCollaborators = async () => {
-    const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    if (!hasActiveModule('agenda')) {
+      collaboratorsCache = [];
+      renderCollaboratorsOptions([]);
+      availabilityRulesCache = [];
+      renderAvailabilityRules();
+      setAvailabilityFeedback('Disponibilidad requiere el add-on de agenda activo.', true);
+      return;
+    }
+    const organizationId = getActiveOrganizationId();
     if (!organizationId) {
       collaboratorsCache = [];
       renderCollaboratorsOptions([]);
@@ -996,7 +1117,18 @@
       return;
     }
 
-    const groupedSettings = settings.reduce((acc, setting) => {
+    const activeModules = getActiveModuleCodes();
+    const visibleSettings = settings.filter((setting) => {
+      const requiredModules = addonSettingRequirements[setting.category];
+      return !requiredModules || requiredModules.some((moduleCode) => activeModules.has(moduleCode));
+    });
+
+    if (!visibleSettings.length) {
+      systemSettingsGroups.innerHTML = '<p class="section-help">Sin parametros disponibles para los add-ons activos.</p>';
+      return;
+    }
+
+    const groupedSettings = visibleSettings.reduce((acc, setting) => {
       if (!acc[setting.category]) {
         acc[setting.category] = [];
       }
@@ -1029,8 +1161,10 @@
 
   const loadData = async () => {
     try {
+      const organizationId = getActiveOrganizationId();
+      const usersQuery = organizationId ? `?organization_id=${organizationId}` : '';
       const [usersRes, rolesRes, settingsRes] = await Promise.all([
-        fetch('/api/config/users/'),
+        fetch(`/api/config/users/${usersQuery}`),
         fetch('/api/config/roles/'),
         fetch('/api/config/system-settings/'),
       ]);
@@ -1048,7 +1182,7 @@
       renderRoleOptions(roles);
       renderRoleAssignments();
       renderSettings(systemSettings);
-      if (!collaboratorsCache.length) {
+      if (hasActiveModule('agenda') && !collaboratorsCache.length) {
         loadCollaborators();
       }
     } catch (error) {
@@ -1057,9 +1191,26 @@
   };
 
   createOrganizationButton.addEventListener('click', createOrganization);
-  createRoleButton.addEventListener('click', createRole);
+  createRoleButton.addEventListener('click', saveRole);
+  cancelRoleEditButton.addEventListener('click', resetRoleForm);
   assignRoleButton.addEventListener('click', assignRole);
   createCollaboratorUserButton.addEventListener('click', createCollaboratorUser);
+  usersList.addEventListener('click', (event) => {
+    const userId = event.target?.dataset?.userRoleAssign;
+    if (!userId) return;
+    const roleId = usersList.querySelector(`[data-user-role-select="${userId}"]`)?.value;
+    assignRole(userId, roleId).catch(() => null);
+  });
+  rolesGroups.addEventListener('click', (event) => {
+    const editId = event.target?.dataset?.roleEdit;
+    const deleteId = event.target?.dataset?.roleDelete;
+    if (editId) {
+      startRoleEdit(editId);
+    }
+    if (deleteId) {
+      deleteRole(deleteId).catch(() => null);
+    }
+  });
   saveAvailabilityRuleButton.addEventListener('click', () => {
     saveAvailabilityRule().catch(() => null);
   });
@@ -1089,10 +1240,15 @@
     }
   });
   setupSubmenuTabs();
+  resetRoleForm();
   resetEmailInboxForm();
   loadData();
   loadOrganizations();
-  loadEmailInboxes();
-  loadCollaborators();
-  setTimeout(loadCollaborators, 1200);
+  if (hasActiveModule('purchases')) {
+    loadEmailInboxes();
+  }
+  if (hasActiveModule('agenda')) {
+    loadCollaborators();
+    setTimeout(loadCollaborators, 1200);
+  }
 })();

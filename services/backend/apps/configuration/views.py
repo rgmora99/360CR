@@ -65,7 +65,17 @@ class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSe
 
     def get_queryset(self):
         allowed_ids = self.get_allowed_organization_ids()
-        return User.objects.filter(membership__organization_id__in=allowed_ids).distinct().order_by("id")
+        queryset = User.objects.filter(membership__organization_id__in=allowed_ids).distinct().order_by("id")
+        organization_id = self.request.query_params.get("organization_id")
+        if organization_id:
+            try:
+                selected_id = int(organization_id)
+            except (TypeError, ValueError):
+                return queryset.none()
+            if selected_id not in allowed_ids:
+                return queryset.none()
+            queryset = queryset.filter(membership__organization_id=selected_id)
+        return queryset
 
 
 class OrganizationCollaboratorView(APIView):
