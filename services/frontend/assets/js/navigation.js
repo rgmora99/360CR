@@ -312,7 +312,17 @@
     });
 
     if (cachedSession?.user?.is_system_owner) {
-      filteredMenuItems.push({ key: 'system-admin', label: 'Administracion SaaS', href: '/saas-admin.html', alwaysVisible: true });
+      filteredMenuItems.push({
+        key: 'system-admin-menu',
+        label: 'Administracion SaaS',
+        alwaysVisible: true,
+        children: [
+          { key: 'system-admin-organizations', label: 'Organizaciones', href: '/saas-admin.html#organizations', alwaysVisible: true },
+          { key: 'system-admin-users', label: 'Usuarios y accesos', href: '/saas-admin.html#users', alwaysVisible: true },
+          { key: 'system-admin-catalog', label: 'Modulos y planes', href: '/saas-admin.html#catalog', alwaysVisible: true },
+          { key: 'system-admin-flags', label: 'Feature flags', href: '/saas-admin.html#flags', alwaysVisible: true },
+        ],
+      });
     }
 
     const menuMarkup = filteredMenuItems

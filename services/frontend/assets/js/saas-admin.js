@@ -200,7 +200,7 @@
   function setGuardState(message, redirect = false) {
     $('access-guard').classList.remove('hidden');
     $('access-guard-message').textContent = message;
-    document.querySelectorAll('.saas-admin-hero, .saas-admin-stats, .saas-admin-tabs, .saas-admin-panel').forEach((node) => {
+    document.querySelectorAll('.saas-admin-hero, .saas-admin-stats, .saas-admin-panels').forEach((node) => {
       node.classList.add('saas-admin-hidden');
     });
     $('saas-admin-root').classList.remove('saas-admin-content--loading');
@@ -212,12 +212,33 @@
   }
 
   function activateTab(tabId) {
+    const normalizedTabId = ['organizations', 'users', 'catalog', 'flags'].includes(tabId) ? tabId : 'organizations';
     document.querySelectorAll('[data-admin-tab]').forEach((button) => {
-      button.classList.toggle('is-active', button.dataset.adminTab === tabId);
+      const isActive = button.dataset.adminTab === normalizedTabId;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-current', isActive ? 'page' : 'false');
     });
     document.querySelectorAll('[data-admin-panel]').forEach((panel) => {
-      panel.classList.toggle('is-active', panel.dataset.adminPanel === tabId);
+      panel.classList.toggle('is-active', panel.dataset.adminPanel === normalizedTabId);
     });
+    syncSidebarSection(normalizedTabId);
+  }
+
+  function getTabFromHash() {
+    return (window.location.hash || '#organizations').slice(1);
+  }
+
+  function syncSidebarSection(tabId) {
+    const targetHref = `/saas-admin.html#${tabId}`;
+    document.querySelectorAll('.sidebar-nav a[href^="/saas-admin.html#"]').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('href') === targetHref);
+    });
+    const activeLink = document.querySelector(`.sidebar-nav a[href="${targetHref}"]`);
+    const submenu = activeLink?.closest('.sidebar-submenu');
+    if (submenu) {
+      submenu.classList.add('is-open');
+      submenu.querySelector('[data-submenu-toggle]')?.classList.add('active');
+    }
   }
 
   function getSubscriptionByOrganizationId(organizationId) {
@@ -930,8 +951,15 @@
 
   function bindTabs() {
     document.querySelectorAll('[data-admin-tab]').forEach((button) => {
-      button.addEventListener('click', () => activateTab(button.dataset.adminTab));
+      button.addEventListener('click', () => {
+        const nextTab = button.dataset.adminTab;
+        if (nextTab) {
+          window.location.hash = nextTab;
+        }
+        activateTab(nextTab);
+      });
     });
+    window.addEventListener('hashchange', () => activateTab(getTabFromHash()));
   }
 
   async function saveSubscriptionModule(entryId, payload, method = 'PATCH') {
@@ -1247,6 +1275,7 @@
 
   async function bootstrap() {
     bindTabs();
+    activateTab(getTabFromHash());
     bindActions();
     bindSubscriptionModuleActions();
     const allowed = await ensureAccess();

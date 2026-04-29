@@ -30,14 +30,8 @@
 
           <section class="saas-admin-stats" id="system-summary"></section>
 
-          <nav class="saas-admin-tabs card" aria-label="Secciones de administracion">
-            <button class="saas-admin-tab is-active" type="button" data-admin-tab="organizations">Organizaciones</button>
-            <button class="saas-admin-tab" type="button" data-admin-tab="users">Usuarios y accesos</button>
-            <button class="saas-admin-tab" type="button" data-admin-tab="catalog">Modulos y planes</button>
-            <button class="saas-admin-tab" type="button" data-admin-tab="flags">Feature flags</button>
-          </nav>
-
-          <section class="saas-admin-panel is-active" data-admin-panel="organizations">
+          <section class="saas-admin-panels">
+            <section class="saas-admin-panel is-active" data-admin-panel="organizations">
             <div class="saas-admin-grid saas-admin-grid--setup">
               <article class="card saas-admin-card--compact">
                 <div class="section-heading">
@@ -155,9 +149,9 @@
               </div>
               <div id="organizations-pagination"></div>
             </article>
-          </section>
+            </section>
 
-          <section class="saas-admin-panel" data-admin-panel="users">
+            <section class="saas-admin-panel" data-admin-panel="users">
             <div class="saas-admin-grid">
               <article class="card">
                 <div class="section-heading">
@@ -256,9 +250,9 @@
               </div>
               <div id="memberships-pagination"></div>
             </article>
-          </section>
+            </section>
 
-          <section class="saas-admin-panel" data-admin-panel="catalog">
+            <section class="saas-admin-panel" data-admin-panel="catalog">
             <div class="saas-admin-grid">
               <article class="card">
                 <div class="section-heading">
@@ -361,9 +355,9 @@
                 <div id="plans-pagination"></div>
               </article>
             </div>
-          </section>
+            </section>
 
-          <section class="saas-admin-panel" data-admin-panel="flags">
+            <section class="saas-admin-panel" data-admin-panel="flags">
             <div class="saas-admin-grid">
               <article class="card">
                 <div class="section-heading">
@@ -423,6 +417,7 @@
                 <div id="flags-pagination"></div>
               </article>
             </div>
+            </section>
           </section>
 
           <section class="card saas-admin-guard hidden" id="access-guard">
@@ -440,7 +435,13 @@
     <script src="/assets/js/forms.js"></script>
     <script src="/assets/js/alerts.js"></script>
     <script src="/assets/js/navigation.js"></script>
-    <script>window.renderSharedNavigation({ activeModule: 'system-admin' });</script>
+    <script>
+      (() => {
+        const section = (window.location.hash || '#organizations').slice(1);
+        const allowed = new Set(['organizations', 'users', 'catalog', 'flags']);
+        window.renderSharedNavigation({ activeModule: `system-admin-${allowed.has(section) ? section : 'organizations'}` });
+      })();
+    </script>
     <script src="/assets/js/saas-admin.js"></script>
   </body>
 </html>
