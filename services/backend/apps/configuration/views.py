@@ -93,6 +93,13 @@ class RoleCatalogViewSet(viewsets.ModelViewSet):
     serializer_class = RoleCatalogSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if not (user.is_superuser or user.is_staff):
+            queryset = queryset.exclude(code="ti-super-admin")
+        return queryset
+
 
 class SystemSettingViewSet(viewsets.ModelViewSet):
     queryset = SystemSetting.objects.all()
@@ -113,6 +120,9 @@ class UserRoleAssignmentViewSet(OrganizationScopedViewMixin, viewsets.ModelViewS
 
     def get_queryset(self):
         queryset = UserRoleAssignment.objects.select_related("user", "role", "organization").all()
+        user = self.request.user
+        if not (user.is_superuser or user.is_staff):
+            queryset = queryset.exclude(role__code="ti-super-admin")
         return self.scope_queryset(queryset)
 
     def perform_create(self, serializer):

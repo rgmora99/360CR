@@ -6,6 +6,7 @@
   const newUserLastNameInput = document.getElementById('new-user-last-name');
   const createCollaboratorUserButton = document.getElementById('create-collaborator-user');
   const userFeedback = document.getElementById('user-feedback');
+  const usersPagination = document.getElementById('users-pagination');
   const rolesGroups = document.getElementById('roles-groups');
   const systemSettingsGroups = document.getElementById('system-settings-groups');
   const organizationsList = document.getElementById('organizations-list');
@@ -19,6 +20,7 @@
   const newRoleCodeInput = document.getElementById('new-role-code');
   const newRolePersonaSelect = document.getElementById('new-role-persona');
   const newRolePermissionsInput = document.getElementById('new-role-permissions');
+  const permissionsPicker = document.getElementById('permissions-picker');
   const newRoleDescriptionInput = document.getElementById('new-role-description');
   const newRoleScenariosInput = document.getElementById('new-role-scenarios');
   const createRoleButton = document.getElementById('create-role');
@@ -59,6 +61,8 @@
   const USER_ROLE_FALLBACK = 'colaborador';
   let rolesCache = [];
   let usersCache = [];
+  let usersPage = 1;
+  const usersPageSize = 5;
   let collaboratorsCache = [];
   let availabilityRulesCache = [];
   let editingEmailInboxId = null;
@@ -72,6 +76,7 @@
     !newUserLastNameInput ||
     !createCollaboratorUserButton ||
     !userFeedback ||
+    !usersPagination ||
     !rolesGroups ||
     !systemSettingsGroups ||
     !organizationsList ||
@@ -83,6 +88,7 @@
     !newRoleCodeInput ||
     !newRolePersonaSelect ||
     !newRolePermissionsInput ||
+    !permissionsPicker ||
     !newRoleDescriptionInput ||
     !newRoleScenariosInput ||
     !createRoleButton ||
@@ -151,6 +157,58 @@
     notifications: ['purchases', 'reminders', 'campaigns'],
     operations: ['agenda', 'inventory', 'suppliers', 'shipping'],
   };
+  const systemOwnerRoleCodes = new Set(['ti-super-admin']);
+  const permissionGroups = [
+    {
+      label: 'Usuarios',
+      permissions: [
+        ['users.read', 'Ver usuarios'],
+        ['users.update', 'Editar usuarios'],
+        ['users.lock', 'Bloquear usuarios'],
+      ],
+    },
+    {
+      label: 'Ventas y clientes',
+      permissions: [
+        ['customers.read', 'Ver clientes'],
+        ['dashboards.executive', 'Dashboard ejecutivo'],
+        ['approvals.high', 'Aprobaciones especiales'],
+      ],
+    },
+    {
+      label: 'Finanzas',
+      permissions: [
+        ['invoices.manage', 'Facturación'],
+        ['credit.manage', 'Crédito'],
+        ['reports.finance', 'Reportes financieros'],
+      ],
+    },
+    {
+      label: 'Operación',
+      permissions: [
+        ['inventory.manage', 'Inventario'],
+        ['suppliers.manage', 'Proveedores'],
+        ['operations.kpi', 'KPIs operativos'],
+      ],
+    },
+    {
+      label: 'Reportes',
+      permissions: [
+        ['reports.read', 'Reportes generales'],
+        ['suppliers.read', 'Consulta proveedores'],
+        ['tickets.manage', 'Soporte'],
+      ],
+    },
+    {
+      label: 'Seguridad',
+      systemOwnerOnly: true,
+      permissions: [
+        ['security.manage', 'Seguridad'],
+        ['audit.read', 'Auditoría'],
+        ['*', 'Control total'],
+      ],
+    },
+  ];
 
   const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -162,6 +220,9 @@
   const getActiveOrganizationId = () => Number(window.AppSession?.getActiveOrganizationId?.()) || null;
   const getActiveModuleCodes = () => new Set(window.AppSession?.getActiveModuleCodes?.() || []);
   const hasActiveModule = (moduleCode) => !moduleCode || getActiveModuleCodes().has(moduleCode);
+  const isSystemOwner = () => Boolean(window.AppSession?.getSession?.()?.user?.is_system_owner);
+  const canUseRole = (role) => isSystemOwner() || !systemOwnerRoleCodes.has(role?.code);
+  const getVisibleRoles = () => rolesCache.filter(canUseRole);
 
   const showError = (message) => {
     if (window.showErrorAlert) {
@@ -225,6 +286,58 @@
     if (window.appAlerts?.toast) {
       window.appAlerts.toast(message, isError ? 'error' : 'success');
     }
+  };
+
+  const getAllPermissionCodes = () => permissionGroups.flatMap((group) => group.permissions.map(([code]) => code));
+
+  const syncPermissionInput = () => {
+    const selected = Array.from(permissionsPicker.querySelectorAll('input[type="checkbox"]:checked'))
+      .map((input) => input.value)
+      .filter(Boolean);
+    newRolePermissionsInput.value = selected.join(', ');
+    return selected;
+  };
+
+  const renderPermissionPicker = (selectedPermissions = []) => {
+    const selected = new Set(selectedPermissions);
+    const knownPermissions = new Set(getAllPermissionCodes());
+    const customPermissions = selectedPermissions.filter((permission) => !knownPermissions.has(permission));
+    const groups = permissionGroups.filter((group) => !group.systemOwnerOnly || isSystemOwner());
+
+    permissionsPicker.innerHTML = groups
+      .map((group) => `
+        <fieldset class="permission-group">
+          <legend>${escapeHtml(group.label)}</legend>
+          ${group.permissions
+            .filter(([code]) => isSystemOwner() || code !== '*')
+            .map(([code, label]) => `
+              <label class="permission-option">
+                <input type="checkbox" value="${escapeHtml(code)}" ${selected.has(code) ? 'checked' : ''} />
+                <span>${escapeHtml(label)}</span>
+              </label>
+            `)
+            .join('')}
+        </fieldset>
+      `)
+      .join('');
+
+    if (customPermissions.length) {
+      permissionsPicker.insertAdjacentHTML(
+        'beforeend',
+        `<fieldset class="permission-group">
+          <legend>Permisos guardados</legend>
+          ${customPermissions
+            .map((permission) => `
+              <label class="permission-option">
+                <input type="checkbox" value="${escapeHtml(permission)}" checked />
+                <span>${escapeHtml(permission)}</span>
+              </label>
+            `)
+            .join('')}
+        </fieldset>`,
+      );
+    }
+    syncPermissionInput();
   };
 
   const parseApiError = (error) => {
@@ -630,23 +743,42 @@
   const renderUsers = (users) => {
     if (!users.length) {
       usersList.innerHTML = '<li>Sin usuarios registrados para este negocio.</li>';
+      usersPagination.innerHTML = '';
       return;
     }
 
-    usersList.innerHTML = users
+    const sortedUsers = [...users].sort((left, right) => {
+      const leftLabel = left.email || left.username || '';
+      const rightLabel = right.email || right.username || '';
+      return leftLabel.localeCompare(rightLabel, 'es');
+    });
+    const totalPages = Math.max(1, Math.ceil(sortedUsers.length / usersPageSize));
+    usersPage = Math.min(Math.max(1, usersPage), totalPages);
+    const startIndex = (usersPage - 1) * usersPageSize;
+    const pageUsers = sortedUsers.slice(startIndex, startIndex + usersPageSize);
+    const assignableRoles = getVisibleRoles();
+
+    usersList.innerHTML = pageUsers
       .map((user) => {
-        const assignedRoles = Array.isArray(user.role_assignments) && user.role_assignments.length
-          ? user.role_assignments.map((assignment) => escapeHtml(assignment.role_name)).join(', ')
+        const visibleAssignments = Array.isArray(user.role_assignments)
+          ? user.role_assignments.filter((assignment) => isSystemOwner() || !systemOwnerRoleCodes.has(assignment.role_code))
+          : [];
+        const assignedRoles = visibleAssignments.length
+          ? visibleAssignments.map((assignment) => `<span class="settings-chip">${escapeHtml(assignment.role_name)}</span>`).join('')
           : 'Sin rol especifico';
-        const roleOptions = rolesCache
+        const roleOptions = assignableRoles
           .map((role) => `<option value="${role.id}">${escapeHtml(role.name)}</option>`)
           .join('');
         return `<li class="settings-user-row" data-user-id="${user.id}">
-          <div>
+          <div class="settings-user-main">
             <strong>${escapeHtml(user.email || user.username)}</strong>
-            <span>${user.is_active ? 'Activo' : 'Inactivo'} - ${escapeHtml(user.organization_membership_role || 'viewer')} - ${escapeHtml(user.organization_name || 'Negocio activo')}</span>
+            <div class="settings-user-meta">
+              <span class="settings-chip ${user.is_active ? 'is-success' : 'is-muted'}">${user.is_active ? 'Activo' : 'Inactivo'}</span>
+              <span class="settings-chip">${escapeHtml(user.organization_membership_role || 'viewer')}</span>
+              <span class="settings-chip">${escapeHtml(user.organization_name || 'Negocio activo')}</span>
+            </div>
             <small>${user.requires_password_setup ? 'Pendiente: debe crear contrasena al primer ingreso.' : 'Acceso con contrasena configurada.'}</small>
-            <small>Roles especificos: ${assignedRoles}</small>
+            <div class="settings-user-roles">${assignedRoles}</div>
           </div>
           <div class="inline-role-assignment">
             <select data-user-role-select="${user.id}">
@@ -657,6 +789,12 @@
         </li>`;
       })
       .join('');
+
+    usersPagination.innerHTML = `
+      <button class="btn btn-secondary" type="button" data-users-page="${usersPage - 1}" ${usersPage <= 1 ? 'disabled' : ''}>Anterior</button>
+      <span>Mostrando ${startIndex + 1}-${Math.min(startIndex + usersPageSize, sortedUsers.length)} de ${sortedUsers.length}</span>
+      <button class="btn btn-secondary" type="button" data-users-page="${usersPage + 1}" ${usersPage >= totalPages ? 'disabled' : ''}>Siguiente</button>
+    `;
   };
 
   const createCollaboratorUser = async () => {
@@ -714,12 +852,13 @@
   };
 
   const renderRoles = (roles) => {
-    if (!roles.length) {
+    const visibleRoles = roles.filter(canUseRole);
+    if (!visibleRoles.length) {
       rolesGroups.innerHTML = '<p>No hay roles configurados.</p>';
       return;
     }
 
-    const grouped = roles.reduce((acc, role) => {
+    const grouped = visibleRoles.reduce((acc, role) => {
       if (!acc[role.persona]) acc[role.persona] = [];
       acc[role.persona].push(role);
       return acc;
@@ -751,12 +890,13 @@
   };
 
   const renderRoleOptions = (roles) => {
-    if (!roles.length) {
+    const visibleRoles = roles.filter(canUseRole);
+    if (!visibleRoles.length) {
       assignRoleRoleSelect.innerHTML = '<option value="">Sin roles disponibles</option>';
       return;
     }
 
-    assignRoleRoleSelect.innerHTML = roles
+    assignRoleRoleSelect.innerHTML = visibleRoles
       .map((role) => `<option value="${role.id}">${escapeHtml(role.name)}</option>`)
       .join('');
   };
@@ -804,6 +944,7 @@
     newRoleCodeInput.value = '';
     newRoleCodeInput.disabled = false;
     newRolePermissionsInput.value = '';
+    renderPermissionPicker([]);
     newRoleDescriptionInput.value = '';
     newRoleScenariosInput.value = '';
     createRoleButton.textContent = 'Guardar rol';
@@ -813,12 +954,16 @@
   const startRoleEdit = (roleId) => {
     const role = rolesCache.find((item) => Number(item.id) === Number(roleId));
     if (!role) return;
+    if (!canUseRole(role)) {
+      setTeamFeedback('Este rol es exclusivo del dueño del sistema.', true);
+      return;
+    }
     editingRoleId = role.id;
     newRoleNameInput.value = role.name || '';
     newRoleCodeInput.value = role.code || '';
     newRoleCodeInput.disabled = Boolean(role.is_system_default);
     newRolePersonaSelect.value = role.persona || 'business_manager';
-    newRolePermissionsInput.value = (role.default_permissions || []).join(', ');
+    renderPermissionPicker(role.default_permissions || []);
     newRoleDescriptionInput.value = role.description || '';
     newRoleScenariosInput.value = role.typical_scenarios || '';
     createRoleButton.textContent = 'Actualizar rol';
@@ -851,13 +996,14 @@
     const persona = newRolePersonaSelect.value;
     const description = newRoleDescriptionInput.value.trim();
     const typicalScenarios = newRoleScenariosInput.value.trim();
-    const defaultPermissions = newRolePermissionsInput.value
-      .split(',')
-      .map((permission) => permission.trim())
-      .filter(Boolean);
+    const defaultPermissions = syncPermissionInput();
 
     if (!name || !code || !description || !typicalScenarios) {
       setTeamFeedback('Completa nombre, código, descripción y escenarios para crear el rol.', true);
+      return;
+    }
+    if (!isSystemOwner() && (systemOwnerRoleCodes.has(code) || defaultPermissions.includes('*'))) {
+      setTeamFeedback('El rol Super Administrador TI es exclusivo del dueño del sistema.', true);
       return;
     }
 
@@ -895,9 +1041,14 @@
     const userId = Number(userIdOverride || assignRoleUserSelect.value);
     const roleId = Number(roleIdOverride || assignRoleRoleSelect.value);
     const organizationId = getActiveOrganizationId();
+    const roleToAssign = rolesCache.find((role) => Number(role.id) === roleId);
 
     if (!userId || !roleId) {
       setTeamFeedback('Selecciona usuario y rol para asociarlos.', true);
+      return;
+    }
+    if (!canUseRole(roleToAssign)) {
+      setTeamFeedback('El rol Super Administrador TI es exclusivo del dueño del sistema.', true);
       return;
     }
 
@@ -918,8 +1069,7 @@
         throw new Error(message || 'No fue posible asociar el rol.');
       }
       const selectedUser = usersCache.find((user) => Number(user.id) === userId);
-      const selectedRole = rolesCache.find((role) => Number(role.id) === roleId);
-      setTeamFeedback(`Rol ${selectedRole?.name || roleId} asociado a ${selectedUser?.email || selectedUser?.username}.`);
+      setTeamFeedback(`Rol ${roleToAssign?.name || roleId} asociado a ${selectedUser?.email || selectedUser?.username}.`);
       await loadData();
     } catch (error) {
       setTeamFeedback(error.message || 'Error al asociar rol.', true);
@@ -1201,6 +1351,13 @@
     const roleId = usersList.querySelector(`[data-user-role-select="${userId}"]`)?.value;
     assignRole(userId, roleId).catch(() => null);
   });
+  usersPagination.addEventListener('click', (event) => {
+    const nextPage = Number(event.target?.dataset?.usersPage);
+    if (!nextPage) return;
+    usersPage = nextPage;
+    renderUsers(usersCache);
+  });
+  permissionsPicker.addEventListener('change', syncPermissionInput);
   rolesGroups.addEventListener('click', (event) => {
     const editId = event.target?.dataset?.roleEdit;
     const deleteId = event.target?.dataset?.roleDelete;

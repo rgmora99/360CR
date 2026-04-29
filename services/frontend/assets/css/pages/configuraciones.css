@@ -150,6 +150,53 @@
 
 .settings-user-row {
   grid-template-columns: minmax(0, 1fr);
+  gap: 0.65rem !important;
+}
+
+.settings-user-main {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.settings-user-meta,
+.settings-user-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid rgba(145, 167, 235, 0.3);
+  border-radius: 999px;
+  padding: 0.18rem 0.48rem;
+  background: rgba(15, 31, 58, 0.85);
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.settings-chip.is-success {
+  border-color: rgba(94, 234, 212, 0.35);
+  color: #8ef1df;
+}
+
+.settings-chip.is-muted {
+  color: var(--color-muted);
+}
+
+.settings-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.9rem;
+  color: var(--color-muted);
+  font-size: 0.9rem;
 }
 
 .inline-role-assignment,
@@ -169,6 +216,40 @@
   color: var(--color-text);
   padding: 0.52rem 0.62rem;
   font: inherit;
+}
+
+.permissions-picker {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.65rem;
+}
+
+.permission-group {
+  border: 1px solid rgba(145, 167, 235, 0.25);
+  border-radius: 0.65rem;
+  padding: 0.65rem;
+  background: rgba(8, 17, 33, 0.55);
+}
+
+.permission-group legend {
+  padding: 0 0.3rem;
+  color: var(--color-text);
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.permission-option {
+  display: flex !important;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem !important;
+  margin-top: 0.45rem;
+  color: var(--color-muted);
+}
+
+.permission-option input {
+  width: auto;
 }
 
 .availability-user-grid {

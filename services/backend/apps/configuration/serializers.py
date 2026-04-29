@@ -178,6 +178,20 @@ class RoleCatalogSerializer(serializers.ModelSerializer):
             "is_system_default",
         ]
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        is_system_owner = bool(user and user.is_authenticated and (user.is_superuser or user.is_staff))
+        code = attrs.get("code", getattr(self.instance, "code", ""))
+        default_permissions = attrs.get("default_permissions", getattr(self.instance, "default_permissions", []))
+
+        if not is_system_owner and code == "ti-super-admin":
+            raise serializers.ValidationError({"code": "Este rol es exclusivo del dueño del sistema."})
+        if not is_system_owner and "*" in (default_permissions or []):
+            raise serializers.ValidationError({"default_permissions": "El permiso total solo puede usarlo el dueño del sistema."})
+        return attrs
+
 
 class SystemSettingSerializer(serializers.ModelSerializer):
     class Meta:
@@ -216,6 +230,16 @@ class UserRoleAssignmentSerializer(serializers.ModelSerializer):
             "assigned_at",
         ]
         read_only_fields = ["assigned_by", "assigned_at"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        is_system_owner = bool(user and user.is_authenticated and (user.is_superuser or user.is_staff))
+        role = attrs.get("role", getattr(self.instance, "role", None))
+        if role and role.code == "ti-super-admin" and not is_system_owner:
+            raise serializers.ValidationError({"role": "Este rol es exclusivo del dueño del sistema."})
+        return attrs
 
 
 class OrganizationEmailInboxSerializer(serializers.ModelSerializer):

@@ -58,6 +58,7 @@
                 </div>
                 <p id="user-feedback" class="section-help">Sin acciones recientes.</p>
                 <ul id="users-list" class="settings-list"></ul>
+                <div id="users-pagination" class="settings-pagination" aria-label="Paginación de usuarios"></div>
               </article>
 
               <article class="card">
@@ -102,9 +103,10 @@
                     </select>
                   </label>
                   <label>
-                    Permisos (separados por coma)
-                    <input id="new-role-permissions" type="text" placeholder="agenda.view, agenda.manage" />
+                    Permisos
+                    <input id="new-role-permissions" type="hidden" />
                   </label>
+                  <div id="permissions-picker" class="permissions-picker"></div>
                   <label>
                     Descripción
                     <textarea id="new-role-description" rows="2" placeholder="Describe alcance y responsabilidad"></textarea>
