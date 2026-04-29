@@ -22,6 +22,8 @@
   const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const ORG_TABS = ['profile', 'subscription', 'list'];
+  const USER_TABS = ['user-form', 'access-form', 'users-list', 'access-list'];
+  const CATALOG_TABS = ['modules-form', 'plans-form', 'catalog-list'];
 
   const state = {
     session: null,
@@ -249,13 +251,27 @@
 
   function activateOrgPanel(panelId) {
     const normalizedPanelId = ORG_TABS.includes(panelId) ? panelId : 'profile';
-    document.querySelectorAll('[data-org-tab]').forEach((button) => {
-      const isActive = button.dataset.orgTab === normalizedPanelId;
+    activateNestedPanel('org', normalizedPanelId);
+  }
+
+  function activateUserPanel(panelId) {
+    const normalizedPanelId = USER_TABS.includes(panelId) ? panelId : 'user-form';
+    activateNestedPanel('user', normalizedPanelId);
+  }
+
+  function activateCatalogPanel(panelId) {
+    const normalizedPanelId = CATALOG_TABS.includes(panelId) ? panelId : 'modules-form';
+    activateNestedPanel('catalog', normalizedPanelId);
+  }
+
+  function activateNestedPanel(namespace, panelId) {
+    document.querySelectorAll(`[data-${namespace}-tab]`).forEach((button) => {
+      const isActive = button.dataset[`${namespace}Tab`] === panelId;
       button.classList.toggle('is-active', isActive);
       button.setAttribute('aria-current', isActive ? 'page' : 'false');
     });
-    document.querySelectorAll('[data-org-panel]').forEach((panel) => {
-      panel.classList.toggle('is-active', panel.dataset.orgPanel === normalizedPanelId);
+    document.querySelectorAll(`[data-${namespace}-panel]`).forEach((panel) => {
+      panel.classList.toggle('is-active', panel.dataset[`${namespace}Panel`] === panelId);
     });
   }
 
@@ -974,16 +990,28 @@
       });
     });
     $('users-body').querySelectorAll('tr[data-user-id]').forEach((row) => {
-      row.addEventListener('click', () => hydrateUserForm(row.dataset.userId));
+      row.addEventListener('click', () => {
+        hydrateUserForm(row.dataset.userId);
+        activateUserPanel('user-form');
+      });
     });
     $('memberships-body').querySelectorAll('tr[data-membership-id]').forEach((row) => {
-      row.addEventListener('click', () => hydrateMembershipForm(row.dataset.membershipId));
+      row.addEventListener('click', () => {
+        hydrateMembershipForm(row.dataset.membershipId);
+        activateUserPanel('access-form');
+      });
     });
     $('modules-list').querySelectorAll('li[data-module-id]').forEach((item) => {
-      item.addEventListener('click', () => hydrateModuleForm(item.dataset.moduleId));
+      item.addEventListener('click', () => {
+        hydrateModuleForm(item.dataset.moduleId);
+        activateCatalogPanel('modules-form');
+      });
     });
     $('plans-list').querySelectorAll('li[data-plan-id]').forEach((item) => {
-      item.addEventListener('click', () => hydratePlanForm(item.dataset.planId));
+      item.addEventListener('click', () => {
+        hydratePlanForm(item.dataset.planId);
+        activateCatalogPanel('plans-form');
+      });
     });
     $('flags-body').querySelectorAll('tr[data-flag-id]').forEach((row) => {
       row.addEventListener('click', () => hydrateFlagForm(row.dataset.flagId));
@@ -1052,6 +1080,12 @@
     window.addEventListener('hashchange', () => activateTab(getTabFromHash()));
     document.querySelectorAll('[data-org-tab]').forEach((button) => {
       button.addEventListener('click', () => activateOrgPanel(button.dataset.orgTab));
+    });
+    document.querySelectorAll('[data-user-tab]').forEach((button) => {
+      button.addEventListener('click', () => activateUserPanel(button.dataset.userTab));
+    });
+    document.querySelectorAll('[data-catalog-tab]').forEach((button) => {
+      button.addEventListener('click', () => activateCatalogPanel(button.dataset.catalogTab));
     });
   }
 
@@ -1378,6 +1412,8 @@
     bindTabs();
     activateTab(getTabFromHash());
     activateOrgPanel('profile');
+    activateUserPanel('user-form');
+    activateCatalogPanel('modules-form');
     bindActions();
     bindSubscriptionModuleActions();
     const allowed = await ensureAccess();

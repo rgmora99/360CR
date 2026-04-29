@@ -162,8 +162,14 @@
             </section>
 
             <section class="saas-admin-panel" data-admin-panel="users">
+              <nav class="saas-admin-inner-tabs" aria-label="Detalle de usuarios y accesos">
+                <button class="saas-admin-inner-tab is-active" type="button" data-user-tab="user-form">Usuario</button>
+                <button class="saas-admin-inner-tab" type="button" data-user-tab="access-form">Acceso</button>
+                <button class="saas-admin-inner-tab" type="button" data-user-tab="users-list">Usuarios registrados</button>
+                <button class="saas-admin-inner-tab" type="button" data-user-tab="access-list">Accesos registrados</button>
+              </nav>
             <div class="saas-admin-grid">
-              <article class="card">
+              <article class="card is-active" data-user-panel="user-form">
                 <div class="section-heading">
                   <div>
                     <h2>Usuarios globales</h2>
@@ -194,7 +200,7 @@
                 </div>
               </article>
 
-              <article class="card">
+              <article class="card" data-user-panel="access-form">
                 <div class="section-heading">
                   <div>
                     <h2>Accesos por organizacion</h2>
@@ -225,7 +231,7 @@
               </article>
             </div>
 
-            <article class="card saas-admin-table-card">
+            <article class="card saas-admin-table-card" data-user-panel="users-list">
               <div class="section-heading">
                 <div>
                   <h2>Usuarios registrados</h2>
@@ -243,7 +249,7 @@
               <div id="users-pagination"></div>
             </article>
 
-            <article class="card saas-admin-table-card">
+            <article class="card saas-admin-table-card" data-user-panel="access-list">
               <div class="section-heading">
                 <div>
                   <h2>Memberships</h2>
@@ -263,8 +269,13 @@
             </section>
 
             <section class="saas-admin-panel" data-admin-panel="catalog">
+              <nav class="saas-admin-inner-tabs" aria-label="Detalle de modulos y planes">
+                <button class="saas-admin-inner-tab is-active" type="button" data-catalog-tab="modules-form">Módulos</button>
+                <button class="saas-admin-inner-tab" type="button" data-catalog-tab="plans-form">Planes</button>
+                <button class="saas-admin-inner-tab" type="button" data-catalog-tab="catalog-list">Registros</button>
+              </nav>
             <div class="saas-admin-grid">
-              <article class="card">
+              <article class="card is-active" data-catalog-panel="modules-form">
                 <div class="section-heading">
                   <div>
                     <h2>Modulos</h2>
@@ -301,7 +312,7 @@
                 </div>
               </article>
 
-              <article class="card">
+              <article class="card" data-catalog-panel="plans-form">
                 <div class="section-heading">
                   <div>
                     <h2>Planes</h2>
@@ -343,7 +354,7 @@
               </article>
             </div>
 
-            <div class="saas-admin-grid">
+            <div class="saas-admin-grid" data-catalog-panel="catalog-list">
               <article class="card">
                 <div class="section-heading">
                   <div>

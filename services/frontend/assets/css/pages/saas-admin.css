@@ -100,15 +100,25 @@
   align-items: start;
 }
 
-[data-org-panel] {
+[data-org-panel],
+[data-user-panel],
+[data-catalog-panel] {
   display: none;
 }
 
-[data-org-panel].is-active {
+[data-org-panel].is-active,
+[data-user-panel].is-active,
+[data-catalog-panel].is-active {
   display: block;
 }
 
-.saas-admin-grid--setup > [data-org-panel].is-active {
+.saas-admin-grid[data-catalog-panel].is-active {
+  display: grid;
+}
+
+.saas-admin-grid--setup > [data-org-panel].is-active,
+.saas-admin-grid > [data-user-panel].is-active,
+.saas-admin-grid > [data-catalog-panel].is-active {
   grid-column: 1 / -1;
 }
 
