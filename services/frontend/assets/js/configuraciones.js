@@ -1,7 +1,6 @@
 (function initConfiguracionesModule() {
   const usersList = document.getElementById('users-list');
   const newUserEmailInput = document.getElementById('new-user-email');
-  const newUserRoleSelect = document.getElementById('new-user-role');
   const newUserFirstNameInput = document.getElementById('new-user-first-name');
   const newUserLastNameInput = document.getElementById('new-user-last-name');
   const createCollaboratorUserButton = document.getElementById('create-collaborator-user');
@@ -71,7 +70,6 @@
   if (
     !usersList ||
     !newUserEmailInput ||
-    !newUserRoleSelect ||
     !newUserFirstNameInput ||
     !newUserLastNameInput ||
     !createCollaboratorUserButton ||
@@ -774,7 +772,6 @@
             <strong>${escapeHtml(user.email || user.username)}</strong>
             <div class="settings-user-meta">
               <span class="settings-chip ${user.is_active ? 'is-success' : 'is-muted'}">${user.is_active ? 'Activo' : 'Inactivo'}</span>
-              <span class="settings-chip">${escapeHtml(user.organization_membership_role || 'viewer')}</span>
               <span class="settings-chip">${escapeHtml(user.organization_name || 'Negocio activo')}</span>
             </div>
             <small>${user.requires_password_setup ? 'Pendiente: debe crear contrasena al primer ingreso.' : 'Acceso con contrasena configurada.'}</small>
@@ -800,7 +797,6 @@
   const createCollaboratorUser = async () => {
     const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
     const email = newUserEmailInput.value.trim().toLowerCase();
-    const membershipRole = newUserRoleSelect.value;
     const firstName = newUserFirstNameInput.value.trim();
     const lastName = newUserLastNameInput.value.trim();
 
@@ -824,7 +820,7 @@
           first_name: firstName,
           last_name: lastName,
           organization_id: organizationId,
-          membership_role: membershipRole,
+          membership_role: 'viewer',
         }),
       }).then(async (response) => {
         if (!response.ok) {
