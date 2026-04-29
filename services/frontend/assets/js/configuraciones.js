@@ -7,6 +7,7 @@
   const userFeedback = document.getElementById('user-feedback');
   const usersPagination = document.getElementById('users-pagination');
   const rolesGroups = document.getElementById('roles-groups');
+  const rolesPagination = document.getElementById('roles-pagination');
   const systemSettingsGroups = document.getElementById('system-settings-groups');
   const organizationsList = document.getElementById('organizations-list');
   const orgNameInput = document.getElementById('org-name');
@@ -62,6 +63,8 @@
   let usersCache = [];
   let usersPage = 1;
   const usersPageSize = 5;
+  let rolesPage = 1;
+  const rolesPageSize = 4;
   let collaboratorsCache = [];
   let availabilityRulesCache = [];
   let editingEmailInboxId = null;
@@ -76,6 +79,7 @@
     !userFeedback ||
     !usersPagination ||
     !rolesGroups ||
+    !rolesPagination ||
     !systemSettingsGroups ||
     !organizationsList ||
     !orgNameInput ||
@@ -848,41 +852,55 @@
   };
 
   const renderRoles = (roles) => {
-    const visibleRoles = roles.filter(canUseRole);
+    const visibleRoles = roles
+      .filter(canUseRole)
+      .sort((left, right) => {
+        const personaDiff = (personaLabels[left.persona] || left.persona).localeCompare(personaLabels[right.persona] || right.persona, 'es');
+        if (personaDiff) return personaDiff;
+        return (left.name || '').localeCompare(right.name || '', 'es');
+      });
     if (!visibleRoles.length) {
       rolesGroups.innerHTML = '<p>No hay roles configurados.</p>';
+      rolesPagination.innerHTML = '';
       return;
     }
 
-    const grouped = visibleRoles.reduce((acc, role) => {
-      if (!acc[role.persona]) acc[role.persona] = [];
-      acc[role.persona].push(role);
-      return acc;
-    }, {});
+    const totalPages = Math.max(1, Math.ceil(visibleRoles.length / rolesPageSize));
+    rolesPage = Math.min(Math.max(1, rolesPage), totalPages);
+    const startIndex = (rolesPage - 1) * rolesPageSize;
+    const pageRoles = visibleRoles.slice(startIndex, startIndex + rolesPageSize);
 
-    rolesGroups.innerHTML = Object.entries(grouped)
-      .map(
-        ([persona, roleList]) => `<section class="role-group">
-          <h3>${escapeHtml(personaLabels[persona] || persona)}</h3>
-          <ul class="settings-list">
-            ${roleList
-              .map(
-                (role) => `<li>
-                    <strong>${escapeHtml(role.name)}</strong>
-                    <span>${escapeHtml(role.description)}</span>
-                    <small>Escenarios: ${escapeHtml(role.typical_scenarios)}</small>
-                    <small>${role.is_system_default ? 'Rol base' : 'Rol personalizado'} - Permisos: ${escapeHtml((role.default_permissions || []).join(', ') || 'Sin permisos definidos')}</small>
-                    <div class="actions">
-                      <button class="btn btn-secondary" type="button" data-role-edit="${role.id}">Editar</button>
-                      ${role.is_system_default ? '' : `<button class="btn btn-secondary" type="button" data-role-delete="${role.id}">Eliminar</button>`}
-                    </div>
-                  </li>`,
-              )
-              .join('')}
-          </ul>
-        </section>`,
-      )
-      .join('');
+    rolesGroups.innerHTML = `<ul class="settings-list compact-role-list">
+      ${pageRoles
+        .map(
+          (role) => `<li>
+            <div class="role-card-header">
+              <div>
+                <strong>${escapeHtml(role.name)}</strong>
+                <span>${escapeHtml(personaLabels[role.persona] || role.persona)}</span>
+              </div>
+              <span class="settings-chip">${role.is_system_default ? 'Base' : 'Personalizado'}</span>
+            </div>
+            <span>${escapeHtml(role.description)}</span>
+            <details class="role-details">
+              <summary>Ver detalles</summary>
+              <small>Escenarios: ${escapeHtml(role.typical_scenarios || 'Sin escenarios definidos')}</small>
+              <small>Permisos: ${escapeHtml((role.default_permissions || []).join(', ') || 'Sin permisos definidos')}</small>
+            </details>
+            <div class="actions">
+              <button class="btn btn-secondary" type="button" data-role-edit="${role.id}">Editar</button>
+              ${role.is_system_default ? '' : `<button class="btn btn-secondary" type="button" data-role-delete="${role.id}">Eliminar</button>`}
+            </div>
+          </li>`,
+        )
+        .join('')}
+    </ul>`;
+
+    rolesPagination.innerHTML = `
+      <button class="btn btn-secondary" type="button" data-roles-page="${rolesPage - 1}" ${rolesPage <= 1 ? 'disabled' : ''}>Anterior</button>
+      <span>Mostrando ${startIndex + 1}-${Math.min(startIndex + rolesPageSize, visibleRoles.length)} de ${visibleRoles.length}</span>
+      <button class="btn btn-secondary" type="button" data-roles-page="${rolesPage + 1}" ${rolesPage >= totalPages ? 'disabled' : ''}>Siguiente</button>
+    `;
   };
 
   const renderRoleOptions = (roles) => {
@@ -1352,6 +1370,12 @@
     if (!nextPage) return;
     usersPage = nextPage;
     renderUsers(usersCache);
+  });
+  rolesPagination.addEventListener('click', (event) => {
+    const nextPage = Number(event.target?.dataset?.rolesPage);
+    if (!nextPage) return;
+    rolesPage = nextPage;
+    renderRoles(rolesCache);
   });
   permissionsPicker.addEventListener('change', syncPermissionInput);
   rolesGroups.addEventListener('click', (event) => {
