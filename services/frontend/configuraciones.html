@@ -28,15 +28,6 @@
             </div>
           </section>
 
-          <nav class="settings-submenu card" aria-label="Submenú de configuraciones">
-            <button class="submenu-tab is-active" type="button" data-settings-tab="usuarios">Usuarios</button>
-            <button class="submenu-tab" type="button" data-settings-tab="roles">Roles</button>
-            <button class="submenu-tab" type="button" data-settings-tab="organizaciones">Organizaciones</button>
-            <button class="submenu-tab" type="button" data-settings-tab="disponibilidad">Disponibilidad</button>
-            <button class="submenu-tab" type="button" data-settings-tab="correo">Correo facturas</button>
-            <button class="submenu-tab" type="button" data-settings-tab="sistema">Sistema</button>
-          </nav>
-
           <section class="settings-panel is-active" data-settings-panel="usuarios">
             <div class="settings-grid">
               <article class="card">
@@ -283,9 +274,13 @@
     <script src="/assets/js/forms.js"></script>
     <script src="/assets/js/alerts.js"></script>
     <script src="/assets/js/navigation.js"></script>
-    <script src="/assets/js/configuraciones.js"></script>
     <script>
-      window.renderSharedNavigation({ activeModule: 'configuraciones' });
+      (() => {
+        const section = (window.location.hash || '#usuarios').slice(1);
+        const allowed = new Set(['usuarios', 'roles', 'organizaciones', 'disponibilidad', 'correo', 'sistema']);
+        window.renderSharedNavigation({ activeModule: `configuraciones-${allowed.has(section) ? section : 'usuarios'}` });
+      })();
     </script>
+    <script src="/assets/js/configuraciones.js"></script>
   </body>
 </html>

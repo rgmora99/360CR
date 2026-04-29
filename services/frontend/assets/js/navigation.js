@@ -244,7 +244,19 @@
       { key: 'inventario', label: 'Inventario', href: '/inventario.html', moduleCode: 'inventory' },
       { key: 'marketing', label: 'Marketing automatico', href: '#', moduleCode: 'campaigns' },
       { key: 'fidelizacion', label: 'Fidelizacion de clientes', href: '/fidelizacion.html', moduleCode: 'loyalty' },
-      { key: 'configuraciones', label: 'Configuraciones', href: '/configuraciones.html', alwaysVisible: true },
+      {
+        key: 'configuraciones-menu',
+        label: 'Configuraciones',
+        alwaysVisible: true,
+        children: [
+          { key: 'configuraciones-usuarios', label: 'Usuarios', href: '/configuraciones.html#usuarios', alwaysVisible: true },
+          { key: 'configuraciones-roles', label: 'Roles', href: '/configuraciones.html#roles', alwaysVisible: true },
+          { key: 'configuraciones-organizaciones', label: 'Organizaciones', href: '/configuraciones.html#organizaciones', alwaysVisible: true },
+          { key: 'configuraciones-disponibilidad', label: 'Disponibilidad', href: '/configuraciones.html#disponibilidad', alwaysVisible: true },
+          { key: 'configuraciones-correo', label: 'Correo facturas', href: '/configuraciones.html#correo', alwaysVisible: true },
+          { key: 'configuraciones-sistema', label: 'Sistema', href: '/configuraciones.html#sistema', alwaysVisible: true },
+        ],
+      },
     ];
   }
 

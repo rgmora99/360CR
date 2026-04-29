@@ -129,6 +129,7 @@
     finance: 'Finanzas',
     notifications: 'Notificaciones',
   };
+  const settingsSections = ['usuarios', 'roles', 'organizaciones', 'disponibilidad', 'correo', 'sistema'];
   const weekdayLabels = {
     0: 'Domingo',
     1: 'Lunes',
@@ -220,20 +221,47 @@
     return raw;
   };
 
-  const setupSubmenuTabs = () => {
-    if (!settingsTabs.length || !settingsPanels.length) return;
+  const getSettingsSectionFromHash = () => {
+    const section = (window.location.hash || '#usuarios').slice(1);
+    return settingsSections.includes(section) ? section : 'usuarios';
+  };
 
+  const syncSettingsSidebarSection = (section) => {
+    const targetHref = `/configuraciones.html#${section}`;
+    document.querySelectorAll('.sidebar-nav a[href^="/configuraciones.html#"]').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('href') === targetHref);
+    });
+    const activeLink = document.querySelector(`.sidebar-nav a[href="${targetHref}"]`);
+    const submenu = activeLink?.closest('.sidebar-submenu');
+    if (submenu) {
+      submenu.classList.add('is-open');
+      submenu.querySelector('[data-submenu-toggle]')?.classList.add('active');
+    }
+  };
+
+  const activateSettingsPanel = (section) => {
+    const targetPanel = settingsSections.includes(section) ? section : 'usuarios';
+    settingsTabs.forEach((button) => {
+      const isActive = button.dataset.settingsTab === targetPanel;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-current', isActive ? 'page' : 'false');
+    });
+    settingsPanels.forEach((panel) => {
+      panel.classList.toggle('is-active', panel.dataset.settingsPanel === targetPanel);
+    });
+    syncSettingsSidebarSection(targetPanel);
+  };
+
+  const setupSubmenuTabs = () => {
     settingsTabs.forEach((tabButton) => {
       tabButton.addEventListener('click', () => {
         const targetPanel = tabButton.dataset.settingsTab;
-        settingsTabs.forEach((button) => {
-          button.classList.toggle('is-active', button === tabButton);
-        });
-        settingsPanels.forEach((panel) => {
-          panel.classList.toggle('is-active', panel.dataset.settingsPanel === targetPanel);
-        });
+        window.location.hash = targetPanel;
+        activateSettingsPanel(targetPanel);
       });
     });
+    window.addEventListener('hashchange', () => activateSettingsPanel(getSettingsSectionFromHash()));
+    activateSettingsPanel(getSettingsSectionFromHash());
   };
 
   const orgRequest = async (path, options) => {
