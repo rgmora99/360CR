@@ -114,6 +114,7 @@ class OrganizationEmailInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelV
     serializer_class = OrganizationEmailInboxSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("organization",)
+    required_module_code = "purchases"
 
     def get_queryset(self):
         queryset = OrganizationEmailInbox.objects.all()

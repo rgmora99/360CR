@@ -1,6 +1,6 @@
 from rest_framework.exceptions import PermissionDenied
 
-from apps.tenants.models import Membership, Organization
+from apps.tenants.models import Membership, Organization, Subscription, SubscriptionModule
 
 
 def get_allowed_organization_ids(user):
@@ -26,12 +26,36 @@ def get_allowed_organization_ids(user):
     return sorted(allowed_ids)
 
 
+def get_enabled_module_organization_ids(organization_ids, module_code):
+    if not module_code or not organization_ids:
+        return list(organization_ids or [])
+    return list(
+        SubscriptionModule.objects.filter(
+            subscription__organization_id__in=organization_ids,
+            subscription__is_active=True,
+            subscription__status__in=[Subscription.STATUS_TRIAL, Subscription.STATUS_ACTIVE],
+            is_enabled=True,
+            module__code=module_code,
+            module__is_active=True,
+        ).values_list("subscription__organization_id", flat=True)
+    )
+
+
+def organization_has_enabled_module(organization_id, module_code):
+    try:
+        selected_id = int(organization_id)
+    except (TypeError, ValueError):
+        return False
+    return selected_id in get_enabled_module_organization_ids([selected_id], module_code)
+
+
 class OrganizationScopedViewMixin:
     organization_lookup_field = "organization_id"
     tenant_access_paths = ()
     enforce_tenant_on_create = True
     enforce_tenant_on_update = True
     allow_tenant_reassignment = False
+    required_module_code = None
 
     def get_allowed_organization_ids(self):
         return get_allowed_organization_ids(self.request.user)
@@ -107,6 +131,11 @@ class OrganizationScopedViewMixin:
         if not allowed_ids:
             return queryset.none()
 
+        if self.required_module_code:
+            allowed_ids = get_enabled_module_organization_ids(allowed_ids, self.required_module_code)
+            if not allowed_ids:
+                return queryset.none()
+
         queryset = queryset.filter(**{f"{self.organization_lookup_field}__in": allowed_ids})
         organization_id = self.request.query_params.get("organization_id")
         if organization_id:
@@ -129,6 +158,8 @@ class OrganizationScopedViewMixin:
 
         if selected_id not in self.get_allowed_organization_ids():
             raise PermissionDenied("No tiene acceso a la organizacion solicitada")
+        if self.required_module_code and not organization_has_enabled_module(selected_id, self.required_module_code):
+            raise PermissionDenied("El modulo requerido no esta activo para esta organizacion")
         return selected_id
 
     def perform_create(self, serializer):

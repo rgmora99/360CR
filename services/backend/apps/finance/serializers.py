@@ -20,7 +20,8 @@ from apps.finance.models import (
 )
 from apps.loyalty.models import LoyaltyMember, LoyaltyPointEntry, LoyaltyRule
 from apps.suppliers.models import Supplier
-from apps.tenants.models import Membership, Organization, Subscription, SubscriptionModule
+from apps.tenants.access import organization_has_enabled_module
+from apps.tenants.models import Membership, Organization
 
 
 def money(value):
@@ -32,17 +33,9 @@ SUPPORTED_INVOICE_SALE_CONDITIONS = {"01", "02"}
 SUPPORTED_INVOICE_CURRENCIES = {"CRC", "USD"}
 MODULE_LOYALTY = "loyalty"
 MODULE_SHIPPING = "shipping"
-
-
-def organization_has_enabled_module(organization_id, module_code):
-    return SubscriptionModule.objects.filter(
-        subscription__organization_id=organization_id,
-        subscription__is_active=True,
-        subscription__status__in=[Subscription.STATUS_TRIAL, Subscription.STATUS_ACTIVE],
-        is_enabled=True,
-        module__code=module_code,
-        module__is_active=True,
-    ).exists()
+MODULE_RECEIVABLES = "receivables"
+MODULE_PURCHASES = "purchases"
+MODULE_BILLING = "billing_basic"
 
 
 def build_installment_amounts(total, installment_count):
@@ -771,8 +764,12 @@ class InvoiceCreateSerializer(serializers.Serializer):
             if not has_access:
                 raise serializers.ValidationError("No tiene acceso a la organización seleccionada.")
 
+        if not organization_has_enabled_module(attrs["organization"], MODULE_BILLING):
+            raise serializers.ValidationError("El modulo de facturacion no esta activo para esta organizacion.")
+
         loyalty_enabled = organization_has_enabled_module(attrs["organization"], MODULE_LOYALTY)
         shipping_enabled = organization_has_enabled_module(attrs["organization"], MODULE_SHIPPING)
+        receivables_enabled = organization_has_enabled_module(attrs["organization"], MODULE_RECEIVABLES)
         attrs["loyalty_enabled"] = loyalty_enabled
 
         if attrs.get("use_loyalty_points") and not loyalty_enabled:
@@ -844,6 +841,8 @@ class InvoiceCreateSerializer(serializers.Serializer):
 
         is_credit_sale = self._is_credit_sale(attrs)
         if is_credit_sale:
+            if not receivables_enabled:
+                raise serializers.ValidationError({"sale_condition": "El modulo de cuentas por cobrar no esta activo para esta organizacion."})
             if attrs["sale_condition"] != "02":
                 raise serializers.ValidationError({"sale_condition": "Para facturar a crédito, la condición de venta debe ser crédito (02)."})
             if attrs["payment_method"] != Invoice.PAYMENT_INSTALLMENTS:
@@ -1186,6 +1185,8 @@ class PurchaseCreateSerializer(serializers.Serializer):
         has_access = Membership.objects.filter(user=request.user, organization_id=attrs["organization"]).exists()
         if not has_access:
             raise serializers.ValidationError("No tiene acceso a la organizacion seleccionada.")
+        if not organization_has_enabled_module(attrs["organization"], MODULE_PURCHASES):
+            raise serializers.ValidationError("El modulo de compras no esta activo para esta organizacion.")
         if not attrs["items"]:
             raise serializers.ValidationError("Debe incluir al menos una linea.")
         attrs["supplier_name"] = (attrs.get("supplier_name") or "").strip() or "Proveedor no identificado"
@@ -1302,6 +1303,8 @@ class TaxQuarterReportCreateSerializer(serializers.Serializer):
             has_access = Membership.objects.filter(user=request.user, organization_id=organization_id).exists()
             if not has_access:
                 raise serializers.ValidationError({"organization": "No tiene acceso a la organizacion seleccionada."})
+        if not organization_has_enabled_module(organization_id, MODULE_PURCHASES):
+            raise serializers.ValidationError({"organization": "El modulo de compras no esta activo para esta organizacion."})
         if TaxReport.objects.filter(organization_id=organization_id, year=attrs["year"], quarter=attrs["quarter"]).exists():
             raise serializers.ValidationError({"quarter": "Ya existe un reporte para esa organizacion, anio y trimestre."})
         return attrs
@@ -1327,6 +1330,8 @@ class PurchaseInboxSyncSerializer(serializers.Serializer):
             has_access = Membership.objects.filter(user=request.user, organization_id=organization_id).exists()
             if not has_access:
                 raise serializers.ValidationError({"organization": "No tiene acceso a la organizacion seleccionada."})
+        if not organization_has_enabled_module(organization_id, MODULE_PURCHASES):
+            raise serializers.ValidationError({"organization": "El modulo de compras no esta activo para esta organizacion."})
         if attrs["date_from"] > attrs["date_to"]:
             raise serializers.ValidationError({"date_from": "La fecha inicial no puede ser mayor a la fecha final."})
         if target_year and (attrs["date_from"].year != target_year or attrs["date_to"].year != target_year):

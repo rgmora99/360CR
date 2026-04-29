@@ -35,10 +35,9 @@ from apps.finance.serializers import (
     PurchaseSerializer,
     TaxQuarterReportCreateSerializer,
     TaxReportSerializer,
-    organization_has_enabled_module,
 )
 from apps.loyalty.models import LoyaltyMember
-from apps.tenants.access import OrganizationScopedViewMixin
+from apps.tenants.access import OrganizationScopedViewMixin, organization_has_enabled_module
 
 logger = logging.getLogger(__name__)
 SYNC_TARGET_YEAR = 2026
@@ -1029,6 +1028,7 @@ class ProductViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer
     permission_classes = [IsAuthenticated]
+    required_module_code = "billing_basic"
 
     def get_queryset(self):
         queryset = Invoice.objects.select_related("customer", "organization").prefetch_related(
@@ -1182,8 +1182,17 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="accounts-receivable")
     def accounts_receivable(self, request):
+        organization_id = request.query_params.get("organization_id")
+        try:
+            organization_id_int = int(organization_id)
+        except (TypeError, ValueError):
+            return Response({"detail": "organization_id es requerido y debe ser numerico."}, status=400)
+        self.validate_organization_payload(organization_id_int)
+        if not organization_has_enabled_module(organization_id_int, "receivables"):
+            return Response({"detail": "El modulo de cuentas por cobrar no esta activo para esta organizacion."}, status=403)
         queryset = (
             self.get_queryset()
+            .filter(organization_id=organization_id_int)
             .filter(payment_method=Invoice.PAYMENT_INSTALLMENTS, sale_condition="02")
             .order_by("-issue_date", "-id")
         )
@@ -1207,6 +1216,8 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="receivable-payments")
     def receivable_payments(self, request, pk=None):
         invoice = self.get_object()
+        if not organization_has_enabled_module(invoice.organization_id, "receivables"):
+            return Response({"detail": "El modulo de cuentas por cobrar no esta activo para esta organizacion."}, status=403)
         serializer = InvoiceReceivablePaymentCreateSerializer(data=request.data, context={"request": request, "invoice": invoice})
         serializer.is_valid(raise_exception=True)
         payment = serializer.save()
@@ -1228,6 +1239,8 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["delete"], url_path=r"receivable-payments/(?P<payment_id>[^/.]+)")
     def delete_receivable_payment(self, request, pk=None, payment_id=None):
         invoice = self.get_object()
+        if not organization_has_enabled_module(invoice.organization_id, "receivables"):
+            return Response({"detail": "El modulo de cuentas por cobrar no esta activo para esta organizacion."}, status=403)
         payment = invoice.receivable_payments.filter(id=payment_id).first()
         if not payment:
             return Response({"detail": "El abono indicado no existe para esta factura."}, status=404)
@@ -1242,6 +1255,8 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path=r"receivable-payments/(?P<payment_id>[^/.]+)/receipt")
     def receivable_payment_receipt(self, request, pk=None, payment_id=None):
         invoice = self.get_object()
+        if not organization_has_enabled_module(invoice.organization_id, "receivables"):
+            return Response({"detail": "El modulo de cuentas por cobrar no esta activo para esta organizacion."}, status=403)
         payment = invoice.receivable_payments.filter(id=payment_id).first()
         if not payment:
             return Response({"detail": "El abono indicado no existe para esta factura."}, status=404)
@@ -1278,6 +1293,7 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 
 class PurchaseViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
+    required_module_code = "purchases"
 
     def get_queryset(self):
         queryset = Purchase.objects.prefetch_related("items")
@@ -1298,6 +1314,7 @@ class PurchaseViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = PurchaseInboxSerializer
+    required_module_code = "purchases"
 
     def get_queryset(self):
         queryset = PurchaseInboxInvoice.objects.select_related("purchase").prefetch_related("attachments")
@@ -1501,6 +1518,7 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
 class TaxQuarterReportViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = TaxReportSerializer
+    required_module_code = "purchases"
 
     def get_queryset(self):
         queryset = TaxReport.objects.all()

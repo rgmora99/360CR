@@ -26,6 +26,7 @@ class SupplierViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = SupplierSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("organization",)
+    required_module_code = "suppliers"
 
     def get_queryset(self):
         queryset = Supplier.objects.select_related("organization", "supplier_type").all()
@@ -55,6 +56,7 @@ class SupplierContactViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet)
     serializer_class = SupplierContactSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("supplier.organization_id",)
+    required_module_code = "suppliers"
 
     def get_queryset(self):
         queryset = SupplierContact.objects.select_related("supplier").all()
@@ -70,6 +72,7 @@ class SupplierAddressViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet)
     serializer_class = SupplierAddressSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("supplier.organization_id",)
+    required_module_code = "suppliers"
 
     def get_queryset(self):
         queryset = SupplierAddress.objects.select_related("supplier").all()

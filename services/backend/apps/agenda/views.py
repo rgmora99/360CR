@@ -15,7 +15,7 @@ from apps.agenda.serializers import AgendaEventSerializer, AgendaEventTypeSerial
 from apps.customers.models import Customer, CustomerType
 from apps.customers.serializers import CustomerSerializer
 from apps.finance.models import Product
-from apps.tenants.access import OrganizationScopedViewMixin
+from apps.tenants.access import OrganizationScopedViewMixin, organization_has_enabled_module
 from apps.tenants.models import Membership, Organization
 
 
@@ -106,6 +106,7 @@ class CollaboratorAvailabilityViewSet(OrganizationScopedViewMixin, viewsets.Mode
     serializer_class = CollaboratorAvailabilitySerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("organization",)
+    required_module_code = "agenda"
 
     def get_queryset(self):
         queryset = CollaboratorAvailability.objects.select_related("organization", "collaborator")
@@ -116,6 +117,7 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = AgendaEventSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("organization", "service.organization_id", "customer.organization_id", "supplier.organization_id")
+    required_module_code = "agenda"
 
     def get_permissions(self):
         if self.action in {
@@ -195,6 +197,8 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         )
         if not appointment or not appointment.verify_public_access_code(normalized_access_code):
             raise LookupError("No pudimos validar la referencia y el código de acceso.")
+        if not organization_has_enabled_module(appointment.organization_id, "agenda"):
+            raise PermissionError("El modulo de agenda no esta activo para esta organizacion.")
         return appointment
 
     def _serialize_public_appointment(self, appointment, include_manage_credentials=False, access_code=""):
@@ -258,6 +262,9 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=400)
         except (Organization.DoesNotExist, User.DoesNotExist):
             return Response({"detail": "Parámetros inválidos."}, status=400)
+
+        if not organization_has_enabled_module(organization.id, "agenda"):
+            return Response({"detail": "El modulo de agenda no esta activo para esta organizacion."}, status=403)
 
         if not Membership.objects.filter(user_id=collaborator.id, organization_id=organization.id).exists():
             return Response({"detail": "El colaborador no pertenece a esta organizacion."}, status=400)
@@ -406,6 +413,9 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         except (TypeError, ValueError, Product.DoesNotExist):
             return Response({"detail": "El servicio seleccionado no existe para esta organización."}, status=400)
 
+        if not organization_has_enabled_module(service.organization_id, "agenda"):
+            return Response({"detail": "El modulo de agenda no esta activo para esta organizacion."}, status=403)
+
         starts_at = parse_datetime(str(request.data.get("starts_at")))
         if not starts_at:
             return Response({"detail": "starts_at inválido."}, status=400)
@@ -448,6 +458,9 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         except (TypeError, ValueError, Organization.DoesNotExist):
             return Response({"detail": "organization_id inválido"}, status=400)
 
+        if not organization_has_enabled_module(organization.id, "agenda"):
+            return Response({"detail": "El modulo de agenda no esta activo para esta organizacion."}, status=403)
+
         services = list(
             Product.objects.filter(organization=organization, product_type=Product.TYPE_SERVICE, is_active=True)
             .values("id", "name", "service_duration_minutes")
@@ -487,6 +500,9 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             organization = Organization.objects.get(id=int(organization_id))
         except (TypeError, ValueError, Organization.DoesNotExist):
             return Response({"detail": "organization_id inválido"}, status=400)
+
+        if not organization_has_enabled_module(organization.id, "agenda"):
+            return Response({"detail": "El modulo de agenda no esta activo para esta organizacion."}, status=403)
 
         existing_customer = Customer.objects.filter(organization=organization, tax_id=tax_id).first()
         if existing_customer:
@@ -561,6 +577,8 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=403)
         except LookupError as exc:
             return Response({"detail": str(exc)}, status=404)
 
@@ -575,6 +593,8 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=403)
         except LookupError as exc:
             return Response({"detail": str(exc)}, status=404)
 
@@ -605,6 +625,8 @@ class AgendaEventViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=403)
         except LookupError as exc:
             return Response({"detail": str(exc)}, status=404)
 

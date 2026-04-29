@@ -114,6 +114,11 @@
 
     try {
       const payload = JSON.parse(raw);
+      const message = String(payload?.message || '').trim();
+      if (message && window.appAlerts?.toast) {
+        window.appAlerts.toast(message, 'warning');
+        return;
+      }
       const organizationName = String(payload?.organizationName || '').trim();
       if (organizationName && window.appAlerts?.toast) {
         window.appAlerts.toast(`Negocio cambiado a ${organizationName}.`, 'success');
@@ -232,6 +237,7 @@
           { key: 'compras-registrar', label: 'Registrar compra', href: '/compras.html', moduleCode: 'purchases' },
           { key: 'compras-listado', label: 'Listado de compras', href: '/compras-listado.html', moduleCode: 'purchases' },
           { key: 'bandeja-facturas', label: 'Bandeja facturas', href: '/bandeja-facturas.html', moduleCode: 'purchases' },
+          { key: 'historico-facturas', label: 'Historico de sincronizacion', href: '/historico-facturas.html', moduleCode: 'purchases' },
           { key: 'impuestos', label: 'Impuestos RTS', href: '/impuestos.html', moduleCode: 'purchases' },
         ],
       },
@@ -266,6 +272,15 @@
       .filter(Boolean);
   }
 
+  function findMenuItemByKey(menuItems, key) {
+    for (const item of menuItems) {
+      if (item.key === key) return item;
+      const child = item.children?.find((candidate) => candidate.key === key);
+      if (child) return child;
+    }
+    return null;
+  }
+
   window.renderSharedNavigation = function renderSharedNavigation(options) {
     const activeModule = options?.activeModule || 'inicio';
 
@@ -278,8 +293,23 @@
     }
 
     const cachedSession = window.AppSession.getSession();
+    const activeModuleCodes = getActiveModuleCodes(cachedSession);
+    const fullMenuItems = buildMenuItems();
+    const activeMenuItem = findMenuItemByKey(fullMenuItems, activeModule);
+    if (activeModule !== 'inicio' && activeMenuItem?.moduleCode && !activeModuleCodes.has(activeMenuItem.moduleCode)) {
+      sessionStorage.setItem(
+        ORG_FLASH_KEY,
+        JSON.stringify({ message: 'Ese modulo no esta activo para el negocio seleccionado.' }),
+      );
+      window.location.href = '/dashboard.html';
+      return;
+    }
     const topbarState = getTopbarState(cachedSession);
-    const filteredMenuItems = filterMenuItemsByModules(buildMenuItems(), getActiveModuleCodes(cachedSession));
+    const filteredMenuItems = filterMenuItemsByModules(fullMenuItems, activeModuleCodes);
+    document.querySelectorAll('[data-module-code]').forEach((element) => {
+      const moduleCode = element.dataset.moduleCode;
+      element.classList.toggle('hidden', Boolean(moduleCode) && !activeModuleCodes.has(moduleCode));
+    });
 
     if (cachedSession?.user?.is_system_owner) {
       filteredMenuItems.push({ key: 'system-admin', label: 'Administracion SaaS', href: '/saas-admin.html', alwaysVisible: true });

@@ -28,6 +28,7 @@ class CustomerViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = CustomerSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("organization",)
+    required_module_code = "customers"
 
     def get_queryset(self):
         queryset = Customer.objects.select_related("organization", "customer_type").all()
@@ -79,6 +80,7 @@ class CustomerContactViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet)
     serializer_class = CustomerContactSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("customer.organization_id",)
+    required_module_code = "customers"
 
     def get_queryset(self):
         queryset = CustomerContact.objects.select_related("customer").all()
@@ -93,6 +95,7 @@ class CustomerAddressViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet)
     serializer_class = CustomerAddressSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("customer.organization_id",)
+    required_module_code = "customers"
 
     def get_queryset(self):
         queryset = CustomerAddress.objects.select_related("customer").all()

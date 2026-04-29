@@ -30,6 +30,7 @@ class LoyaltyProgramViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = LoyaltyProgramSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("organization",)
+    required_module_code = "loyalty"
 
     def get_queryset(self):
         queryset = LoyaltyProgram.objects.all()
@@ -41,6 +42,7 @@ class LoyaltyTierViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = LoyaltyTierSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("program.organization_id",)
+    required_module_code = "loyalty"
 
     def get_queryset(self):
         queryset = LoyaltyTier.objects.select_related("program")
@@ -52,6 +54,7 @@ class LoyaltyRuleViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = LoyaltyRuleSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("program.organization_id",)
+    required_module_code = "loyalty"
 
     def get_queryset(self):
         queryset = LoyaltyRule.objects.select_related("program")
@@ -63,6 +66,7 @@ class LoyaltyMemberViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = LoyaltyMemberSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("program.organization_id", "customer.organization_id", "tier.program.organization_id")
+    required_module_code = "loyalty"
 
     def get_queryset(self):
         queryset = LoyaltyMember.objects.select_related("program", "customer", "tier")
@@ -99,6 +103,7 @@ class LoyaltyPointEntryViewSet(OrganizationScopedViewMixin, viewsets.ReadOnlyMod
     organization_lookup_field = "program__organization_id"
     serializer_class = LoyaltyPointEntrySerializer
     permission_classes = [IsAuthenticated]
+    required_module_code = "loyalty"
 
     def get_queryset(self):
         queryset = LoyaltyPointEntry.objects.select_related("program", "member", "related_rule")
@@ -113,6 +118,7 @@ class LoyaltyRewardViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = LoyaltyRewardSerializer
     permission_classes = [IsAuthenticated]
     tenant_access_paths = ("program.organization_id",)
+    required_module_code = "loyalty"
 
     def get_queryset(self):
         queryset = LoyaltyReward.objects.select_related("program")
@@ -123,6 +129,7 @@ class LoyaltyRedemptionViewSet(OrganizationScopedViewMixin, viewsets.ReadOnlyMod
     organization_lookup_field = "program__organization_id"
     serializer_class = LoyaltyRedemptionSerializer
     permission_classes = [IsAuthenticated]
+    required_module_code = "loyalty"
 
     def get_queryset(self):
         queryset = LoyaltyRedemption.objects.select_related("program", "member", "reward", "point_entry")
