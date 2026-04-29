@@ -51,6 +51,35 @@
   min-width: 0;
 }
 
+.saas-admin-inner-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 8px;
+  border: 1px solid rgba(122, 162, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(9, 15, 28, 0.72);
+}
+
+.saas-admin-inner-tab {
+  border: 1px solid rgba(122, 162, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.7);
+  color: var(--muted);
+  padding: 9px 13px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.saas-admin-inner-tab:hover,
+.saas-admin-inner-tab.is-active {
+  color: var(--txt);
+  border-color: rgba(122, 162, 255, 0.36);
+  background: rgba(54, 92, 168, 0.26);
+}
+
 .saas-admin-panel {
   display: none;
   gap: 16px;
@@ -69,6 +98,18 @@
 .saas-admin-grid--setup {
   grid-template-columns: minmax(300px, 0.75fr) minmax(520px, 1.25fr);
   align-items: start;
+}
+
+[data-org-panel] {
+  display: none;
+}
+
+[data-org-panel].is-active {
+  display: block;
+}
+
+.saas-admin-grid--setup > [data-org-panel].is-active {
+  grid-column: 1 / -1;
 }
 
 .saas-admin-card--compact {
@@ -188,6 +229,28 @@
 
 .saas-admin-actions .btn {
   min-width: 0;
+}
+
+.hacienda-preview {
+  display: grid;
+  gap: 4px;
+  margin: 2px 0 12px;
+  padding: 12px;
+  border: 1px solid rgba(122, 247, 215, 0.18);
+  border-radius: 14px;
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.hacienda-preview span,
+.hacienda-preview small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.hacienda-preview strong {
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
 }
 
 .saas-admin-inline-manager {

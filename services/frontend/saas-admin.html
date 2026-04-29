@@ -32,12 +32,17 @@
 
           <section class="saas-admin-panels">
             <section class="saas-admin-panel is-active" data-admin-panel="organizations">
+              <nav class="saas-admin-inner-tabs" aria-label="Detalle de organizaciones">
+                <button class="saas-admin-inner-tab is-active" type="button" data-org-tab="profile">Datos fiscales</button>
+                <button class="saas-admin-inner-tab" type="button" data-org-tab="subscription">Suscripción y módulos</button>
+                <button class="saas-admin-inner-tab" type="button" data-org-tab="list">Listado</button>
+              </nav>
             <div class="saas-admin-grid saas-admin-grid--setup">
-              <article class="card saas-admin-card--compact">
+              <article class="card saas-admin-card--compact is-active" data-org-panel="profile">
                 <div class="section-heading">
                   <div>
                     <h2>Organizaciones</h2>
-                    <p class="subtitle">Datos minimos del negocio. Selecciona una fila para editar.</p>
+                    <p class="subtitle">Datos minimos del negocio y codigos que forman el consecutivo Hacienda.</p>
                   </div>
                 </div>
                 <input id="org-record-id" type="hidden" />
@@ -55,6 +60,11 @@
                     <input id="org-terminal" type="text" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" value="00001" required />
                   </label>
                 </div>
+                <div class="hacienda-preview" id="hacienda-preview">
+                  <span>Próximo consecutivo FE</span>
+                  <strong id="org-next-consecutive">00100001010000000001</strong>
+                  <small id="org-invoice-count">0 facturas emitidas</small>
+                </div>
                 <div class="saas-admin-actions">
                   <button class="btn btn-primary" id="save-organization" type="button">Guardar organizacion</button>
                   <button class="btn btn-secondary" id="reset-organization-form" type="button">Nueva organizacion</button>
@@ -62,7 +72,7 @@
                 <p id="org-feedback" class="subtitle">Sin acciones recientes.</p>
               </article>
 
-              <article class="card saas-admin-subscription-card">
+              <article class="card saas-admin-subscription-card" data-org-panel="subscription">
                 <div class="section-heading">
                   <div>
                     <h2>Suscripcion</h2>
@@ -132,7 +142,7 @@
               </article>
             </div>
 
-            <article class="card saas-admin-table-card">
+            <article class="card saas-admin-table-card" data-org-panel="list">
               <div class="section-heading">
                 <div>
                   <h2>Organizaciones registradas</h2>

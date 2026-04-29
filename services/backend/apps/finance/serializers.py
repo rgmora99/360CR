@@ -855,8 +855,16 @@ class InvoiceCreateSerializer(serializers.Serializer):
             attrs["installment_count"] = 1
 
         consecutive_base = f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}{attrs['document_type']}"
-        if len(consecutive_base) != 10:
-            raise serializers.ValidationError("Error interno generando consecutivo base.")
+        if (
+            len(consecutive_base) != 10
+            or not organization.hacienda_branch_code.isdigit()
+            or not organization.hacienda_terminal_code.isdigit()
+            or organization.hacienda_branch_code == "000"
+            or organization.hacienda_terminal_code == "00000"
+        ):
+            raise serializers.ValidationError({
+                "organization": "La organizacion no tiene sucursal/terminal Hacienda validas para generar consecutivo."
+            })
 
         agenda_event_id = attrs.get("agenda_event")
         if agenda_event_id:
@@ -891,6 +899,16 @@ class InvoiceCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("La organización seleccionada no existe.")
 
         consecutive_prefix = f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}{document_type}"
+        if (
+            len(consecutive_prefix) != 10
+            or not organization.hacienda_branch_code.isdigit()
+            or not organization.hacienda_terminal_code.isdigit()
+            or organization.hacienda_branch_code == "000"
+            or organization.hacienda_terminal_code == "00000"
+        ):
+            raise serializers.ValidationError({
+                "organization": "La organizacion no tiene sucursal/terminal Hacienda validas para generar consecutivo."
+            })
         current_max = (
             Invoice.objects.select_for_update()
             .filter(consecutive_number__startswith=consecutive_prefix)

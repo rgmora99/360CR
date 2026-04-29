@@ -342,6 +342,8 @@ class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
     subscription_status = serializers.CharField(source="subscription.status", read_only=True)
     subscription_plan_name = serializers.CharField(source="subscription.plan_catalog.name", read_only=True)
     memberships_count = serializers.SerializerMethodField()
+    invoice_count = serializers.SerializerMethodField()
+    next_invoice_consecutive = serializers.SerializerMethodField()
 
     class Meta:
         model = Organization
@@ -356,6 +358,8 @@ class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
             "subscription_status",
             "subscription_plan_name",
             "memberships_count",
+            "invoice_count",
+            "next_invoice_consecutive",
         ]
         extra_kwargs = {
             "slug": {"required": False, "allow_blank": True},
@@ -364,6 +368,24 @@ class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
 
     def get_memberships_count(self, obj):
         return obj.membership_set.count()
+
+    def get_invoice_count(self, obj):
+        from apps.finance.models import Invoice
+
+        return Invoice.objects.filter(organization=obj).count()
+
+    def get_next_invoice_consecutive(self, obj):
+        from apps.finance.models import Invoice
+
+        prefix = f"{obj.hacienda_branch_code}{obj.hacienda_terminal_code}01"
+        latest = (
+            Invoice.objects.filter(organization=obj, consecutive_number__startswith=prefix)
+            .order_by("-consecutive_number")
+            .values_list("consecutive_number", flat=True)
+            .first()
+        )
+        sequence = int(latest[10:]) + 1 if latest and len(latest) == 20 and latest[10:].isdigit() else 1
+        return f"{prefix}{sequence:010d}"
 
     def validate_name(self, value):
         clean_value = (value or "").strip()
@@ -394,6 +416,21 @@ class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"hacienda_branch_code": "Debe contener exactamente 3 dÃ­gitos."})
         if not str(terminal).isdigit() or len(str(terminal)) != 5:
             raise serializers.ValidationError({"hacienda_terminal_code": "Debe contener exactamente 5 dÃ­gitos."})
+
+        if branch == "000":
+            raise serializers.ValidationError({"hacienda_branch_code": "La sucursal de Hacienda debe estar entre 001 y 999."})
+        if terminal == "00000":
+            raise serializers.ValidationError({"hacienda_terminal_code": "La terminal de Hacienda debe estar entre 00001 y 99999."})
+
+        if self.instance and (
+            branch != self.instance.hacienda_branch_code or terminal != self.instance.hacienda_terminal_code
+        ):
+            from apps.finance.models import Invoice
+
+            if Invoice.objects.filter(organization=self.instance).exists():
+                raise serializers.ValidationError({
+                    "hacienda_terminal_code": "No se puede cambiar sucursal o terminal si la organizacion ya tiene facturas emitidas; afectaria el consecutivo Hacienda."
+                })
 
         queryset = Organization.objects.filter(hacienda_branch_code=branch, hacienda_terminal_code=terminal)
         if self.instance:

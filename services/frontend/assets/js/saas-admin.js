@@ -21,6 +21,7 @@
   };
   const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const ORG_TABS = ['profile', 'subscription', 'list'];
 
   const state = {
     session: null,
@@ -163,7 +164,25 @@
     if (!new RegExp(`^\\d{${length}}$`).test(value)) {
       return setFieldError(id, `Debe contener exactamente ${length} digitos.`);
     }
+    if (Number(value) < 1) {
+      return setFieldError(id, 'Debe ser mayor a cero.');
+    }
     return true;
+  }
+
+  function normalizeCodeField(id, length) {
+    const field = $(id);
+    if (!field) return '';
+    const digits = field.value.replace(/\D/g, '').slice(0, length);
+    field.value = digits ? digits.padStart(length, '0') : '';
+    return field.value;
+  }
+
+  function buildConsecutivePreview(branch, terminal, sequence = 1) {
+    const safeBranch = /^\d{3}$/.test(branch) ? branch : '001';
+    const safeTerminal = /^\d{5}$/.test(terminal) ? terminal : '00001';
+    const safeSequence = Math.max(1, Number(sequence) || 1);
+    return `${safeBranch}${safeTerminal}01${String(safeSequence).padStart(10, '0')}`;
   }
 
   function validateMoneyField(id) {
@@ -226,6 +245,18 @@
 
   function getTabFromHash() {
     return (window.location.hash || '#organizations').slice(1);
+  }
+
+  function activateOrgPanel(panelId) {
+    const normalizedPanelId = ORG_TABS.includes(panelId) ? panelId : 'profile';
+    document.querySelectorAll('[data-org-tab]').forEach((button) => {
+      const isActive = button.dataset.orgTab === normalizedPanelId;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-current', isActive ? 'page' : 'false');
+    });
+    document.querySelectorAll('[data-org-panel]').forEach((panel) => {
+      panel.classList.toggle('is-active', panel.dataset.orgPanel === normalizedPanelId);
+    });
   }
 
   function syncSidebarSection(tabId) {
@@ -291,6 +322,19 @@
       <span class="subscription-overview__chip">${escapeHtml(STATUS_LABELS[$('subscription-status')?.value] || 'Sin estado')}</span>
       <span class="subscription-overview__chip">${escapeHtml(CYCLE_LABELS[$('subscription-cycle')?.value] || 'Ciclo')}</span>
     `;
+  }
+
+  function updateHaciendaPreview(organization = null) {
+    const branch = $('org-branch')?.value || '001';
+    const terminal = $('org-terminal')?.value || '00001';
+    const nextConsecutive = organization?.next_invoice_consecutive || buildConsecutivePreview(branch, terminal);
+    const invoiceCount = Number(organization?.invoice_count || 0);
+    if ($('org-next-consecutive')) {
+      $('org-next-consecutive').textContent = nextConsecutive;
+    }
+    if ($('org-invoice-count')) {
+      $('org-invoice-count').textContent = `${invoiceCount} factura${invoiceCount === 1 ? '' : 's'} emitida${invoiceCount === 1 ? '' : 's'}`;
+    }
   }
 
   function renderSubscriptionModuleSummary(modules = []) {
@@ -634,7 +678,10 @@
     const fields = ['org-name', 'org-slug', 'org-branch', 'org-terminal'];
     clearFieldErrors(fields);
     const recordId = Number($('org-record-id').value || 0);
+    const currentOrganization = state.organizations.find((item) => Number(item.id) === recordId);
     let isValid = true;
+    normalizeCodeField('org-branch', 3);
+    normalizeCodeField('org-terminal', 5);
     isValid = requireText('org-name', 'Ingresa un nombre de al menos 3 caracteres.', 3) && isValid;
     isValid = validateSlugField('org-slug', false) && isValid;
     isValid = validateDigitsField('org-branch', 3) && isValid;
@@ -652,6 +699,12 @@
     }
     if (state.organizations.some((item) => Number(item.id) !== recordId && item.hacienda_branch_code === branch && item.hacienda_terminal_code === terminal)) {
       isValid = setFieldError('org-terminal', 'Esta sucursal y terminal ya estan asignadas a otra organizacion.') && isValid;
+    }
+    if (
+      currentOrganization?.invoice_count > 0 &&
+      (currentOrganization.hacienda_branch_code !== branch || currentOrganization.hacienda_terminal_code !== terminal)
+    ) {
+      isValid = setFieldError('org-terminal', 'No puedes cambiar sucursal o terminal porque ya existen facturas con ese consecutivo.') && isValid;
     }
     return isValid;
   }
@@ -745,13 +798,46 @@
     return isValid;
   }
 
+  function getNextAvailableHaciendaCodes() {
+    const used = new Set(state.organizations.map((item) => `${item.hacienda_branch_code}:${item.hacienda_terminal_code}`));
+    const sorted = state.organizations
+      .map((item) => ({
+        branch: Number(item.hacienda_branch_code || 1),
+        terminal: Number(item.hacienda_terminal_code || 0),
+      }))
+      .sort((left, right) => right.branch - left.branch || right.terminal - left.terminal);
+    let branch = sorted[0]?.branch || 1;
+    let terminal = (sorted[0]?.terminal || 0) + 1;
+    if (terminal > 99999) {
+      branch += 1;
+      terminal = 1;
+    }
+    while (branch <= 999) {
+      const candidate = {
+        branch: String(branch).padStart(3, '0'),
+        terminal: String(terminal).padStart(5, '0'),
+      };
+      if (!used.has(`${candidate.branch}:${candidate.terminal}`)) {
+        return candidate;
+      }
+      terminal += 1;
+      if (terminal > 99999) {
+        branch += 1;
+        terminal = 1;
+      }
+    }
+    return { branch: '001', terminal: '00001' };
+  }
+
   function resetOrganizationForm() {
     clearFieldErrors(['org-name', 'org-slug', 'org-branch', 'org-terminal']);
     $('org-record-id').value = '';
     $('org-name').value = '';
     $('org-slug').value = '';
-    $('org-branch').value = '001';
-    $('org-terminal').value = '00001';
+    const nextCodes = getNextAvailableHaciendaCodes();
+    $('org-branch').value = nextCodes.branch;
+    $('org-terminal').value = nextCodes.terminal;
+    updateHaciendaPreview();
     renderOrganizationsTable();
   }
 
@@ -812,6 +898,7 @@
     $('org-slug').value = organization.slug || '';
     $('org-branch').value = organization.hacienda_branch_code || '001';
     $('org-terminal').value = organization.hacienda_terminal_code || '00001';
+    updateHaciendaPreview(organization);
 
     $('subscription-record-id').value = subscription?.id || '';
     $('subscription-organization').value = String(organization.id);
@@ -881,7 +968,10 @@
 
   function bindInteractiveRows() {
     $('organizations-body').querySelectorAll('tr[data-org-id]').forEach((row) => {
-      row.addEventListener('click', () => hydrateOrganizationForm(row.dataset.orgId));
+      row.addEventListener('click', () => {
+        hydrateOrganizationForm(row.dataset.orgId);
+        activateOrgPanel('profile');
+      });
     });
     $('users-body').querySelectorAll('tr[data-user-id]').forEach((row) => {
       row.addEventListener('click', () => hydrateUserForm(row.dataset.userId));
@@ -960,6 +1050,9 @@
       });
     });
     window.addEventListener('hashchange', () => activateTab(getTabFromHash()));
+    document.querySelectorAll('[data-org-tab]').forEach((button) => {
+      button.addEventListener('click', () => activateOrgPanel(button.dataset.orgTab));
+    });
   }
 
   async function saveSubscriptionModule(entryId, payload, method = 'PATCH') {
@@ -1050,6 +1143,14 @@
     $('reset-module-form').addEventListener('click', resetModuleForm);
     $('reset-plan-form').addEventListener('click', resetPlanForm);
     $('reset-flag-form').addEventListener('click', resetFlagForm);
+
+    ['org-branch', 'org-terminal'].forEach((fieldId) => {
+      $(fieldId)?.addEventListener('blur', () => {
+        normalizeCodeField(fieldId, fieldId === 'org-branch' ? 3 : 5);
+        updateHaciendaPreview();
+      });
+      $(fieldId)?.addEventListener('input', () => updateHaciendaPreview());
+    });
 
     $('subscription-organization').addEventListener('change', () => {
       hydrateOrganizationForm($('subscription-organization').value);
@@ -1276,6 +1377,7 @@
   async function bootstrap() {
     bindTabs();
     activateTab(getTabFromHash());
+    activateOrgPanel('profile');
     bindActions();
     bindSubscriptionModuleActions();
     const allowed = await ensureAccess();
