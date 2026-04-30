@@ -237,8 +237,12 @@ class UserRoleAssignmentSerializer(serializers.ModelSerializer):
         user = getattr(request, "user", None)
         is_system_owner = bool(user and user.is_authenticated and (user.is_superuser or user.is_staff))
         role = attrs.get("role", getattr(self.instance, "role", None))
+        assigned_user = attrs.get("user", getattr(self.instance, "user", None))
+        organization = attrs.get("organization", getattr(self.instance, "organization", None))
         if role and role.code == "ti-super-admin" and not is_system_owner:
             raise serializers.ValidationError({"role": "Este rol es exclusivo del dueño del sistema."})
+        if assigned_user and organization and not Membership.objects.filter(user=assigned_user, organization=organization).exists():
+            raise serializers.ValidationError({"user": "Este usuario no pertenece a la organización seleccionada."})
         return attrs
 
 

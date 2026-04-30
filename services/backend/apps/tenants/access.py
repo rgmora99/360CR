@@ -40,6 +40,9 @@ def get_module_codes_for_permissions(permissions):
 def get_allowed_organization_ids(user):
     if not user.is_authenticated:
         return []
+    if user.is_superuser or user.is_staff:
+        return list(Organization.objects.values_list("id", flat=True))
+
     direct_ids = set(Membership.objects.filter(user=user).values_list("organization_id", flat=True))
     if not direct_ids:
         return []

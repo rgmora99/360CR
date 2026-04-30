@@ -125,8 +125,16 @@ def sync_subscription_modules(subscription):
 
 
 def build_session_payload(user):
-    memberships = Membership.objects.select_related("organization").filter(user=user)
-    organization_ids = [m.organization_id for m in memberships]
+    is_system_owner = bool(user.is_superuser or user.is_staff)
+    memberships = list(Membership.objects.select_related("organization").filter(user=user))
+    membership_by_org_id = {membership.organization_id: membership for membership in memberships}
+    if is_system_owner:
+        organizations_queryset = Organization.objects.all().order_by("name")
+        organization_ids = list(organizations_queryset.values_list("id", flat=True))
+    else:
+        organizations_queryset = [membership.organization for membership in memberships]
+        organization_ids = [membership.organization_id for membership in memberships]
+
     module_map = {}
     if organization_ids:
         module_rows = (
@@ -158,14 +166,12 @@ def build_session_payload(user):
                 }
             )
 
-    is_system_owner = bool(user.is_superuser or user.is_staff)
-
-    def get_effective_modules(membership):
-        subscribed_modules = set(module_map.get(membership.organization.id, []))
-        if is_system_owner or membership.role in [Membership.ROLE_OWNER, Membership.ROLE_ADMIN]:
+    def get_effective_modules(organization, membership):
+        subscribed_modules = set(module_map.get(organization.id, []))
+        if is_system_owner or (membership and membership.role in [Membership.ROLE_OWNER, Membership.ROLE_ADMIN]):
             return sorted(subscribed_modules)
 
-        assigned_roles = role_map.get(membership.organization.id, [])
+        assigned_roles = role_map.get(organization.id, [])
         if not assigned_roles:
             return []
 
@@ -178,18 +184,21 @@ def build_session_payload(user):
 
         return sorted(subscribed_modules.intersection(allowed_modules))
 
-    organizations = [
-        {
-            "id": m.organization.id,
-            "name": m.organization.name,
-            "parent_organization": m.organization.parent_organization_id,
-            "membership_role": m.role,
-            "available_modules": sorted(module_map.get(m.organization.id, [])),
-            "active_modules": get_effective_modules(m),
-            "assigned_roles": role_map.get(m.organization.id, []),
-        }
-        for m in memberships
-    ]
+    organizations = []
+    for organization in organizations_queryset:
+        membership = membership_by_org_id.get(organization.id)
+        organizations.append(
+            {
+                "id": organization.id,
+                "name": organization.name,
+                "parent_organization": organization.parent_organization_id,
+                "membership_role": membership.role if membership else (Membership.ROLE_OWNER if is_system_owner else ""),
+                "available_modules": sorted(module_map.get(organization.id, [])),
+                "active_modules": get_effective_modules(organization, membership),
+                "assigned_roles": role_map.get(organization.id, []),
+                "system_owner_scope": bool(is_system_owner and not membership),
+            }
+        )
     active_id = next((org["id"] for org in organizations if org["parent_organization"] is None), organizations[0]["id"] if organizations else None)
     profile = getattr(user, "profile", None)
     return {
@@ -436,7 +445,7 @@ class GoogleAuthView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
 
-        if not Membership.objects.filter(user=user).exists():
+        if not (user.is_superuser or user.is_staff) and not Membership.objects.filter(user=user).exists():
             return Response({"detail": "Tu cuenta no tiene una organizacion activa. Registrate con el nombre del negocio para continuar."}, status=400)
 
         login(request, user)
