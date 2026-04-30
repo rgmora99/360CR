@@ -1,6 +1,7 @@
 .settings-content {
   display: grid;
   gap: 1.25rem;
+  padding-top: 0.9rem;
 }
 
 .settings-submenu {
@@ -149,13 +150,35 @@
 }
 
 .settings-user-row {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.65rem !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem !important;
+  align-items: center;
 }
 
 .settings-user-main {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.settings-user-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.settings-user-heading div {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.settings-user-heading strong,
+.settings-user-heading small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-user-meta,
@@ -164,6 +187,11 @@
   flex-wrap: wrap;
   gap: 0.35rem;
   align-items: center;
+}
+
+.settings-user-actions {
+  justify-content: flex-end;
+  min-width: max-content;
 }
 
 .settings-chip {
@@ -357,5 +385,14 @@
 
   .team-tools .btn {
     grid-column: auto;
+  }
+
+  .settings-user-row {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-user-actions {
+    justify-content: flex-start;
+    min-width: 0;
   }
 }

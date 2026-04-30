@@ -841,8 +841,6 @@
     usersPage = Math.min(Math.max(1, usersPage), totalPages);
     const startIndex = (usersPage - 1) * usersPageSize;
     const pageUsers = sortedUsers.slice(startIndex, startIndex + usersPageSize);
-    const assignableRoles = getAssignableRoles();
-
     usersList.innerHTML = pageUsers
       .map((user) => {
         const visibleAssignments = Array.isArray(user.role_assignments)
@@ -858,24 +856,18 @@
             )
             .join('')
           : 'Sin rol especifico';
-        const roleOptions = assignableRoles
-          .map((role) => `<option value="${role.id}">${escapeHtml(role.name)}</option>`)
-          .join('');
         return `<li class="settings-user-row" data-user-id="${user.id}">
           <div class="settings-user-main">
-            <strong>${escapeHtml(user.email || user.username)}</strong>
-            <div class="settings-user-meta">
+            <div class="settings-user-heading">
+              <div>
+                <strong>${escapeHtml(user.email || user.username)}</strong>
+                <small>${user.requires_password_setup ? 'Pendiente de contrasena' : 'Acceso configurado'}</small>
+              </div>
               <span class="settings-chip ${user.is_active ? 'is-success' : 'is-muted'}">${user.is_active ? 'Activo' : 'Inactivo'}</span>
-              <span class="settings-chip">${escapeHtml(user.organization_name || 'Negocio activo')}</span>
             </div>
-            <small>${user.requires_password_setup ? 'Pendiente: debe crear contrasena al primer ingreso.' : 'Acceso con contrasena configurada.'}</small>
             <div class="settings-user-roles">${assignedRoles}</div>
           </div>
-          <div class="inline-role-assignment">
-            <select data-user-role-select="${user.id}">
-              ${roleOptions || '<option value="">Sin roles disponibles</option>'}
-            </select>
-            <button class="btn btn-secondary" type="button" data-user-role-assign="${user.id}">Asignar rol</button>
+          <div class="actions settings-user-actions">
             <button class="btn btn-secondary" type="button" data-user-edit="${user.id}">Editar</button>
             <button class="btn btn-secondary" type="button" data-user-toggle="${user.id}" data-next-active="${user.is_active ? 'false' : 'true'}">${user.is_active ? 'Inactivar' : 'Reactivar'}</button>
             <button class="btn btn-secondary" type="button" data-user-delete="${user.id}">Eliminar</button>
@@ -1530,15 +1522,10 @@
     if (deleteId) deleteOrganization(deleteId).catch(() => null);
   });
   usersList.addEventListener('click', (event) => {
-    const userId = event.target?.dataset?.userRoleAssign;
     const editId = event.target?.dataset?.userEdit;
     const toggleId = event.target?.dataset?.userToggle;
     const deleteId = event.target?.dataset?.userDelete;
     const removeRoleId = event.target?.dataset?.userRoleRemove;
-    if (userId) {
-      const roleId = usersList.querySelector(`[data-user-role-select="${userId}"]`)?.value;
-      assignRole(userId, roleId).catch(() => null);
-    }
     if (removeRoleId) removeRoleAssignment(removeRoleId).catch(() => null);
     if (editId) startUserEdit(editId);
     if (toggleId) setUserActive(toggleId, event.target.dataset.nextActive === 'true').catch(() => null);
