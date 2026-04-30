@@ -247,14 +247,14 @@
       {
         key: 'configuraciones-menu',
         label: 'Configuraciones',
-        alwaysVisible: true,
+        moduleCode: 'multiuser_permissions',
         children: [
-          { key: 'configuraciones-usuarios', label: 'Usuarios', href: '/configuraciones.html#usuarios', alwaysVisible: true },
-          { key: 'configuraciones-roles', label: 'Roles', href: '/configuraciones.html#roles', alwaysVisible: true },
-          { key: 'configuraciones-organizaciones', label: 'Organizaciones', href: '/configuraciones.html#organizaciones', alwaysVisible: true },
+          { key: 'configuraciones-usuarios', label: 'Usuarios', href: '/configuraciones.html#usuarios', moduleCode: 'multiuser_permissions' },
+          { key: 'configuraciones-roles', label: 'Roles', href: '/configuraciones.html#roles', moduleCode: 'multiuser_permissions' },
+          { key: 'configuraciones-organizaciones', label: 'Organizaciones', href: '/configuraciones.html#organizaciones', moduleCode: 'multiuser_permissions' },
           { key: 'configuraciones-disponibilidad', label: 'Disponibilidad', href: '/configuraciones.html#disponibilidad', moduleCode: 'agenda' },
           { key: 'configuraciones-correo', label: 'Correo facturas', href: '/configuraciones.html#correo', moduleCode: 'purchases' },
-          { key: 'configuraciones-sistema', label: 'Sistema', href: '/configuraciones.html#sistema', alwaysVisible: true },
+          { key: 'configuraciones-sistema', label: 'Sistema', href: '/configuraciones.html#sistema', moduleCode: 'multiuser_permissions' },
         ],
       },
     ];
@@ -264,6 +264,12 @@
     return menuItems
       .map((item) => {
         if (item.children?.length) {
+          if (item.moduleCode && !moduleCodes.has(item.moduleCode) && !item.alwaysVisible) {
+            const hasVisibleChild = item.children.some((child) => child.alwaysVisible || !child.moduleCode || moduleCodes.has(child.moduleCode));
+            if (!hasVisibleChild) {
+              return null;
+            }
+          }
           const filteredChildren = item.children.filter((child) => child.alwaysVisible || !child.moduleCode || moduleCodes.has(child.moduleCode));
           if (!filteredChildren.length) {
             return null;

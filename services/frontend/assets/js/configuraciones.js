@@ -151,8 +151,12 @@
     6: 'Sábado',
   };
   const addonPanelRequirements = {
+    usuarios: 'multiuser_permissions',
+    roles: 'multiuser_permissions',
+    organizaciones: 'multiuser_permissions',
     disponibilidad: 'agenda',
     correo: 'purchases',
+    sistema: 'multiuser_permissions',
   };
   const addonSettingRequirements = {
     finance: ['billing_basic', 'purchases', 'receivables'],
@@ -164,50 +168,50 @@
     {
       label: 'Usuarios',
       permissions: [
-        ['users.read', 'Ver usuarios'],
-        ['users.update', 'Editar usuarios'],
-        ['users.lock', 'Bloquear usuarios'],
+        ['users.read', 'Ver usuarios', ['multiuser_permissions']],
+        ['users.update', 'Editar usuarios', ['multiuser_permissions']],
+        ['users.lock', 'Bloquear usuarios', ['multiuser_permissions']],
       ],
     },
     {
       label: 'Ventas y clientes',
       permissions: [
-        ['customers.read', 'Ver clientes'],
-        ['dashboards.executive', 'Dashboard ejecutivo'],
-        ['approvals.high', 'Aprobaciones especiales'],
+        ['customers.read', 'Ver clientes', ['customers']],
+        ['dashboards.executive', 'Dashboard ejecutivo', ['dashboard']],
+        ['approvals.high', 'Aprobaciones especiales', ['dashboard']],
       ],
     },
     {
       label: 'Finanzas',
       permissions: [
-        ['invoices.manage', 'Facturación'],
-        ['credit.manage', 'Crédito'],
-        ['reports.finance', 'Reportes financieros'],
+        ['invoices.manage', 'Facturación', ['billing_basic']],
+        ['credit.manage', 'Crédito', ['receivables']],
+        ['reports.finance', 'Reportes financieros', ['billing_basic', 'receivables']],
       ],
     },
     {
       label: 'Operación',
       permissions: [
-        ['inventory.manage', 'Inventario'],
-        ['suppliers.manage', 'Proveedores'],
-        ['operations.kpi', 'KPIs operativos'],
+        ['inventory.manage', 'Inventario', ['inventory']],
+        ['suppliers.manage', 'Proveedores y compras', ['suppliers', 'purchases']],
+        ['operations.kpi', 'KPIs operativos', ['dashboard', 'inventory']],
       ],
     },
     {
       label: 'Reportes',
       permissions: [
-        ['reports.read', 'Reportes generales'],
-        ['suppliers.read', 'Consulta proveedores'],
-        ['tickets.manage', 'Soporte'],
+        ['reports.read', 'Reportes generales', ['dashboard']],
+        ['suppliers.read', 'Consulta proveedores', ['suppliers']],
+        ['tickets.manage', 'Soporte', ['dashboard']],
       ],
     },
     {
       label: 'Seguridad',
       systemOwnerOnly: true,
       permissions: [
-        ['security.manage', 'Seguridad'],
-        ['audit.read', 'Auditoría'],
-        ['*', 'Control total'],
+        ['security.manage', 'Seguridad', ['multiuser_permissions']],
+        ['audit.read', 'Auditoría', ['audit']],
+        ['*', 'Control total', ['*']],
       ],
     },
   ];
@@ -221,6 +225,7 @@
 
   const getActiveOrganizationId = () => Number(window.AppSession?.getActiveOrganizationId?.()) || null;
   const getActiveModuleCodes = () => new Set(window.AppSession?.getActiveModuleCodes?.() || []);
+  const getAvailableModuleCodes = () => new Set(window.AppSession?.getActiveOrganization?.()?.available_modules || window.AppSession?.getActiveModuleCodes?.() || []);
   const hasActiveModule = (moduleCode) => !moduleCode || getActiveModuleCodes().has(moduleCode);
   const isSystemOwner = () => Boolean(window.AppSession?.getSession?.()?.user?.is_system_owner);
   const canUseRole = (role) => isSystemOwner() || !systemOwnerRoleCodes.has(role?.code);
@@ -304,6 +309,8 @@
     const selected = new Set(selectedPermissions);
     const knownPermissions = new Set(getAllPermissionCodes());
     const customPermissions = selectedPermissions.filter((permission) => !knownPermissions.has(permission));
+    const availableModules = getAvailableModuleCodes();
+    const canGrantPermission = (moduleCodes = []) => isSystemOwner() || moduleCodes.includes('*') || moduleCodes.some((moduleCode) => availableModules.has(moduleCode));
     const groups = permissionGroups.filter((group) => !group.systemOwnerOnly || isSystemOwner());
 
     permissionsPicker.innerHTML = groups
@@ -311,11 +318,11 @@
         <fieldset class="permission-group">
           <legend>${escapeHtml(group.label)}</legend>
           ${group.permissions
-            .filter(([code]) => isSystemOwner() || code !== '*')
-            .map(([code, label]) => `
+            .filter(([code, _label, moduleCodes]) => (isSystemOwner() || code !== '*') && canGrantPermission(moduleCodes))
+            .map(([code, label, moduleCodes]) => `
               <label class="permission-option">
                 <input type="checkbox" value="${escapeHtml(code)}" ${selected.has(code) ? 'checked' : ''} />
-                <span>${escapeHtml(label)}</span>
+                <span>${escapeHtml(label)}<small>${escapeHtml((moduleCodes || []).filter((moduleCode) => moduleCode !== '*').join(', '))}</small></span>
               </label>
             `)
             .join('')}
@@ -392,7 +399,7 @@
 
   const activateSettingsPanel = (section) => {
     const enabledSections = getEnabledSettingsSections();
-    const targetPanel = enabledSections.includes(section) ? section : 'usuarios';
+    const targetPanel = enabledSections.includes(section) ? section : (enabledSections[0] || 'usuarios');
     settingsTabs.forEach((button) => {
       const isActive = button.dataset.settingsTab === targetPanel;
       button.classList.toggle('is-active', isActive);
@@ -434,6 +441,16 @@
     }
 
     return JSON.parse(text);
+  };
+
+  const refreshSessionContext = async () => {
+    try {
+      const session = await orgRequest('/auth/session/');
+      window.AppSession?.save?.(session);
+      return session;
+    } catch (_error) {
+      return null;
+    }
   };
 
   const renderOrganizations = (organizations) => {
@@ -1084,6 +1101,7 @@
       }
       const selectedUser = usersCache.find((user) => Number(user.id) === userId);
       setTeamFeedback(`Rol ${roleToAssign?.name || roleId} asociado a ${selectedUser?.email || selectedUser?.username}.`);
+      await refreshSessionContext();
       await loadData();
     } catch (error) {
       setTeamFeedback(error.message || 'Error al asociar rol.', true);

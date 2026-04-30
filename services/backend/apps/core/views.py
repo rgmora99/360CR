@@ -26,9 +26,42 @@ from apps.customers.models import Customer
 from apps.finance.models import Invoice, InvoiceReceivablePayment, Purchase
 from apps.loyalty.models import LoyaltyPointEntry, LoyaltyRedemption
 from apps.suppliers.models import Supplier
+from apps.configuration.models import UserRoleAssignment
 from apps.tenants.models import Membership, Organization, SaaSPlan, Subscription, SubscriptionModule
 
 logger = logging.getLogger(__name__)
+
+PERMISSION_MODULE_MAP = {
+    "approvals.high": ["dashboard"],
+    "customers.read": ["customers"],
+    "customers.manage": ["customers"],
+    "dashboards.executive": ["dashboard"],
+    "invoices.manage": ["billing_basic"],
+    "credit.manage": ["receivables"],
+    "inventory.manage": ["inventory"],
+    "operations.kpi": ["dashboard", "inventory"],
+    "reports.finance": ["billing_basic", "receivables"],
+    "reports.read": ["dashboard"],
+    "suppliers.manage": ["suppliers", "purchases"],
+    "suppliers.read": ["suppliers"],
+    "tickets.manage": ["dashboard"],
+    "users.lock": ["multiuser_permissions"],
+    "users.read": ["multiuser_permissions"],
+    "users.update": ["multiuser_permissions"],
+    "security.manage": ["multiuser_permissions"],
+    "audit.read": ["audit"],
+}
+
+
+def get_module_codes_for_permissions(permissions):
+    permission_set = set(permissions or [])
+    if "*" in permission_set:
+        return {"*"}
+
+    module_codes = set()
+    for permission in permission_set:
+        module_codes.update(PERMISSION_MODULE_MAP.get(permission, []))
+    return module_codes
 
 
 def build_unique_organization_slug(name):
@@ -104,13 +137,56 @@ def build_session_payload(user):
         for row in module_rows:
             module_map.setdefault(row["subscription__organization_id"], []).append(row["module__code"])
 
+    role_map = {}
+    if organization_ids:
+        role_rows = (
+            UserRoleAssignment.objects.filter(user=user, organization_id__in=organization_ids, is_active=True)
+            .select_related("role")
+            .values(
+                "organization_id",
+                "role__code",
+                "role__name",
+                "role__default_permissions",
+            )
+        )
+        for row in role_rows:
+            role_map.setdefault(row["organization_id"], []).append(
+                {
+                    "code": row["role__code"],
+                    "name": row["role__name"],
+                    "permissions": row["role__default_permissions"] or [],
+                }
+            )
+
+    is_system_owner = bool(user.is_superuser or user.is_staff)
+
+    def get_effective_modules(membership):
+        subscribed_modules = set(module_map.get(membership.organization.id, []))
+        if is_system_owner or membership.role in [Membership.ROLE_OWNER, Membership.ROLE_ADMIN]:
+            return sorted(subscribed_modules)
+
+        assigned_roles = role_map.get(membership.organization.id, [])
+        if not assigned_roles:
+            return []
+
+        allowed_modules = set()
+        for role in assigned_roles:
+            role_modules = get_module_codes_for_permissions(role["permissions"])
+            if "*" in role_modules:
+                return sorted(subscribed_modules)
+            allowed_modules.update(role_modules)
+
+        return sorted(subscribed_modules.intersection(allowed_modules))
+
     organizations = [
         {
             "id": m.organization.id,
             "name": m.organization.name,
             "parent_organization": m.organization.parent_organization_id,
             "membership_role": m.role,
-            "active_modules": sorted(module_map.get(m.organization.id, [])),
+            "available_modules": sorted(module_map.get(m.organization.id, [])),
+            "active_modules": get_effective_modules(m),
+            "assigned_roles": role_map.get(m.organization.id, []),
         }
         for m in memberships
     ]
@@ -123,7 +199,7 @@ def build_session_payload(user):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "phone": profile.phone if profile else "",
-            "is_system_owner": bool(user.is_superuser or user.is_staff),
+            "is_system_owner": is_system_owner,
         },
         "organizations": organizations,
         "active_organization_id": active_id,

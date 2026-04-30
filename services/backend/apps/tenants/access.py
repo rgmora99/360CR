@@ -1,6 +1,40 @@
 from rest_framework.exceptions import PermissionDenied
 
+from apps.configuration.models import UserRoleAssignment
 from apps.tenants.models import Membership, Organization, Subscription, SubscriptionModule
+
+
+PERMISSION_MODULE_MAP = {
+    "approvals.high": ["dashboard"],
+    "customers.read": ["customers"],
+    "customers.manage": ["customers"],
+    "dashboards.executive": ["dashboard"],
+    "invoices.manage": ["billing_basic"],
+    "credit.manage": ["receivables"],
+    "inventory.manage": ["inventory"],
+    "operations.kpi": ["dashboard", "inventory"],
+    "reports.finance": ["billing_basic", "receivables"],
+    "reports.read": ["dashboard"],
+    "suppliers.manage": ["suppliers", "purchases"],
+    "suppliers.read": ["suppliers"],
+    "tickets.manage": ["dashboard"],
+    "users.lock": ["multiuser_permissions"],
+    "users.read": ["multiuser_permissions"],
+    "users.update": ["multiuser_permissions"],
+    "security.manage": ["multiuser_permissions"],
+    "audit.read": ["audit"],
+}
+
+
+def get_module_codes_for_permissions(permissions):
+    permission_set = set(permissions or [])
+    if "*" in permission_set:
+        return {"*"}
+
+    module_codes = set()
+    for permission in permission_set:
+        module_codes.update(PERMISSION_MODULE_MAP.get(permission, []))
+    return module_codes
 
 
 def get_allowed_organization_ids(user):
@@ -47,6 +81,32 @@ def organization_has_enabled_module(organization_id, module_code):
     except (TypeError, ValueError):
         return False
     return selected_id in get_enabled_module_organization_ids([selected_id], module_code)
+
+
+def user_has_module_access(user, organization_id, module_code):
+    if not module_code:
+        return True
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser or user.is_staff:
+        return True
+
+    membership = Membership.objects.filter(user=user, organization_id=organization_id).first()
+    if not membership:
+        return False
+    if membership.role in [Membership.ROLE_OWNER, Membership.ROLE_ADMIN]:
+        return True
+
+    assignments = UserRoleAssignment.objects.filter(
+        user=user,
+        organization_id=organization_id,
+        is_active=True,
+    ).select_related("role")
+    for assignment in assignments:
+        module_codes = get_module_codes_for_permissions(assignment.role.default_permissions)
+        if "*" in module_codes or module_code in module_codes:
+            return True
+    return False
 
 
 class OrganizationScopedViewMixin:
@@ -133,6 +193,11 @@ class OrganizationScopedViewMixin:
 
         if self.required_module_code:
             allowed_ids = get_enabled_module_organization_ids(allowed_ids, self.required_module_code)
+            allowed_ids = [
+                organization_id
+                for organization_id in allowed_ids
+                if user_has_module_access(self.request.user, organization_id, self.required_module_code)
+            ]
             if not allowed_ids:
                 return queryset.none()
 
@@ -160,6 +225,8 @@ class OrganizationScopedViewMixin:
             raise PermissionDenied("No tiene acceso a la organizacion solicitada")
         if self.required_module_code and not organization_has_enabled_module(selected_id, self.required_module_code):
             raise PermissionDenied("El modulo requerido no esta activo para esta organizacion")
+        if self.required_module_code and not user_has_module_access(self.request.user, selected_id, self.required_module_code):
+            raise PermissionDenied("Su rol no tiene acceso a este modulo")
         return selected_id
 
     def perform_create(self, serializer):
