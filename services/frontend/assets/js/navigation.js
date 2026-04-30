@@ -312,9 +312,10 @@
 
     const cachedSession = window.AppSession.getSession();
     const activeModuleCodes = getActiveModuleCodes(cachedSession);
+    const isSystemOwner = Boolean(cachedSession?.user?.is_system_owner);
     const fullMenuItems = buildMenuItems();
     const activeMenuItem = findMenuItemByKey(fullMenuItems, activeModule);
-    if (activeModule !== 'inicio' && activeMenuItem?.moduleCode && !activeModuleCodes.has(activeMenuItem.moduleCode)) {
+    if (!isSystemOwner && activeModule !== 'inicio' && activeMenuItem?.moduleCode && !activeModuleCodes.has(activeMenuItem.moduleCode)) {
       sessionStorage.setItem(
         ORG_FLASH_KEY,
         JSON.stringify({ message: 'Ese modulo no esta activo para el negocio seleccionado.' }),
@@ -323,13 +324,13 @@
       return;
     }
     const topbarState = getTopbarState(cachedSession);
-    const filteredMenuItems = filterMenuItemsByModules(fullMenuItems, activeModuleCodes);
+    const filteredMenuItems = isSystemOwner ? fullMenuItems : filterMenuItemsByModules(fullMenuItems, activeModuleCodes);
     document.querySelectorAll('[data-module-code]').forEach((element) => {
       const moduleCode = element.dataset.moduleCode;
-      element.classList.toggle('hidden', Boolean(moduleCode) && !activeModuleCodes.has(moduleCode));
+      element.classList.toggle('hidden', !isSystemOwner && Boolean(moduleCode) && !activeModuleCodes.has(moduleCode));
     });
 
-    if (cachedSession?.user?.is_system_owner) {
+    if (isSystemOwner) {
       filteredMenuItems.push({
         key: 'system-admin-menu',
         label: 'Administracion SaaS',

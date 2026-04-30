@@ -27,7 +27,7 @@ from apps.finance.models import Invoice, InvoiceReceivablePayment, Purchase
 from apps.loyalty.models import LoyaltyPointEntry, LoyaltyRedemption
 from apps.suppliers.models import Supplier
 from apps.configuration.models import UserRoleAssignment
-from apps.tenants.models import Membership, Organization, SaaSPlan, Subscription, SubscriptionModule
+from apps.tenants.models import Membership, Organization, SaaSModule, SaaSPlan, Subscription, SubscriptionModule
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +128,18 @@ def build_session_payload(user):
     is_system_owner = bool(user.is_superuser or user.is_staff)
     memberships = list(Membership.objects.select_related("organization").filter(user=user))
     membership_by_org_id = {membership.organization_id: membership for membership in memberships}
+    system_owner_module_codes = []
     if is_system_owner:
         organizations_queryset = Organization.objects.all().order_by("name")
         organization_ids = list(organizations_queryset.values_list("id", flat=True))
+        mapped_module_codes = {
+            module_code
+            for module_codes in PERMISSION_MODULE_MAP.values()
+            for module_code in module_codes
+        }
+        system_owner_module_codes = sorted(
+            set(SaaSModule.objects.filter(is_active=True).values_list("code", flat=True)).union(mapped_module_codes)
+        )
     else:
         organizations_queryset = [membership.organization for membership in memberships if membership.organization.is_active]
         organization_ids = [membership.organization_id for membership in memberships if membership.organization.is_active]
@@ -173,7 +182,9 @@ def build_session_payload(user):
 
     def get_effective_modules(organization, membership):
         subscribed_modules = set(module_map.get(organization.id, []))
-        if is_system_owner or (membership and membership.role in [Membership.ROLE_OWNER, Membership.ROLE_ADMIN]):
+        if is_system_owner:
+            return system_owner_module_codes
+        if membership and membership.role in [Membership.ROLE_OWNER, Membership.ROLE_ADMIN]:
             return sorted(subscribed_modules)
 
         assigned_roles = role_map.get(organization.id, [])
@@ -199,7 +210,7 @@ def build_session_payload(user):
                 "is_active": organization.is_active,
                 "parent_organization": organization.parent_organization_id,
                 "membership_role": membership.role if membership else (Membership.ROLE_OWNER if is_system_owner else ""),
-                "available_modules": sorted(module_map.get(organization.id, [])),
+                "available_modules": system_owner_module_codes if is_system_owner else sorted(module_map.get(organization.id, [])),
                 "active_modules": get_effective_modules(organization, membership),
                 "assigned_roles": role_map.get(organization.id, []),
                 "system_owner_scope": bool(is_system_owner and not membership),

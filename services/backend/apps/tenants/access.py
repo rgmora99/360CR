@@ -197,7 +197,7 @@ class OrganizationScopedViewMixin:
         if not allowed_ids:
             return queryset.none()
 
-        if self.required_module_code:
+        if self.required_module_code and not (self.request.user.is_superuser or self.request.user.is_staff):
             allowed_ids = get_enabled_module_organization_ids(allowed_ids, self.required_module_code)
             allowed_ids = [
                 organization_id
@@ -229,6 +229,8 @@ class OrganizationScopedViewMixin:
 
         if selected_id not in self.get_allowed_organization_ids():
             raise PermissionDenied("No tiene acceso a la organizacion solicitada")
+        if self.request.user.is_superuser or self.request.user.is_staff:
+            return selected_id
         if self.required_module_code and not organization_has_enabled_module(selected_id, self.required_module_code):
             raise PermissionDenied("El modulo requerido no esta activo para esta organizacion")
         if self.required_module_code and not user_has_module_access(self.request.user, selected_id, self.required_module_code):
