@@ -4,6 +4,7 @@
   const newUserFirstNameInput = document.getElementById('new-user-first-name');
   const newUserLastNameInput = document.getElementById('new-user-last-name');
   const createCollaboratorUserButton = document.getElementById('create-collaborator-user');
+  const cancelUserEditButton = document.getElementById('cancel-user-edit');
   const userFeedback = document.getElementById('user-feedback');
   const usersPagination = document.getElementById('users-pagination');
   const rolesGroups = document.getElementById('roles-groups');
@@ -15,6 +16,7 @@
   const orgBranchCodeInput = document.getElementById('org-branch-code');
   const orgTerminalCodeInput = document.getElementById('org-terminal-code');
   const createOrganizationButton = document.getElementById('create-organization');
+  const cancelOrganizationEditButton = document.getElementById('cancel-organization-edit');
   const orgFeedback = document.getElementById('org-feedback');
   const newRoleNameInput = document.getElementById('new-role-name');
   const newRoleCodeInput = document.getElementById('new-role-code');
@@ -66,7 +68,10 @@
   let rolesPage = 1;
   const rolesPageSize = 4;
   let collaboratorsCache = [];
+  let organizationsCache = [];
   let availabilityRulesCache = [];
+  let editingUserId = null;
+  let editingOrganizationId = null;
   let editingEmailInboxId = null;
   let editingRoleId = null;
 
@@ -76,6 +81,7 @@
     !newUserFirstNameInput ||
     !newUserLastNameInput ||
     !createCollaboratorUserButton ||
+    !cancelUserEditButton ||
     !userFeedback ||
     !usersPagination ||
     !rolesGroups ||
@@ -86,6 +92,8 @@
     !orgParentSelect ||
     !orgBranchCodeInput ||
     !orgTerminalCodeInput ||
+    !createOrganizationButton ||
+    !cancelOrganizationEditButton ||
     !newRoleNameInput ||
     !newRoleCodeInput ||
     !newRolePersonaSelect ||
@@ -230,6 +238,7 @@
   const isSystemOwner = () => Boolean(window.AppSession?.getSession?.()?.user?.is_system_owner);
   const canUseRole = (role) => isSystemOwner() || !systemOwnerRoleCodes.has(role?.code);
   const getVisibleRoles = () => rolesCache.filter(canUseRole);
+  const getAssignableRoles = () => rolesCache.filter((role) => canUseRole(role) && role.is_active);
 
   const showError = (message) => {
     if (window.showErrorAlert) {
@@ -456,14 +465,14 @@
   const renderOrganizations = (organizations) => {
     if (!organizations.length) {
       organizationsList.innerHTML = '<li>Sin organizaciones registradas.</li>';
-      orgParentSelect.innerHTML = '<option value="">Sin padre (organización raíz)</option>';
+      orgParentSelect.innerHTML = '<option value="">Sin padre (organizacion raiz)</option>';
       return;
     }
 
-    orgParentSelect.innerHTML = ['<option value="">Sin padre (organización raíz)</option>']
+    orgParentSelect.innerHTML = ['<option value="">Sin padre (organizacion raiz)</option>']
       .concat(
         organizations.map(
-          (organization) => `<option value="${organization.id}">${organization.name} (#${organization.id})</option>`,
+          (organization) => `<option value="${organization.id}">${escapeHtml(organization.name)} (#${organization.id})</option>`,
         ),
       )
       .join('');
@@ -471,15 +480,74 @@
     organizationsList.innerHTML = organizations
       .map(
         (organization) => `<li>
-          <strong>${organization.name}</strong>
-          <span>ID #${organization.id}${organization.parent_organization ? ` · Sucursal de #${organization.parent_organization}` : ' · Organización raíz'}</span>
-          <small>Hacienda: sucursal ${organization.hacienda_branch_code || '001'} · terminal ${organization.hacienda_terminal_code || '00001'}</small>
+          <strong>${escapeHtml(organization.name)}</strong>
+          <span>ID #${organization.id}${organization.parent_organization ? ` - Sucursal de #${organization.parent_organization}` : ' - Organizacion raiz'}</span>
+          <span class="settings-chip ${organization.is_active ? 'is-success' : 'is-muted'}">${organization.is_active ? 'Activa' : 'Inactiva'}</span>
+          <small>Hacienda: sucursal ${organization.hacienda_branch_code || '001'} - terminal ${organization.hacienda_terminal_code || '00001'}</small>
+          <div class="actions">
+            <button class="btn btn-secondary" type="button" data-org-edit="${organization.id}">Editar</button>
+            <button class="btn btn-secondary" type="button" data-org-toggle="${organization.id}" data-next-active="${organization.is_active ? 'false' : 'true'}">${organization.is_active ? 'Inactivar' : 'Reactivar'}</button>
+            <button class="btn btn-secondary" type="button" data-org-delete="${organization.id}">Eliminar</button>
+          </div>
         </li>`,
       )
       .join('');
   };
 
+  const resetOrganizationForm = () => {
+    editingOrganizationId = null;
+    orgNameInput.value = '';
+    orgParentSelect.value = '';
+    orgBranchCodeInput.value = '001';
+    orgTerminalCodeInput.value = '00001';
+    createOrganizationButton.textContent = 'Crear organizacion';
+    cancelOrganizationEditButton.hidden = true;
+  };
 
+  const startOrganizationEdit = (organizationId) => {
+    const organization = organizationsCache.find((item) => Number(item.id) === Number(organizationId));
+    if (!organization) return;
+    editingOrganizationId = organization.id;
+    orgNameInput.value = organization.name || '';
+    orgParentSelect.value = organization.parent_organization ? String(organization.parent_organization) : '';
+    orgBranchCodeInput.value = organization.hacienda_branch_code || '001';
+    orgTerminalCodeInput.value = organization.hacienda_terminal_code || '00001';
+    createOrganizationButton.textContent = 'Actualizar organizacion';
+    cancelOrganizationEditButton.hidden = false;
+    setOrgFeedback(`Editando ${organization.name}.`);
+  };
+
+  const setOrganizationActive = async (organizationId, isActive) => {
+    const organization = organizationsCache.find((item) => Number(item.id) === Number(organizationId));
+    const actionLabel = isActive ? 'reactivar' : 'inactivar';
+    if (!window.confirm(`Deseas ${actionLabel} ${organization?.name || 'esta organizacion'}?`)) return;
+    try {
+      await orgRequest(`/organizations/${organizationId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: isActive }),
+      });
+      setOrgFeedback(`Organizacion ${isActive ? 'reactivada' : 'inactivada'} correctamente.`);
+      await refreshSessionContext();
+      await loadOrganizations();
+      await loadData();
+    } catch (error) {
+      setOrgFeedback(parseApiError(error) || `No fue posible ${actionLabel} la organizacion.`, true);
+    }
+  };
+
+  const deleteOrganization = async (organizationId) => {
+    const organization = organizationsCache.find((item) => Number(item.id) === Number(organizationId));
+    if (!window.confirm(`Eliminar una organizacion se maneja como inactivacion para proteger datos historicos. Continuar con ${organization?.name || 'esta organizacion'}?`)) return;
+    try {
+      await orgRequest(`/organizations/${organizationId}/`, { method: 'DELETE' });
+      setOrgFeedback('Organizacion inactivada correctamente.');
+      await refreshSessionContext();
+      await loadOrganizations();
+      await loadData();
+    } catch (error) {
+      setOrgFeedback(parseApiError(error) || 'No fue posible inactivar la organizacion.', true);
+    }
+  };
 
   const renderEmailOrganizations = (organizations) => {
     const options = organizations.map((organization) => `<option value="${organization.id}">${organization.name}</option>`).join('');
@@ -708,6 +776,7 @@
   const loadOrganizations = async () => {
     try {
       const organizations = await orgRequest('/organizations/');
+      organizationsCache = organizations;
       renderOrganizations(organizations);
       renderEmailOrganizations(organizations);
       setOrgFeedback(`Se cargaron ${organizations.length} organizaciones.`);
@@ -722,22 +791,23 @@
     const branchCode = orgBranchCodeInput.value.trim();
     const terminalCode = orgTerminalCodeInput.value.trim();
     if (!name) {
-      setOrgFeedback('Debe indicar un nombre para crear la organización.', true);
+      setOrgFeedback('Debe indicar un nombre para guardar la organizacion.', true);
       return;
     }
     if (!/^\d{3}$/.test(branchCode)) {
-      setOrgFeedback('La sucursal de Hacienda debe tener exactamente 3 dígitos.', true);
+      setOrgFeedback('La sucursal de Hacienda debe tener exactamente 3 digitos.', true);
       return;
     }
     if (!/^\d{5}$/.test(terminalCode)) {
-      setOrgFeedback('La terminal/caja de Hacienda debe tener exactamente 5 dígitos.', true);
+      setOrgFeedback('La terminal/caja de Hacienda debe tener exactamente 5 digitos.', true);
       return;
     }
 
     try {
       const parentOrganization = orgParentSelect.value ? Number(orgParentSelect.value) : null;
-      const created = await orgRequest('/organizations/', {
-        method: 'POST',
+      const currentEditId = editingOrganizationId;
+      const saved = await orgRequest(currentEditId ? `/organizations/${currentEditId}/` : '/organizations/', {
+        method: currentEditId ? 'PATCH' : 'POST',
         body: JSON.stringify({
           name,
           parent_organization: parentOrganization,
@@ -745,20 +815,16 @@
           hacienda_terminal_code: terminalCode,
         }),
       });
-      orgNameInput.value = '';
-      orgParentSelect.value = '';
-      orgBranchCodeInput.value = '001';
-      orgTerminalCodeInput.value = '00001';
-      setOrgFeedback(`Organización creada: ${created.name} (#${created.id}).`);
+      resetOrganizationForm();
+      setOrgFeedback(`Organizacion ${currentEditId ? 'actualizada' : 'creada'}: ${saved.name} (#${saved.id}).`);
       await loadOrganizations();
       if (hasActiveModule('purchases')) {
         await loadEmailInboxes();
       }
     } catch (error) {
-      setOrgFeedback(error.message || 'No fue posible crear la organización.', true);
+      setOrgFeedback(parseApiError(error) || 'No fue posible guardar la organizacion.', true);
     }
   };
-
   const renderUsers = (users) => {
     if (!users.length) {
       usersList.innerHTML = '<li>Sin usuarios registrados para este negocio.</li>';
@@ -775,7 +841,7 @@
     usersPage = Math.min(Math.max(1, usersPage), totalPages);
     const startIndex = (usersPage - 1) * usersPageSize;
     const pageUsers = sortedUsers.slice(startIndex, startIndex + usersPageSize);
-    const assignableRoles = getVisibleRoles();
+    const assignableRoles = getAssignableRoles();
 
     usersList.innerHTML = pageUsers
       .map((user) => {
@@ -803,6 +869,9 @@
               ${roleOptions || '<option value="">Sin roles disponibles</option>'}
             </select>
             <button class="btn btn-secondary" type="button" data-user-role-assign="${user.id}">Asignar rol</button>
+            <button class="btn btn-secondary" type="button" data-user-edit="${user.id}">Editar</button>
+            <button class="btn btn-secondary" type="button" data-user-toggle="${user.id}" data-next-active="${user.is_active ? 'false' : 'true'}">${user.is_active ? 'Inactivar' : 'Reactivar'}</button>
+            <button class="btn btn-secondary" type="button" data-user-delete="${user.id}">Eliminar</button>
           </div>
         </li>`;
       })
@@ -815,26 +884,46 @@
     `;
   };
 
+  const resetUserForm = () => {
+    editingUserId = null;
+    newUserEmailInput.value = '';
+    newUserFirstNameInput.value = '';
+    newUserLastNameInput.value = '';
+    createCollaboratorUserButton.textContent = 'Crear usuario colaborador';
+    cancelUserEditButton.hidden = true;
+  };
+
+  const startUserEdit = (userId) => {
+    const user = usersCache.find((item) => Number(item.id) === Number(userId));
+    if (!user) return;
+    editingUserId = user.id;
+    newUserEmailInput.value = user.email || user.username || '';
+    newUserFirstNameInput.value = user.first_name || '';
+    newUserLastNameInput.value = user.last_name || '';
+    createCollaboratorUserButton.textContent = 'Actualizar usuario';
+    cancelUserEditButton.hidden = false;
+    setUserFeedback(`Editando ${user.email || user.username}.`);
+  };
+
   const createCollaboratorUser = async () => {
     const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
     const email = newUserEmailInput.value.trim().toLowerCase();
     const firstName = newUserFirstNameInput.value.trim();
     const lastName = newUserLastNameInput.value.trim();
 
-    if (!organizationId) {
+    if (!organizationId && !editingUserId) {
       setUserFeedback('Debes seleccionar un negocio activo para crear usuarios.', true);
       return;
     }
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setUserFeedback('Ingresa un correo válido para el colaborador.', true);
+      setUserFeedback('Ingresa un correo valido para el colaborador.', true);
       return;
     }
 
     try {
-      await fetch('/api/config/users/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+      const currentEditId = editingUserId;
+      await orgRequest(currentEditId ? `/config/users/${currentEditId}/` : '/config/users/', {
+        method: currentEditId ? 'PATCH' : 'POST',
         body: JSON.stringify({
           email,
           username: email,
@@ -843,31 +932,47 @@
           organization_id: organizationId,
           membership_role: 'viewer',
         }),
-      }).then(async (response) => {
-        if (!response.ok) {
-          const raw = await response.text();
-          let message = raw;
-          try {
-            const parsed = JSON.parse(raw);
-            message = parsed.detail || Object.values(parsed || {}).flat().join(' ');
-          } catch (_error) {
-            message = raw;
-          }
-          throw new Error(message || 'No fue posible crear el usuario colaborador.');
-        }
       });
 
-      setUserFeedback(`Usuario ${email} creado. Al iniciar sesión deberá definir su contraseña.`);
-      newUserEmailInput.value = '';
-      newUserFirstNameInput.value = '';
-      newUserLastNameInput.value = '';
+      setUserFeedback(`Usuario ${email} ${currentEditId ? 'actualizado' : 'creado'} correctamente.`);
+      resetUserForm();
       await loadData();
       await loadCollaborators();
     } catch (error) {
-      setUserFeedback(error.message || 'Error al crear usuario colaborador.', true);
+      setUserFeedback(parseApiError(error) || 'Error al guardar usuario colaborador.', true);
     }
   };
 
+  const setUserActive = async (userId, isActive) => {
+    const user = usersCache.find((item) => Number(item.id) === Number(userId));
+    const actionLabel = isActive ? 'reactivar' : 'inactivar';
+    if (!window.confirm(`Deseas ${actionLabel} ${user?.email || user?.username || 'este usuario'}?`)) return;
+    try {
+      await orgRequest(`/config/users/${userId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: isActive }),
+      });
+      setUserFeedback(`Usuario ${isActive ? 'reactivado' : 'inactivado'} correctamente.`);
+      await loadData();
+      await loadCollaborators();
+    } catch (error) {
+      setUserFeedback(parseApiError(error) || `No fue posible ${actionLabel} el usuario.`, true);
+    }
+  };
+
+  const deleteUser = async (userId) => {
+    const user = usersCache.find((item) => Number(item.id) === Number(userId));
+    if (!window.confirm(`Deseas eliminar ${user?.email || user?.username || 'este usuario'}? Esta accion quita sus accesos y asociaciones.`)) return;
+    try {
+      await orgRequest(`/config/users/${userId}/`, { method: 'DELETE' });
+      if (Number(editingUserId) === Number(userId)) resetUserForm();
+      setUserFeedback('Usuario eliminado correctamente.');
+      await loadData();
+      await loadCollaborators();
+    } catch (error) {
+      setUserFeedback(parseApiError(error) || 'No fue posible eliminar el usuario.', true);
+    }
+  };
   const renderRoles = (roles) => {
     const visibleRoles = roles
       .filter(canUseRole)
@@ -896,7 +1001,7 @@
                 <strong>${escapeHtml(role.name)}</strong>
                 <span>${escapeHtml(personaLabels[role.persona] || role.persona)}</span>
               </div>
-              <span class="settings-chip">${role.is_system_default ? 'Base' : 'Personalizado'}</span>
+              <span class="settings-chip">${role.is_system_default ? 'Base' : 'Personalizado'} - ${role.is_active ? 'Activo' : 'Inactivo'}</span>
             </div>
             <span>${escapeHtml(role.description)}</span>
             <details class="role-details">
@@ -906,6 +1011,7 @@
             </details>
             <div class="actions">
               <button class="btn btn-secondary" type="button" data-role-edit="${role.id}">Editar</button>
+              <button class="btn btn-secondary" type="button" data-role-toggle="${role.id}" data-next-active="${role.is_active ? 'false' : 'true'}">${role.is_active ? 'Inactivar' : 'Reactivar'}</button>
               ${role.is_system_default ? '' : `<button class="btn btn-secondary" type="button" data-role-delete="${role.id}">Eliminar</button>`}
             </div>
           </li>`,
@@ -921,7 +1027,7 @@
   };
 
   const renderRoleOptions = (roles) => {
-    const visibleRoles = roles.filter(canUseRole);
+    const visibleRoles = roles.filter((role) => canUseRole(role) && role.is_active);
     if (!visibleRoles.length) {
       assignRoleRoleSelect.innerHTML = '<option value="">Sin roles disponibles</option>';
       return;
@@ -961,6 +1067,9 @@
             <strong>${escapeHtml(assignment.role_detail?.name || 'Rol')}</strong>
             <span>${escapeHtml(assignedUser?.email || assignedUser?.username || `Usuario #${assignment.user}`)}</span>
             <small>${assignment.is_active ? 'Asociacion activa' : 'Asociacion inactiva'}</small>
+            <div class="actions">
+              <button class="btn btn-secondary" type="button" data-assignment-delete="${assignment.id}">Quitar rol</button>
+            </div>
           </li>`;
         })
         .join('');
@@ -1004,6 +1113,7 @@
   };
 
   const deleteRole = async (roleId) => {
+    if (!window.confirm('Deseas eliminar este rol personalizado?')) return;
     try {
       const response = await fetch(`/api/config/roles/${roleId}/`, {
         method: 'DELETE',
@@ -1018,6 +1128,22 @@
       await loadData();
     } catch (error) {
       setTeamFeedback(error.message || 'Error al eliminar rol.', true);
+    }
+  };
+
+  const setRoleActive = async (roleId, isActive) => {
+    const role = rolesCache.find((item) => Number(item.id) === Number(roleId));
+    const actionLabel = isActive ? 'reactivar' : 'inactivar';
+    if (!window.confirm(`Deseas ${actionLabel} ${role?.name || 'este rol'}?`)) return;
+    try {
+      await orgRequest(`/config/roles/${roleId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: isActive }),
+      });
+      setTeamFeedback(`Rol ${isActive ? 'reactivado' : 'inactivado'} correctamente.`);
+      await loadData();
+    } catch (error) {
+      setTeamFeedback(parseApiError(error) || `No fue posible ${actionLabel} el rol.`, true);
     }
   };
 
@@ -1105,6 +1231,18 @@
       await loadData();
     } catch (error) {
       setTeamFeedback(error.message || 'Error al asociar rol.', true);
+    }
+  };
+
+  const removeRoleAssignment = async (assignmentId) => {
+    if (!window.confirm('Deseas quitar esta asociacion de rol?')) return;
+    try {
+      await orgRequest(`/config/user-role-assignments/${assignmentId}/`, { method: 'DELETE' });
+      setTeamFeedback('Rol quitado del usuario correctamente.');
+      await refreshSessionContext();
+      await loadData();
+    } catch (error) {
+      setTeamFeedback(parseApiError(error) || 'No fue posible quitar el rol.', true);
     }
   };
 
@@ -1373,15 +1511,36 @@
   };
 
   createOrganizationButton.addEventListener('click', createOrganization);
+  cancelOrganizationEditButton.addEventListener('click', resetOrganizationForm);
   createRoleButton.addEventListener('click', saveRole);
   cancelRoleEditButton.addEventListener('click', resetRoleForm);
   assignRoleButton.addEventListener('click', assignRole);
+  roleAssignmentsList.addEventListener('click', (event) => {
+    const deleteId = event.target?.dataset?.assignmentDelete;
+    if (deleteId) removeRoleAssignment(deleteId).catch(() => null);
+  });
   createCollaboratorUserButton.addEventListener('click', createCollaboratorUser);
+  cancelUserEditButton.addEventListener('click', resetUserForm);
+  organizationsList.addEventListener('click', (event) => {
+    const editId = event.target?.dataset?.orgEdit;
+    const toggleId = event.target?.dataset?.orgToggle;
+    const deleteId = event.target?.dataset?.orgDelete;
+    if (editId) startOrganizationEdit(editId);
+    if (toggleId) setOrganizationActive(toggleId, event.target.dataset.nextActive === 'true').catch(() => null);
+    if (deleteId) deleteOrganization(deleteId).catch(() => null);
+  });
   usersList.addEventListener('click', (event) => {
     const userId = event.target?.dataset?.userRoleAssign;
-    if (!userId) return;
-    const roleId = usersList.querySelector(`[data-user-role-select="${userId}"]`)?.value;
-    assignRole(userId, roleId).catch(() => null);
+    const editId = event.target?.dataset?.userEdit;
+    const toggleId = event.target?.dataset?.userToggle;
+    const deleteId = event.target?.dataset?.userDelete;
+    if (userId) {
+      const roleId = usersList.querySelector(`[data-user-role-select="${userId}"]`)?.value;
+      assignRole(userId, roleId).catch(() => null);
+    }
+    if (editId) startUserEdit(editId);
+    if (toggleId) setUserActive(toggleId, event.target.dataset.nextActive === 'true').catch(() => null);
+    if (deleteId) deleteUser(deleteId).catch(() => null);
   });
   usersPagination.addEventListener('click', (event) => {
     const nextPage = Number(event.target?.dataset?.usersPage);
@@ -1399,8 +1558,12 @@
   rolesGroups.addEventListener('click', (event) => {
     const editId = event.target?.dataset?.roleEdit;
     const deleteId = event.target?.dataset?.roleDelete;
+    const toggleId = event.target?.dataset?.roleToggle;
     if (editId) {
       startRoleEdit(editId);
+    }
+    if (toggleId) {
+      setRoleActive(toggleId, event.target.dataset.nextActive === 'true').catch(() => null);
     }
     if (deleteId) {
       deleteRole(deleteId).catch(() => null);
@@ -1435,6 +1598,8 @@
     }
   });
   setupSubmenuTabs();
+  resetUserForm();
+  resetOrganizationForm();
   resetRoleForm();
   resetEmailInboxForm();
   loadData();

@@ -12,6 +12,7 @@ class Organization(models.Model):
     parent_organization = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="child_organizations")
     hacienda_branch_code = models.CharField(max_length=3, default="001", validators=[DIGITS_3])
     hacienda_terminal_code = models.CharField(max_length=5, default="00001", validators=[DIGITS_5])
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

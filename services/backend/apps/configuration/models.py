@@ -22,6 +22,7 @@ class RoleCatalog(models.Model):
     typical_scenarios = models.TextField()
     default_permissions = models.JSONField(default=list, blank=True)
     is_system_default = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["persona", "name"]

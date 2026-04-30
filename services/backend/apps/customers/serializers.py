@@ -173,6 +173,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
             "parent_organization_name",
             "hacienda_branch_code",
             "hacienda_terminal_code",
+            "is_active",
         ]
         extra_kwargs = {
             "name": {"required": True},

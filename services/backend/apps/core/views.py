@@ -132,8 +132,8 @@ def build_session_payload(user):
         organizations_queryset = Organization.objects.all().order_by("name")
         organization_ids = list(organizations_queryset.values_list("id", flat=True))
     else:
-        organizations_queryset = [membership.organization for membership in memberships]
-        organization_ids = [membership.organization_id for membership in memberships]
+        organizations_queryset = [membership.organization for membership in memberships if membership.organization.is_active]
+        organization_ids = [membership.organization_id for membership in memberships if membership.organization.is_active]
 
     module_map = {}
     if organization_ids:
@@ -148,7 +148,12 @@ def build_session_payload(user):
     role_map = {}
     if organization_ids:
         role_rows = (
-            UserRoleAssignment.objects.filter(user=user, organization_id__in=organization_ids, is_active=True)
+            UserRoleAssignment.objects.filter(
+                user=user,
+                organization_id__in=organization_ids,
+                is_active=True,
+                role__is_active=True,
+            )
             .select_related("role")
             .values(
                 "organization_id",
@@ -191,6 +196,7 @@ def build_session_payload(user):
             {
                 "id": organization.id,
                 "name": organization.name,
+                "is_active": organization.is_active,
                 "parent_organization": organization.parent_organization_id,
                 "membership_role": membership.role if membership else (Membership.ROLE_OWNER if is_system_owner else ""),
                 "available_modules": sorted(module_map.get(organization.id, [])),
@@ -199,7 +205,10 @@ def build_session_payload(user):
                 "system_owner_scope": bool(is_system_owner and not membership),
             }
         )
-    active_id = next((org["id"] for org in organizations if org["parent_organization"] is None), organizations[0]["id"] if organizations else None)
+    active_id = next(
+        (org["id"] for org in organizations if org["is_active"] and org["parent_organization"] is None),
+        next((org["id"] for org in organizations if org["is_active"]), organizations[0]["id"] if organizations else None),
+    )
     profile = getattr(user, "profile", None)
     return {
         "user": {

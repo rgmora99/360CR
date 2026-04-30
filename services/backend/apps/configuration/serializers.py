@@ -109,7 +109,7 @@ class ConfigurationUserSerializer(serializers.ModelSerializer):
 
     def get_role_assignments(self, obj):
         organization_id = self._get_context_organization_id()
-        queryset = obj.role_assignments.select_related("role").filter(is_active=True)
+        queryset = obj.role_assignments.select_related("role").filter(is_active=True, role__is_active=True)
         if organization_id:
             queryset = queryset.filter(organization_id=organization_id)
         return [
@@ -127,6 +127,11 @@ class ConfigurationUserSerializer(serializers.ModelSerializer):
         normalized = (value or "").strip().lower()
         if not normalized:
             raise serializers.ValidationError("El correo es requerido.")
+        queryset = User.objects.filter(email__iexact=normalized)
+        if self.instance:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError("Ya existe un usuario con este correo.")
         return normalized
 
     def validate(self, attrs):
@@ -141,6 +146,9 @@ class ConfigurationUserSerializer(serializers.ModelSerializer):
             organization = Organization.objects.get(id=int(organization_id))
         except (TypeError, ValueError, Organization.DoesNotExist):
             raise serializers.ValidationError({"organization_id": "Organización inválida."}) from None
+
+        if not organization.is_active:
+            raise serializers.ValidationError({"organization_id": "No se pueden crear usuarios en una organizacion inactiva."})
 
         attrs["resolved_organization"] = organization
         attrs["membership_role"] = attrs.get("membership_role") or Membership.ROLE_VIEWER
@@ -163,6 +171,13 @@ class ConfigurationUserSerializer(serializers.ModelSerializer):
         )
         return user
 
+    def update(self, instance, validated_data):
+        email = validated_data.get("email")
+        if email:
+            validated_data["email"] = email.strip().lower()
+            validated_data["username"] = validated_data.get("username") or validated_data["email"]
+        return super().update(instance, validated_data)
+
 
 class RoleCatalogSerializer(serializers.ModelSerializer):
     class Meta:
@@ -176,6 +191,7 @@ class RoleCatalogSerializer(serializers.ModelSerializer):
             "typical_scenarios",
             "default_permissions",
             "is_system_default",
+            "is_active",
         ]
 
     def validate(self, attrs):
@@ -239,6 +255,10 @@ class UserRoleAssignmentSerializer(serializers.ModelSerializer):
         role = attrs.get("role", getattr(self.instance, "role", None))
         assigned_user = attrs.get("user", getattr(self.instance, "user", None))
         organization = attrs.get("organization", getattr(self.instance, "organization", None))
+        if role and not role.is_active:
+            raise serializers.ValidationError({"role": "No se puede asignar un rol inactivo."})
+        if organization and not organization.is_active:
+            raise serializers.ValidationError({"organization": "No se pueden asignar roles en una organizacion inactiva."})
         if role and role.code == "ti-super-admin" and not is_system_owner:
             raise serializers.ValidationError({"role": "Este rol es exclusivo del dueño del sistema."})
         if assigned_user and organization and not Membership.objects.filter(user=assigned_user, organization=organization).exists():
@@ -399,6 +419,9 @@ class SystemAdminMembershipSerializer(serializers.ModelSerializer):
         if not organization:
             raise serializers.ValidationError({"organization": "Selecciona una organizaciÃ³n."})
 
+        if not organization.is_active:
+            raise serializers.ValidationError({"organization": "No se pueden asignar accesos a una organizacion inactiva."})
+
         queryset = Membership.objects.filter(user=user, organization=organization)
         if self.instance:
             queryset = queryset.exclude(id=self.instance.id)
@@ -423,6 +446,7 @@ class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
             "parent_organization",
             "hacienda_branch_code",
             "hacienda_terminal_code",
+            "is_active",
             "created_at",
             "subscription_status",
             "subscription_plan_name",

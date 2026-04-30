@@ -74,6 +74,10 @@ class OrganizationViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             defaults={"role": Membership.ROLE_OWNER},
         )
 
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=["is_active"])
+
 
 class CustomerContactViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     organization_lookup_field = "customer__organization_id"

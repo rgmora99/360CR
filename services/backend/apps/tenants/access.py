@@ -43,7 +43,9 @@ def get_allowed_organization_ids(user):
     if user.is_superuser or user.is_staff:
         return list(Organization.objects.values_list("id", flat=True))
 
-    direct_ids = set(Membership.objects.filter(user=user).values_list("organization_id", flat=True))
+    direct_ids = set(
+        Membership.objects.filter(user=user, organization__is_active=True).values_list("organization_id", flat=True)
+    )
     if not direct_ids:
         return []
 
@@ -53,7 +55,7 @@ def get_allowed_organization_ids(user):
     # Incluye sucursales/hijas de manera recursiva para habilitar estructuras jerarquicas.
     while pending_parents:
         children = set(
-            Organization.objects.filter(parent_organization_id__in=pending_parents).values_list("id", flat=True)
+            Organization.objects.filter(parent_organization_id__in=pending_parents, is_active=True).values_list("id", flat=True)
         ) - allowed_ids
         if not children:
             break
@@ -104,6 +106,7 @@ def user_has_module_access(user, organization_id, module_code):
         user=user,
         organization_id=organization_id,
         is_active=True,
+        role__is_active=True,
     ).select_related("role")
     for assignment in assignments:
         module_codes = get_module_codes_for_permissions(assignment.role.default_permissions)

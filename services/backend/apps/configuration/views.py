@@ -3,8 +3,9 @@ import imaplib
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.utils.text import slugify
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -77,6 +78,13 @@ class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSe
             queryset = queryset.filter(membership__organization_id=selected_id)
         return queryset
 
+    def perform_destroy(self, instance):
+        if instance.id == self.request.user.id:
+            raise PermissionDenied("No puedes eliminar tu propio usuario desde esta pantalla.")
+        if instance.is_staff and not self.request.user.is_staff:
+            raise PermissionDenied("No puedes eliminar un usuario administrador del sistema.")
+        instance.delete()
+
 
 class OrganizationCollaboratorView(APIView):
     permission_classes = [IsAuthenticated]
@@ -99,6 +107,13 @@ class RoleCatalogViewSet(viewsets.ModelViewSet):
         if not (user.is_superuser or user.is_staff):
             queryset = queryset.exclude(code="ti-super-admin")
         return queryset
+
+    def perform_destroy(self, instance):
+        if instance.is_system_default:
+            raise ValidationError("Los roles base no se eliminan; puedes inactivarlos si no deben asignarse.")
+        if instance.user_assignments.exists():
+            raise ValidationError("Este rol ya tiene asociaciones; inactivalo para conservar el historial.")
+        instance.delete()
 
 
 class SystemSettingViewSet(viewsets.ModelViewSet):
@@ -128,6 +143,24 @@ class UserRoleAssignmentViewSet(OrganizationScopedViewMixin, viewsets.ModelViewS
     def perform_create(self, serializer):
         self.validate_serializer_tenant_access(serializer)
         serializer.save(assigned_by=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.validate_serializer_tenant_access(serializer)
+        user = serializer.validated_data["user"]
+        role = serializer.validated_data["role"]
+        organization = serializer.validated_data.get("organization")
+        assignment = UserRoleAssignment.objects.filter(user=user, role=role, organization=organization).first()
+        if assignment:
+            assignment.is_active = serializer.validated_data.get("is_active", True)
+            assignment.assigned_by = request.user
+            assignment.save(update_fields=["is_active", "assigned_by"])
+            output = self.get_serializer(assignment)
+            return Response(output.data, status=status.HTTP_200_OK)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class OrganizationEmailInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
@@ -262,6 +295,10 @@ class SystemAdminOrganizationViewSet(viewsets.ModelViewSet):
             },
         )
         sync_subscription_modules(subscription)
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=["is_active"])
 
 
 class SaaSModuleViewSet(viewsets.ModelViewSet):
