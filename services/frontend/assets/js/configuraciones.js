@@ -849,7 +849,14 @@
           ? user.role_assignments.filter((assignment) => isSystemOwner() || !systemOwnerRoleCodes.has(assignment.role_code))
           : [];
         const assignedRoles = visibleAssignments.length
-          ? visibleAssignments.map((assignment) => `<span class="settings-chip">${escapeHtml(assignment.role_name)}</span>`).join('')
+          ? visibleAssignments
+            .map(
+              (assignment) => `<span class="settings-chip settings-chip-removable">
+                ${escapeHtml(assignment.role_name)}
+                <button type="button" aria-label="Quitar ${escapeHtml(assignment.role_name)}" data-user-role-remove="${assignment.id}">x</button>
+              </span>`,
+            )
+            .join('')
           : 'Sin rol especifico';
         const roleOptions = assignableRoles
           .map((role) => `<option value="${role.id}">${escapeHtml(role.name)}</option>`)
@@ -1048,34 +1055,27 @@
       .join('');
   };
 
-  const renderRoleAssignments = async () => {
-    try {
-      const organizationId = getActiveOrganizationId();
-      const query = organizationId ? `?organization_id=${organizationId}` : '';
-      const response = await fetch(`/api/config/user-role-assignments/${query}`, { credentials: 'include' });
-      if (!response.ok) throw new Error('No fue posible cargar asociaciones de roles.');
-      const assignments = await response.json();
-      if (!assignments.length) {
-        roleAssignmentsList.innerHTML = '<li>Sin asociaciones de roles registradas.</li>';
-        return;
-      }
-
-      roleAssignmentsList.innerHTML = assignments
-        .map((assignment) => {
-          const assignedUser = usersCache.find((user) => Number(user.id) === Number(assignment.user));
-          return `<li>
-            <strong>${escapeHtml(assignment.role_detail?.name || 'Rol')}</strong>
-            <span>${escapeHtml(assignedUser?.email || assignedUser?.username || `Usuario #${assignment.user}`)}</span>
-            <small>${assignment.is_active ? 'Asociacion activa' : 'Asociacion inactiva'}</small>
-            <div class="actions">
-              <button class="btn btn-secondary" type="button" data-assignment-delete="${assignment.id}">Quitar rol</button>
-            </div>
-          </li>`;
-        })
-        .join('');
-    } catch (error) {
-      roleAssignmentsList.innerHTML = `<li>${error.message || 'No se pudo cargar asociaciones.'}</li>`;
+  const renderRoleAssignments = () => {
+    const assignments = usersCache.flatMap((user) =>
+      (user.role_assignments || [])
+        .filter((assignment) => isSystemOwner() || !systemOwnerRoleCodes.has(assignment.role_code))
+        .map((assignment) => ({ ...assignment, user })),
+    );
+    if (!assignments.length) {
+      roleAssignmentsList.innerHTML = '<li>Sin asociaciones de roles registradas.</li>';
+      return;
     }
+
+    roleAssignmentsList.innerHTML = assignments
+      .map((assignment) => `<li>
+        <strong>${escapeHtml(assignment.role_name || 'Rol')}</strong>
+        <span>${escapeHtml(assignment.user?.email || assignment.user?.username || 'Usuario')}</span>
+        <small>Asociacion activa</small>
+        <div class="actions">
+          <button class="btn btn-secondary" type="button" data-assignment-delete="${assignment.id}">Quitar rol</button>
+        </div>
+      </li>`)
+      .join('');
   };
 
   const resetRoleForm = () => {
@@ -1534,10 +1534,12 @@
     const editId = event.target?.dataset?.userEdit;
     const toggleId = event.target?.dataset?.userToggle;
     const deleteId = event.target?.dataset?.userDelete;
+    const removeRoleId = event.target?.dataset?.userRoleRemove;
     if (userId) {
       const roleId = usersList.querySelector(`[data-user-role-select="${userId}"]`)?.value;
       assignRole(userId, roleId).catch(() => null);
     }
+    if (removeRoleId) removeRoleAssignment(removeRoleId).catch(() => null);
     if (editId) startUserEdit(editId);
     if (toggleId) setUserActive(toggleId, event.target.dataset.nextActive === 'true').catch(() => null);
     if (deleteId) deleteUser(deleteId).catch(() => null);

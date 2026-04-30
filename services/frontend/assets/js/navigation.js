@@ -15,6 +15,16 @@
     localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData || {}));
   }
 
+  function getStoredOrganizationId() {
+    const cached = loadCachedSession();
+    const sessionOrganizationId = Number(cached?.active_organization_id);
+    if (Number.isFinite(sessionOrganizationId) && sessionOrganizationId > 0) {
+      return sessionOrganizationId;
+    }
+    const legacyOrganizationId = Number(localStorage.getItem(LEGACY_ORG_KEY));
+    return Number.isFinite(legacyOrganizationId) && legacyOrganizationId > 0 ? legacyOrganizationId : null;
+  }
+
   function normalizeSession(sessionData) {
     const organizations = Array.isArray(sessionData?.organizations) ? sessionData.organizations : [];
     const availableIds = organizations.map((org) => Number(org.id)).filter((id) => Number.isFinite(id) && id > 0);
@@ -45,8 +55,17 @@
       return normalizeSession(loadCachedSession());
     },
     save(sessionData) {
-      const normalized = normalizeSession(sessionData);
+      const storedOrganizationId = getStoredOrganizationId();
+      const incomingOrganizations = Array.isArray(sessionData?.organizations) ? sessionData.organizations : [];
+      const hasStoredOrganization = incomingOrganizations.some((org) => Number(org.id) === storedOrganizationId);
+      const normalized = normalizeSession({
+        ...sessionData,
+        active_organization_id: hasStoredOrganization ? storedOrganizationId : sessionData?.active_organization_id,
+      });
       saveSession(normalized);
+      if (normalized.active_organization_id) {
+        localStorage.setItem(LEGACY_ORG_KEY, String(normalized.active_organization_id));
+      }
       return normalized;
     },
     getOrganizations() {
@@ -72,6 +91,9 @@
       };
       const normalizedNext = normalizeSession(next);
       saveSession(normalizedNext);
+      if (normalizedNext.active_organization_id) {
+        localStorage.setItem(LEGACY_ORG_KEY, String(normalizedNext.active_organization_id));
+      }
       window.dispatchEvent(
         new CustomEvent('app:organization-changed', {
           detail: {
