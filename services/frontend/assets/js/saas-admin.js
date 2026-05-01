@@ -484,6 +484,43 @@
     });
   }
 
+  function getOrganizationTreeMeta(organization) {
+    const hasChildren = state.organizations.some((item) => Number(item.parent_organization) === Number(organization.id));
+    const parentName = organization.parent_organization_name
+      || state.organizations.find((item) => Number(item.id) === Number(organization.parent_organization))?.name
+      || '';
+    if (organization.parent_organization) {
+      return {
+        badge: 'Hija',
+        detail: parentName ? `Padre: ${parentName}` : `Padre ID #${organization.parent_organization}`,
+        className: 'is-child',
+      };
+    }
+    return {
+      badge: hasChildren ? 'Padre' : 'Raiz',
+      detail: hasChildren ? 'Organizacion padre' : 'Sin organizaciones hijas',
+      className: hasChildren ? 'is-parent' : 'is-root',
+    };
+  }
+
+  function renderOrganizationParentOptions(selectedValue = '') {
+    const selectedId = Number($('org-record-id')?.value || 0);
+    const options = state.organizations
+      .filter((organization) => Number(organization.id) !== selectedId)
+      .map((organization) => {
+        const meta = getOrganizationTreeMeta(organization);
+        return `<option value="${organization.id}">${escapeHtml(organization.name)} - ${meta.badge} (#${organization.id})</option>`;
+      })
+      .join('');
+    $('org-parent').innerHTML = '<option value="">Sin padre (organizacion raiz)</option>' + options;
+    $('org-parent').value = selectedValue ? String(selectedValue) : '';
+  }
+
+  function getOrganizationOptionLabel(organization) {
+    const meta = getOrganizationTreeMeta(organization);
+    return `${organization.name} - ${meta.badge}`;
+  }
+
   function renderOrganizationsTable() {
     const { rows, page, size, total, totalPages } = getPaginationSlice('organizations', state.organizations);
     const selectedId = Number($('org-record-id')?.value || 0);
@@ -491,9 +528,17 @@
       rows
         .map((organization) => {
           const subscription = getSubscriptionByOrganizationId(organization.id);
+          const meta = getOrganizationTreeMeta(organization);
           return `
             <tr data-org-id="${organization.id}" class="${selectedId === Number(organization.id) ? 'is-selected' : ''}">
-              <td>${escapeHtml(organization.name)}</td>
+              <td>
+                <strong>${escapeHtml(organization.name)}</strong>
+                <small>ID #${escapeHtml(organization.id)}</small>
+              </td>
+              <td>
+                <span class="org-tree-badge ${meta.className}">${escapeHtml(meta.badge)}</span>
+                <small>${escapeHtml(meta.detail)}</small>
+              </td>
               <td>${escapeHtml(organization.slug)}</td>
               <td>${escapeHtml(subscription?.plan_catalog_name || organization.subscription_plan_name || 'Sin plan')}</td>
               <td>${escapeHtml(STATUS_LABELS[subscription?.status || organization.subscription_status] || 'Sin suscripcion')}</td>
@@ -501,7 +546,7 @@
             </tr>
           `;
         })
-        .join('') || '<tr><td colspan="5">No hay organizaciones registradas.</td></tr>';
+        .join('') || '<tr><td colspan="6">No hay organizaciones registradas.</td></tr>';
     renderPaginator('organizations', 'organizations-pagination', total, page, size, totalPages);
   }
 
@@ -846,13 +891,14 @@
   }
 
   function resetOrganizationForm() {
-    clearFieldErrors(['org-name', 'org-slug', 'org-branch', 'org-terminal']);
+    clearFieldErrors(['org-name', 'org-slug', 'org-branch', 'org-terminal', 'org-parent']);
     $('org-record-id').value = '';
     $('org-name').value = '';
     $('org-slug').value = '';
     const nextCodes = getNextAvailableHaciendaCodes();
     $('org-branch').value = nextCodes.branch;
     $('org-terminal').value = nextCodes.terminal;
+    renderOrganizationParentOptions('');
     updateHaciendaPreview();
     renderOrganizationsTable();
   }
@@ -914,6 +960,7 @@
     $('org-slug').value = organization.slug || '';
     $('org-branch').value = organization.hacienda_branch_code || '001';
     $('org-terminal').value = organization.hacienda_terminal_code || '00001';
+    renderOrganizationParentOptions(organization.parent_organization || '');
     updateHaciendaPreview(organization);
 
     $('subscription-record-id').value = subscription?.id || '';
@@ -1040,10 +1087,11 @@
     state.flags = flags || [];
 
     renderSummary();
-    renderSelectOptions(['subscription-organization', 'membership-organization', 'flag-organization'], state.organizations, (item) => item.name);
+    renderSelectOptions(['subscription-organization', 'membership-organization', 'flag-organization'], state.organizations, getOrganizationOptionLabel);
     renderSelectOptions(['membership-user'], state.users, (item) => item.email || item.username);
     renderSelectOptions(['subscription-plan', 'plan-module-plan'], state.plans, (item) => item.name);
     renderSelectOptions(['plan-module-module', 'flag-module'], state.modules, (item) => `${item.name} (${item.group})`, 'Sin modulo');
+    renderOrganizationParentOptions($('org-parent')?.value || '');
     if (state.organizations.length) {
       hydrateOrganizationForm(state.organizations[0].id);
     }
@@ -1214,6 +1262,7 @@
       const payload = {
         name: $('org-name').value.trim(),
         slug: $('org-slug').value.trim(),
+        parent_organization: $('org-parent').value ? Number($('org-parent').value) : null,
         hacienda_branch_code: $('org-branch').value.trim() || '001',
         hacienda_terminal_code: $('org-terminal').value.trim() || '00001',
       };

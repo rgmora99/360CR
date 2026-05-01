@@ -336,6 +336,46 @@
   background: rgba(122, 162, 255, 0.08);
 }
 
+.table-wrap td strong,
+.table-wrap td small {
+  display: block;
+}
+
+.table-wrap td small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.org-tree-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(122, 162, 255, 0.18);
+  background: rgba(92, 160, 255, 0.1);
+  color: #c8dcff;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.org-tree-badge.is-parent {
+  border-color: rgba(122, 247, 215, 0.24);
+  background: rgba(20, 184, 166, 0.1);
+  color: #a8f0db;
+}
+
+.org-tree-badge.is-child {
+  border-color: rgba(255, 208, 122, 0.28);
+  background: rgba(255, 208, 122, 0.1);
+  color: #ffd28c;
+}
+
+.org-tree-badge.is-root {
+  color: var(--muted);
+}
+
 .settings-list {
   list-style: none;
   padding: 0;

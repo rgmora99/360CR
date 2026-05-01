@@ -431,6 +431,7 @@ class SystemAdminMembershipSerializer(serializers.ModelSerializer):
 
 
 class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
+    parent_organization_name = serializers.CharField(source="parent_organization.name", read_only=True)
     subscription_status = serializers.CharField(source="subscription.status", read_only=True)
     subscription_plan_name = serializers.CharField(source="subscription.plan_catalog.name", read_only=True)
     memberships_count = serializers.SerializerMethodField()
@@ -444,6 +445,7 @@ class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "parent_organization",
+            "parent_organization_name",
             "hacienda_branch_code",
             "hacienda_terminal_code",
             "is_active",

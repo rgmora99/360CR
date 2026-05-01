@@ -59,6 +59,11 @@
                   <label>Terminal Hacienda
                     <input id="org-terminal" type="text" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" value="00001" required />
                   </label>
+                  <label class="saas-admin-span-2">Organizacion padre
+                    <select id="org-parent">
+                      <option value="">Sin padre (organizacion raiz)</option>
+                    </select>
+                  </label>
                 </div>
                 <div class="hacienda-preview" id="hacienda-preview">
                   <span>Próximo consecutivo FE</span>
@@ -152,7 +157,7 @@
               <div class="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>Organizacion</th><th>Slug</th><th>Plan</th><th>Estado</th><th>Usuarios</th></tr>
+                    <tr><th>Organizacion</th><th>Jerarquia</th><th>Slug</th><th>Plan</th><th>Estado</th><th>Usuarios</th></tr>
                   </thead>
                   <tbody id="organizations-body"></tbody>
                 </table>

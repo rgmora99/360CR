@@ -462,26 +462,111 @@
     }
   };
 
-  const renderOrganizations = (organizations) => {
-    if (!organizations.length) {
-      organizationsList.innerHTML = '<li>Sin organizaciones registradas.</li>';
-      orgParentSelect.innerHTML = '<option value="">Sin padre (organizacion raiz)</option>';
-      return;
+  const getScopedOrganizations = (organizations) => {
+    const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    if (!activeOrganizationId) {
+      return organizations;
+    }
+
+    const byParentId = new Map();
+    organizations.forEach((organization) => {
+      const parentId = Number(organization.parent_organization || 0);
+      byParentId.set(parentId, [...(byParentId.get(parentId) || []), organization]);
+    });
+
+    const scopedIds = new Set([activeOrganizationId]);
+    const pending = [activeOrganizationId];
+    while (pending.length) {
+      const parentId = pending.shift();
+      (byParentId.get(parentId) || []).forEach((child) => {
+        const childId = Number(child.id);
+        if (scopedIds.has(childId)) return;
+        scopedIds.add(childId);
+        pending.push(childId);
+      });
+    }
+
+    return organizations.filter((organization) => scopedIds.has(Number(organization.id)));
+  };
+
+  const getOrganizationDepth = (organization, byId, scopedIds) => {
+    let depth = 0;
+    let parentId = Number(organization.parent_organization || 0);
+    const visited = new Set([Number(organization.id)]);
+    while (parentId && scopedIds.has(parentId) && !visited.has(parentId)) {
+      depth += 1;
+      visited.add(parentId);
+      parentId = Number(byId.get(parentId)?.parent_organization || 0);
+    }
+    return depth;
+  };
+
+  const renderOrganizationParentOptions = (organizations, selectedParentId = '', excludedOrganizationId = null) => {
+    const scopedOrganizations = getScopedOrganizations(organizations);
+    const byId = new Map(organizations.map((organization) => [Number(organization.id), organization]));
+    const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+    const selectedId = Number(selectedParentId || 0);
+    const excludedId = Number(excludedOrganizationId || 0);
+    const optionOrganizations = scopedOrganizations.filter((organization) => Number(organization.id) !== excludedId);
+
+    if (selectedId && !optionOrganizations.some((organization) => Number(organization.id) === selectedId)) {
+      const selectedParent = byId.get(selectedId);
+      if (selectedParent) {
+        optionOrganizations.push(selectedParent);
+      }
     }
 
     orgParentSelect.innerHTML = ['<option value="">Sin padre (organizacion raiz)</option>']
       .concat(
-        organizations.map(
-          (organization) => `<option value="${organization.id}">${escapeHtml(organization.name)} (#${organization.id})</option>`,
+        optionOrganizations.map(
+          (organization) => {
+            const isParent = organizations.some((item) => Number(item.parent_organization) === Number(organization.id));
+            const label = Number(organization.id) === activeOrganizationId ? 'Activa' : isParent ? 'Padre' : 'Hija';
+            return `<option value="${organization.id}">${escapeHtml(organization.name)} - ${label} (#${organization.id})</option>`;
+          },
         ),
       )
       .join('');
+    orgParentSelect.value = selectedId ? String(selectedId) : '';
+  };
 
-    organizationsList.innerHTML = organizations
-      .map(
-        (organization) => `<li>
-          <strong>${escapeHtml(organization.name)}</strong>
-          <span>ID #${organization.id}${organization.parent_organization ? ` - Sucursal de #${organization.parent_organization}` : ' - Organizacion raiz'}</span>
+  const renderOrganizations = (organizations) => {
+    const scopedOrganizations = getScopedOrganizations(organizations);
+    const byId = new Map(organizations.map((organization) => [Number(organization.id), organization]));
+    const scopedIds = new Set(scopedOrganizations.map((organization) => Number(organization.id)));
+    const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+
+    if (!scopedOrganizations.length) {
+      organizationsList.innerHTML = '<li>Sin organizaciones registradas para este contexto.</li>';
+      orgParentSelect.innerHTML = '<option value="">Sin padre (organizacion raiz)</option>';
+      return;
+    }
+
+    renderOrganizationParentOptions(organizations);
+
+    organizationsList.innerHTML = scopedOrganizations
+      .map((organization) => {
+        const depth = getOrganizationDepth(organization, byId, scopedIds);
+        const parent = byId.get(Number(organization.parent_organization));
+        const hasChildren = scopedOrganizations.some((item) => Number(item.parent_organization) === Number(organization.id));
+        const relationshipLabel = Number(organization.id) === activeOrganizationId
+          ? 'Organizacion activa'
+          : organization.parent_organization
+            ? 'Organizacion hija'
+            : 'Organizacion padre';
+        const parentLabel = parent
+          ? `Padre: ${escapeHtml(parent.name)} (#${parent.id})`
+          : hasChildren
+            ? 'Padre visible en este contexto'
+            : 'Sin padre';
+        return `<li class="settings-org-row" style="--org-depth: ${depth}">
+          <div class="settings-org-heading">
+            <div>
+              <strong>${escapeHtml(organization.name)}</strong>
+              <span>ID #${organization.id} - ${parentLabel}</span>
+            </div>
+            <span class="settings-chip ${organization.parent_organization ? 'is-child' : 'is-parent'}">${relationshipLabel}</span>
+          </div>
           <span class="settings-chip ${organization.is_active ? 'is-success' : 'is-muted'}">${organization.is_active ? 'Activa' : 'Inactiva'}</span>
           <small>Hacienda: sucursal ${organization.hacienda_branch_code || '001'} - terminal ${organization.hacienda_terminal_code || '00001'}</small>
           <div class="actions">
@@ -489,8 +574,8 @@
             <button class="btn btn-secondary" type="button" data-org-toggle="${organization.id}" data-next-active="${organization.is_active ? 'false' : 'true'}">${organization.is_active ? 'Inactivar' : 'Reactivar'}</button>
             <button class="btn btn-secondary" type="button" data-org-delete="${organization.id}">Eliminar</button>
           </div>
-        </li>`,
-      )
+        </li>`;
+      })
       .join('');
   };
 
@@ -500,6 +585,7 @@
     orgParentSelect.value = '';
     orgBranchCodeInput.value = '001';
     orgTerminalCodeInput.value = '00001';
+    renderOrganizationParentOptions(organizationsCache);
     createOrganizationButton.textContent = 'Crear organizacion';
     cancelOrganizationEditButton.hidden = true;
   };
@@ -509,7 +595,7 @@
     if (!organization) return;
     editingOrganizationId = organization.id;
     orgNameInput.value = organization.name || '';
-    orgParentSelect.value = organization.parent_organization ? String(organization.parent_organization) : '';
+    renderOrganizationParentOptions(organizationsCache, organization.parent_organization || '', organization.id);
     orgBranchCodeInput.value = organization.hacienda_branch_code || '001';
     orgTerminalCodeInput.value = organization.hacienda_terminal_code || '00001';
     createOrganizationButton.textContent = 'Actualizar organizacion';
@@ -550,7 +636,8 @@
   };
 
   const renderEmailOrganizations = (organizations) => {
-    const options = organizations.map((organization) => `<option value="${organization.id}">${organization.name}</option>`).join('');
+    const scopedOrganizations = getScopedOrganizations(organizations);
+    const options = scopedOrganizations.map((organization) => `<option value="${organization.id}">${organization.name}</option>`).join('');
     emailOrgSelect.innerHTML = options || '<option value="">Sin organizaciones</option>';
     const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
     if (activeOrganizationId) {
@@ -779,7 +866,13 @@
       organizationsCache = organizations;
       renderOrganizations(organizations);
       renderEmailOrganizations(organizations);
-      setOrgFeedback(`Se cargaron ${organizations.length} organizaciones.`);
+      const scopedOrganizations = getScopedOrganizations(organizations);
+      const activeOrganizationId = Number(window.AppSession?.getActiveOrganizationId?.());
+      setOrgFeedback(
+        activeOrganizationId
+          ? `Se cargaron ${scopedOrganizations.length} organizaciones del contexto activo.`
+          : `Se cargaron ${organizations.length} organizaciones.`,
+      );
     } catch (error) {
       renderOrganizations([]);
       setOrgFeedback(error.message || 'No fue posible cargar organizaciones.', true);
@@ -806,6 +899,10 @@
     try {
       const parentOrganization = orgParentSelect.value ? Number(orgParentSelect.value) : null;
       const currentEditId = editingOrganizationId;
+      if (currentEditId && Number(parentOrganization) === Number(currentEditId)) {
+        setOrgFeedback('La organizacion no puede ser su propio padre.', true);
+        return;
+      }
       const saved = await orgRequest(currentEditId ? `/organizations/${currentEditId}/` : '/organizations/', {
         method: currentEditId ? 'PATCH' : 'POST',
         body: JSON.stringify({

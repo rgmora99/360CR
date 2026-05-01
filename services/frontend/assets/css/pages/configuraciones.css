@@ -149,6 +149,34 @@
   color: var(--color-muted);
 }
 
+.settings-org-row {
+  position: relative;
+  margin-left: calc(var(--org-depth, 0) * 1rem);
+  border-left: 3px solid rgba(122, 162, 255, 0.28) !important;
+}
+
+.settings-org-row::before {
+  content: "";
+  position: absolute;
+  left: calc(-1rem - 3px);
+  top: 1.15rem;
+  width: calc(var(--org-depth, 0) * 1rem);
+  border-top: 1px solid rgba(122, 162, 255, 0.28);
+}
+
+.settings-org-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.settings-org-heading div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
 .settings-user-row {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.75rem !important;
@@ -214,6 +242,16 @@
 
 .settings-chip.is-muted {
   color: var(--color-muted);
+}
+
+.settings-chip.is-parent {
+  border-color: rgba(122, 162, 255, 0.38);
+  color: #c7d8ff;
+}
+
+.settings-chip.is-child {
+  border-color: rgba(255, 208, 122, 0.38);
+  color: #ffd28c;
 }
 
 .settings-chip-removable {
