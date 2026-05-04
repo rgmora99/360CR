@@ -11,6 +11,7 @@
   const dateToFilter = $('date-to-filter');
   const loadButton = $('load-events');
   const eventsBody = $('events-body');
+  const billingAlert = $('agenda-billing-alert');
   const feedback = $('feedback');
   const eventsPager = window.TablePaginator?.create({
     key: 'agenda-events',
@@ -51,20 +52,51 @@
   let eventTypes = [];
   let services = [];
   let collaborators = [];
+  let lastOverdueAlertCount = 0;
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function isPastEvent(item) {
+    const startsAt = new Date(item.starts_at);
+    return !Number.isNaN(startsAt.getTime()) && startsAt < new Date();
+  }
+
+  function isOverdueUnbilled(item) {
+    return Boolean(item.service) && item.status !== 'cancelled' && !item.invoice && isPastEvent(item);
+  }
+
+  function renderStatus(item) {
+    const label = item.status_display || item.status;
+    if (isOverdueUnbilled(item)) {
+      return `
+        <span class="agenda-status agenda-status--warning">Vencida sin factura</span>
+        <span class="agenda-status-note">${escapeHtml(label)}</span>
+      `;
+    }
+    return `<span class="agenda-status">${escapeHtml(label)}</span>`;
+  }
 
   function renderEventRow(item) {
     const canInvoice = Boolean(item.service) && item.status !== 'cancelled' && !item.invoice;
+    const isUnbilledPast = isOverdueUnbilled(item);
     return `
-      <tr>
-        <td>${item.title}</td>
-        <td>${item.service_name || getServiceName(item.service)}</td>
-        <td>${item.collaborator_email || getCollaboratorName(item.collaborator)}</td>
-        <td>${formatDate(item.starts_at)}</td>
-        <td>${item.status_display || item.status}</td>
+      <tr class="${isUnbilledPast ? 'agenda-row--overdue-unbilled' : ''}">
+        <td>${escapeHtml(item.title)}</td>
+        <td>${escapeHtml(item.service_name || getServiceName(item.service))}</td>
+        <td>${escapeHtml(item.collaborator_email || getCollaboratorName(item.collaborator))}</td>
+        <td>${escapeHtml(formatDate(item.starts_at))}</td>
+        <td>${renderStatus(item)}</td>
         <td>
           <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
           <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
-          ${canInvoice ? `<button class="btn btn-secondary" data-action="invoice" data-id="${item.id}">Facturar</button>` : ''}
+          ${canInvoice ? `<button class="btn ${isUnbilledPast ? 'btn-primary' : 'btn-secondary'}" data-action="invoice" data-id="${item.id}">${isUnbilledPast ? 'Facturar ahora' : 'Facturar'}</button>` : ''}
           ${item.invoice ? `<button class="btn btn-secondary" data-action="view-invoice" data-id="${item.id}">Ver factura</button>` : ''}
         </td>
       </tr>
@@ -198,7 +230,8 @@
 
     const filtered = events.filter((item) => {
       const matchText = `${item.title} ${item.description || ''}`.toLowerCase().includes(term);
-      const matchStatus = !selectedStatus || selectedStatus === item.status;
+      const matchStatus = !selectedStatus
+        || (selectedStatus === 'overdue_unbilled' ? isOverdueUnbilled(item) : selectedStatus === item.status);
       const matchService = !selectedService || Number(item.service) === selectedService;
       const matchCollaborator = !selectedCollaborator || Number(item.collaborator) === selectedCollaborator;
       return matchText && matchStatus && matchService && matchCollaborator;
@@ -210,6 +243,33 @@
     }
 
     eventsBody.innerHTML = filtered.map((item) => renderEventRow(item)).join('') || '<tr><td colspan="6">No hay eventos para mostrar.</td></tr>';
+  }
+
+  function renderBillingAlert() {
+    if (!billingAlert) {
+      return;
+    }
+
+    const overdueEvents = events.filter(isOverdueUnbilled);
+    const count = overdueEvents.length;
+    billingAlert.hidden = count === 0;
+
+    if (!count) {
+      billingAlert.innerHTML = '';
+      lastOverdueAlertCount = 0;
+      return;
+    }
+
+    const label = count === 1 ? '1 cita vencida sin facturar' : `${count} citas vencidas sin facturar`;
+    billingAlert.innerHTML = `
+      <strong>${escapeHtml(label)}</strong>
+      <span>Revisa el filtro "Vencidas sin facturar" y usa "Facturar ahora" para cerrar el pendiente.</span>
+    `;
+
+    if (window.appAlerts?.toast && count !== lastOverdueAlertCount) {
+      window.appAlerts.toast(label, 'warning');
+    }
+    lastOverdueAlertCount = count;
   }
 
   function persistBillingPrefill(target) {
@@ -407,7 +467,7 @@
     try {
       const organizationId = getOrganizationId();
       const params = new URLSearchParams({ organization_id: organizationId });
-      if (statusFilter.value) params.set('status', statusFilter.value);
+      if (statusFilter.value && statusFilter.value !== 'overdue_unbilled') params.set('status', statusFilter.value);
       if (serviceFilter.value) params.set('service_id', serviceFilter.value);
       if (collaboratorFilter.value) params.set('collaborator_id', collaboratorFilter.value);
       if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
@@ -415,6 +475,7 @@
       if (dateToFilter.value) params.set('date_to', `${dateToFilter.value}T23:59:59`);
 
       events = await request(`${getApiBase()}/agenda-events/?${params.toString()}`);
+      renderBillingAlert();
       renderTable();
     } catch (error) {
       setFeedback(`Error al cargar agenda: ${error.message}`, true);

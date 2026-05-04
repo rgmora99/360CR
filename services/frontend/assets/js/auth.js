@@ -2,6 +2,8 @@
   const loginForm = document.getElementById('login-form');
   const registerForm = document.getElementById('register-form');
   const passwordSetupTrigger = document.getElementById('password-setup-trigger');
+  const passwordResetTrigger = document.getElementById('password-reset-trigger');
+  const passwordResetForm = document.getElementById('password-reset-form');
   const googleLoginSlot = document.getElementById('google-login-button');
   const googleRegisterSlot = document.getElementById('google-register-button');
   const SESSION_KEY = 'cr360.session';
@@ -13,6 +15,8 @@
     email: 'correo electronico',
     phone: 'telefono',
     password: 'contrasena',
+    new_password: 'contrasena',
+    confirm_password: 'confirmacion de contrasena',
   };
 
   const FORM_RULES = {
@@ -27,6 +31,10 @@
       email: { required: true, email: true },
       phone: { required: true, minLength: 8 },
       password: { required: true, minLength: 8 },
+    },
+    resetPassword: {
+      new_password: { required: true, minLength: 8 },
+      confirm_password: { required: true, minLength: 8 },
     },
   };
 
@@ -234,6 +242,31 @@
     return result.value;
   }
 
+  async function openPasswordResetRequestModal(prefilledEmail = '') {
+    const result = await window.Swal.fire({
+      title: 'Recuperar contrasena',
+      html:
+        '<p style="margin-bottom:8px;">Te enviaremos un enlace para crear una contrasena nueva.</p>' +
+        `<input id="reset-email" class="swal2-input" type="email" placeholder="Correo electronico" value="${prefilledEmail || ''}">`,
+      confirmButtonText: 'Enviar enlace',
+      showCancelButton: true,
+      focusConfirm: false,
+      preConfirm: () => {
+        const email = (document.getElementById('reset-email')?.value || '').trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          window.Swal.showValidationMessage('Ingresa un correo valido.');
+          return false;
+        }
+        return { email };
+      },
+    });
+
+    if (!result.isConfirmed || !result.value) {
+      return null;
+    }
+    return result.value;
+  }
+
   function shouldTriggerPasswordSetup(error) {
     return error?.code === 'password_setup_required' || /no tiene contrasena|debes crearla/i.test(String(error?.message || ''));
   }
@@ -431,6 +464,68 @@
       } catch (error) {
         if (window.appAlerts?.notify) {
           await window.appAlerts.notify(error.message || 'No se pudo configurar la contrasena.', 'error', 'Error');
+        }
+      }
+    });
+  }
+
+  if (passwordResetTrigger) {
+    passwordResetTrigger.addEventListener('click', async () => {
+      const loginEmail = loginForm?.elements?.namedItem('email')?.value || '';
+      const resetData = await openPasswordResetRequestModal(loginEmail);
+      if (!resetData) return;
+
+      try {
+        const response = await request('/auth/password-reset/request/', {
+          method: 'POST',
+          body: JSON.stringify({ email: resetData.email }),
+        });
+        if (window.appAlerts?.notify) {
+          await window.appAlerts.notify(response?.detail || 'Revisa tu correo para continuar.', 'success', 'Solicitud enviada');
+        }
+      } catch (error) {
+        if (window.appAlerts?.notify) {
+          await window.appAlerts.notify(error.message || 'No se pudo enviar el enlace.', 'error', 'Error');
+        }
+      }
+    });
+  }
+
+  if (passwordResetForm) {
+    initFormValidation(passwordResetForm, FORM_RULES.resetPassword, async () => {
+      const params = new URLSearchParams(window.location.search);
+      const uid = params.get('uid') || '';
+      const token = params.get('token') || '';
+      const newPasswordField = passwordResetForm.elements.namedItem('new_password');
+      const confirmPasswordField = passwordResetForm.elements.namedItem('confirm_password');
+      const newPassword = newPasswordField?.value || '';
+      const confirmPassword = confirmPasswordField?.value || '';
+
+      if (!uid || !token) {
+        if (window.appAlerts?.notify) {
+          await window.appAlerts.notify('El enlace de recuperacion no es valido.', 'error', 'Enlace invalido');
+        }
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        setFieldError(confirmPasswordField, 'Las contrasenas no coinciden.');
+        return;
+      }
+
+      try {
+        const response = await request('/auth/password-reset/confirm/', {
+          method: 'POST',
+          body: JSON.stringify({ uid, token, new_password: newPassword }),
+        });
+        if (window.appAlerts?.notify) {
+          await window.appAlerts.notify(response?.detail || 'Contrasena actualizada correctamente.', 'success', 'Listo');
+        }
+        window.location.href = '/auth/login.html';
+      } catch (error) {
+        setServerFieldErrors(passwordResetForm, error.fieldErrors);
+        if (window.appAlerts?.notify) {
+          await window.appAlerts.notify(error.message, 'error', 'No se pudo actualizar');
         }
       }
     });

@@ -38,6 +38,7 @@
               <select id="status-filter">
                 <option value="">Todos</option>
                 <option value="pending">Pendiente</option>
+                <option value="overdue_unbilled">Vencidas sin facturar</option>
                 <option value="done">Completado</option>
                 <option value="cancelled">Cancelado</option>
               </select>
@@ -106,6 +107,7 @@
             <article class="card">
               <h2>Eventos programados</h2>
               <p class="subtitle" id="feedback">Sin datos cargados.</p>
+              <div id="agenda-billing-alert" class="agenda-billing-alert" hidden></div>
               <div class="table-wrap">
                 <table>
                   <thead>

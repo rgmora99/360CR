@@ -82,6 +82,26 @@
   text-decoration: none;
 }
 
+.auth-form-link-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: .6rem;
+}
+
+.auth-text-button {
+  border: 0;
+  background: transparent;
+  color: var(--accent-2);
+  cursor: pointer;
+  font: inherit;
+  font-size: .9rem;
+  padding: 0;
+}
+
+.auth-text-button:hover {
+  text-decoration: underline;
+}
+
 .auth-form input.is-invalid {
   border-color: #ff6b81;
 }

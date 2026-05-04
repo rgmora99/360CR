@@ -10,10 +10,16 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.text import slugify
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -517,6 +523,86 @@ class ActivatePasswordView(APIView):
         user.set_password(new_password)
         user.save(update_fields=["password"])
         return Response({"detail": "Contrasena creada correctamente. Ya puedes iniciar sesion."}, status=200)
+
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = (request.data.get("email") or "").strip().lower()
+        generic_response = {
+            "detail": "Si existe una cuenta con ese correo, enviaremos instrucciones para recuperar la contrasena."
+        }
+
+        if not email:
+            return Response({"detail": "Debes indicar el correo electronico."}, status=400)
+
+        user = User.objects.filter(username=email).first()
+        if not user:
+            return Response(generic_response, status=200)
+
+        uid = urlsafe_base64_encode(str(user.pk).encode())
+        token = default_token_generator.make_token(user)
+        reset_url = build_frontend_password_reset_url(request, uid, token)
+
+        try:
+            send_mail(
+                "Recupera tu contrasena de 360CR",
+                (
+                    "Recibimos una solicitud para recuperar tu contrasena de 360CR.\n\n"
+                    f"Abre este enlace para crear una nueva contrasena:\n{reset_url}\n\n"
+                    "Si no solicitaste este cambio, puedes ignorar este correo."
+                ),
+                getattr(settings, "DEFAULT_FROM_EMAIL", "facturacion@360cr.local"),
+                [user.email or user.username],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception("No se pudo enviar el correo de recuperacion para %s.", email)
+            return Response(
+                {"detail": "No se pudo enviar el correo de recuperacion. Intenta de nuevo en unos minutos."},
+                status=503,
+            )
+
+        return Response(generic_response, status=200)
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        uid = (request.data.get("uid") or "").strip()
+        token = (request.data.get("token") or "").strip()
+        new_password = request.data.get("new_password") or ""
+
+        user = get_user_from_reset_uid(uid)
+        if not user or not default_token_generator.check_token(user, token):
+            return Response({"detail": "El enlace de recuperacion no es valido o ya expiro."}, status=400)
+
+        try:
+            validate_password(new_password, user=user)
+        except ValidationError as exc:
+            return Response({"new_password": list(exc.messages)}, status=400)
+
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+        return Response({"detail": "Contrasena actualizada correctamente. Ya puedes iniciar sesion."}, status=200)
+
+
+def get_user_from_reset_uid(uid):
+    try:
+        user_id = force_str(urlsafe_base64_decode(uid))
+    except (TypeError, ValueError, OverflowError, UnicodeDecodeError):
+        return None
+    return User.objects.filter(pk=user_id).first()
+
+
+def build_frontend_password_reset_url(request, uid, token):
+    if settings.FRONTEND_BASE_URL:
+        base_url = settings.FRONTEND_BASE_URL
+        return f"{base_url}/auth/reset-password.html?uid={uid}&token={token}"
+
+    return request.build_absolute_uri(f"/auth/reset-password.html?uid={uid}&token={token}")
 
 
 class LogoutView(APIView):
