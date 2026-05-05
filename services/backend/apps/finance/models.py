@@ -99,10 +99,16 @@ class Product(models.Model):
 class Invoice(models.Model):
     STATUS_DRAFT = "draft"
     STATUS_ISSUED = "issued"
+    STATUS_SENT = "sent"
+    STATUS_PAID = "paid"
+    STATUS_OVERDUE = "overdue"
     STATUS_VOID = "void"
     STATUS_CHOICES = [
         (STATUS_DRAFT, "Borrador"),
         (STATUS_ISSUED, "Emitida"),
+        (STATUS_SENT, "Enviada"),
+        (STATUS_PAID, "Pagada"),
+        (STATUS_OVERDUE, "Vencida"),
         (STATUS_VOID, "Anulada"),
     ]
 
@@ -157,6 +163,10 @@ class Invoice(models.Model):
     shipment_required = models.BooleanField(default=False)
     shipment_details = models.JSONField(default=dict, blank=True)
     notes = models.TextField(blank=True)
+    original_invoice = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="credit_notes")
+    void_reason = models.TextField(blank=True)
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="voided_invoices")
 
     class Meta:
         ordering = ["-id"]
@@ -195,6 +205,29 @@ class InvoiceItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.invoice_id} - {self.line_number}"
+
+
+class InvoiceAuditLog(models.Model):
+    ACTION_VOID = "void"
+    ACTION_CREDIT_NOTE = "credit_note"
+    ACTION_EMAIL_SENT = "email_sent"
+    ACTION_PAYMENT = "payment"
+    ACTION_CHOICES = [
+        (ACTION_VOID, "Anulacion"),
+        (ACTION_CREDIT_NOTE, "Nota de credito"),
+        (ACTION_EMAIL_SENT, "Correo enviado"),
+        (ACTION_PAYMENT, "Pago registrado"),
+    ]
+
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="audit_logs")
+    action = models.CharField(max_length=30, choices=ACTION_CHOICES)
+    reason = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
 
 
 class InvoiceReceivablePayment(models.Model):

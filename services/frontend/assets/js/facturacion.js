@@ -76,6 +76,10 @@
     return String(value || '').replace(/\D/g, '');
   }
 
+  function formatMoney(value) {
+    return `CRC ${Number(value || 0).toFixed(2)}`;
+  }
+
   function formatApiError(payload) {
     if (!payload) return '';
     if (typeof payload === 'string') return payload;
@@ -150,6 +154,25 @@
       setShipmentRequested(false);
       removeShipmentServiceLine();
       state.shipment = emptyShipment();
+    }
+  }
+
+  async function loadBillingInsights() {
+    const organizationId = orgId();
+    const dashboard = await request(`/invoices/sales-dashboard/?organization_id=${organizationId}&period=month`);
+    $('billing-dashboard-total').textContent = formatMoney(dashboard?.total_sales || 0);
+    $('billing-dashboard-count').textContent = `${Number(dashboard?.invoice_count || 0)} facturas emitidas`;
+
+    if (hasModule('receivables')) {
+      const overdue = await request(`/invoices/overdue-alerts/?organization_id=${organizationId}`);
+      const count = Number(overdue?.count || 0);
+      $('billing-overdue-count').textContent = String(count);
+      $('billing-overdue-detail').textContent = count
+        ? `${formatMoney((overdue.alerts || []).reduce((sum, item) => sum + Number(item.amount_due || 0), 0))} vencidos por cobrar.`
+        : 'Sin alertas vencidas.';
+    } else {
+      $('billing-overdue-count').textContent = '0';
+      $('billing-overdue-detail').textContent = 'Modulo de CxC no activo.';
     }
   }
 
@@ -1200,6 +1223,7 @@
 
       resetInvoiceForm();
       await loadProducts();
+      await loadBillingInsights();
     } catch (error) {
       setFeedback(error.message || 'No se pudo insertar la factura.', true);
     }
@@ -1214,10 +1238,10 @@
     window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
     syncModuleVisibility();
     clearCustomerSelection();
-    Promise.all([loadProducts(), loadCustomers()]).catch((error) => setFeedback(error.message, true));
+    Promise.all([loadProducts(), loadCustomers(), loadBillingInsights()]).catch((error) => setFeedback(error.message, true));
   });
 
-  Promise.all([loadProducts(), loadCustomers()])
+  Promise.all([loadProducts(), loadCustomers(), loadBillingInsights()])
     .then(() => {
       resetInvoiceForm();
       return applyBillingPrefill();

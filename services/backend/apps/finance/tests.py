@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 
 from apps.configuration.models import OrganizationEmailInbox
 from apps.customers.models import Customer, CustomerType
-from apps.finance.models import Invoice, InvoiceItem, Product, Purchase, PurchaseInboxInvoice
+from apps.finance.models import Invoice, InvoiceAuditLog, InvoiceItem, Product, Purchase, PurchaseInboxInvoice
 from apps.finance.views import _sync_email_invoices_for_organization
 from apps.tenants.models import Membership, Organization, SaaSModule, Subscription, SubscriptionModule
 
@@ -27,6 +27,7 @@ class FinanceHardeningTests(TestCase):
         Membership.objects.create(user=self.user, organization=self.organization, role=Membership.ROLE_OWNER)
         self.subscription = Subscription.objects.create(organization=self.organization, status=Subscription.STATUS_TRIAL)
         self.enable_module("billing_basic")
+        self.enable_module("receivables")
         self.enable_module("purchases")
         self.enable_module("suppliers")
         self.customer_type = CustomerType.objects.create(code="person", name="Persona")
@@ -365,3 +366,78 @@ class FinanceHardeningTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertTrue(Product.objects.filter(id=self.product.id).exists())
+
+    def test_void_invoice_requires_reason_creates_audit_and_restores_stock(self):
+        response = self.client.post("/api/invoices/", self.invoice_payload(quantity="2.000"), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        invoice_id = response.data["id"]
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock, 3)
+
+        void_response = self.client.post(
+            f"/api/invoices/{invoice_id}/void/?organization_id={self.organization.id}",
+            {"reason": "Factura emitida por error operativo"},
+            format="json",
+        )
+
+        self.assertEqual(void_response.status_code, 200, void_response.data)
+        invoice = Invoice.objects.get(id=invoice_id)
+        self.product.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.STATUS_VOID)
+        self.assertEqual(self.product.stock, 5)
+        self.assertTrue(InvoiceAuditLog.objects.filter(invoice=invoice, action=InvoiceAuditLog.ACTION_VOID).exists())
+
+    def test_credit_note_is_linked_to_original_invoice(self):
+        response = self.client.post("/api/invoices/", self.invoice_payload(quantity="1.000"), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        invoice_id = response.data["id"]
+
+        note_response = self.client.post(
+            f"/api/invoices/{invoice_id}/credit-note/?organization_id={self.organization.id}",
+            {"reason": "Devolucion total de la venta"},
+            format="json",
+        )
+
+        self.assertEqual(note_response.status_code, 201, note_response.data)
+        credit_note = Invoice.objects.get(id=note_response.data["id"])
+        self.assertEqual(credit_note.document_type, Invoice.DOCUMENT_CREDIT_NOTE)
+        self.assertEqual(credit_note.original_invoice_id, invoice_id)
+        self.assertEqual(credit_note.items.count(), 1)
+        self.assertTrue(InvoiceAuditLog.objects.filter(invoice_id=invoice_id, action=InvoiceAuditLog.ACTION_CREDIT_NOTE).exists())
+
+    def test_receivable_payment_marks_invoice_paid(self):
+        invoice = self.create_invoice_direct()
+        invoice.sale_condition = "02"
+        invoice.payment_method = Invoice.PAYMENT_INSTALLMENTS
+        invoice.installment_count = 1
+        invoice.total = Decimal("100.00")
+        invoice.save(update_fields=["sale_condition", "payment_method", "installment_count", "total"])
+
+        response = self.client.post(
+            f"/api/invoices/{invoice.id}/receivable-payments/?organization_id={self.organization.id}",
+            {"amount": "100.00", "payment_date": date.today().isoformat(), "reference": "REC-1"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.STATUS_PAID)
+
+    def test_overdue_alerts_and_sales_dashboard(self):
+        invoice = self.create_invoice_direct()
+        invoice.sale_condition = "02"
+        invoice.payment_method = Invoice.PAYMENT_INSTALLMENTS
+        invoice.installment_count = 1
+        invoice.installment_interval_days = 1
+        invoice.total = Decimal("100.00")
+        invoice.save(update_fields=["sale_condition", "payment_method", "installment_count", "installment_interval_days", "total"])
+        Invoice.objects.filter(id=invoice.id).update(issue_date="2026-01-01T08:00:00Z")
+
+        alerts = self.client.get(f"/api/invoices/overdue-alerts/?organization_id={self.organization.id}")
+        dashboard = self.client.get(f"/api/invoices/sales-dashboard/?organization_id={self.organization.id}&period=month")
+
+        self.assertEqual(alerts.status_code, 200, alerts.data)
+        self.assertEqual(alerts.data["count"], 1)
+        self.assertEqual(dashboard.status_code, 200, dashboard.data)
+        self.assertEqual(dashboard.data["invoice_count"], 1)
+        self.assertEqual(len(dashboard.data["by_customer"]), 1)

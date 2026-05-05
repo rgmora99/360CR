@@ -11,6 +11,7 @@ from rest_framework import serializers
 from apps.customers.models import Customer, CustomerAddress
 from apps.finance.models import (
     Invoice,
+    InvoiceAuditLog,
     InvoiceItem,
     InvoiceReceivablePayment,
     Product,
@@ -56,7 +57,7 @@ def build_installment_amounts(total, installment_count):
 
 
 def build_receivable_summary(invoice):
-    if invoice.payment_method != Invoice.PAYMENT_INSTALLMENTS or invoice.sale_condition != "02":
+    if invoice.status == Invoice.STATUS_VOID or invoice.payment_method != Invoice.PAYMENT_INSTALLMENTS or invoice.sale_condition != "02":
         return {
             "amount_paid": Decimal("0.00"),
             "amount_due": Decimal("0.00"),
@@ -150,7 +151,7 @@ def build_customer_credit_summary(customer, organization_id, pending_invoice_tot
         Invoice.objects.filter(
             organization_id=organization_id,
             customer_id=customer.id,
-            status=Invoice.STATUS_ISSUED,
+            status__in=[Invoice.STATUS_ISSUED, Invoice.STATUS_SENT, Invoice.STATUS_OVERDUE],
             sale_condition="02",
             payment_method=Invoice.PAYMENT_INSTALLMENTS,
         )
@@ -397,6 +398,11 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     items = InvoiceItemSerializer(many=True, read_only=True)
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    effective_status = serializers.SerializerMethodField()
+    original_invoice_number = serializers.CharField(source="original_invoice.invoice_number", read_only=True)
+    credit_note_count = serializers.SerializerMethodField()
+    audit_logs = serializers.SerializerMethodField()
     loyalty_awarded_points = serializers.SerializerMethodField()
     loyalty_redeemed_points = serializers.SerializerMethodField()
     agenda_event = serializers.SerializerMethodField()
@@ -436,7 +442,15 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "discount_total",
             "total",
             "status",
+            "status_label",
+            "effective_status",
             "email_sent_at",
+            "original_invoice",
+            "original_invoice_number",
+            "credit_note_count",
+            "void_reason",
+            "voided_at",
+            "voided_by",
             "shipment_required",
             "shipment_details",
             "notes",
@@ -456,6 +470,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "receivable_overdue_installments",
             "receivable_paid_percent",
             "receivable_installment_plan",
+            "audit_logs",
         ]
 
     def get_agenda_event(self, obj):
@@ -464,6 +479,38 @@ class InvoiceSerializer(serializers.ModelSerializer):
         except Invoice.agenda_event.RelatedObjectDoesNotExist:
             return None
         return agenda_event.id
+
+    def get_credit_note_count(self, obj):
+        return obj.credit_notes.count() if getattr(obj, "id", None) else 0
+
+    def get_audit_logs(self, obj):
+        logs = obj.audit_logs.all()[:10]
+        return [
+            {
+                "id": log.id,
+                "action": log.action,
+                "reason": log.reason,
+                "metadata": log.metadata,
+                "created_at": log.created_at,
+                "created_by": getattr(log.created_by, "email", "") or getattr(log.created_by, "username", "") or "",
+            }
+            for log in logs
+        ]
+
+    def get_effective_status(self, obj):
+        if obj.status == Invoice.STATUS_VOID:
+            return Invoice.STATUS_VOID
+        if obj.document_type == Invoice.DOCUMENT_CREDIT_NOTE:
+            return obj.status
+        if obj.payment_method == Invoice.PAYMENT_INSTALLMENTS and obj.sale_condition == "02":
+            receivable_status = self._get_receivable_summary(obj)["status"]
+            if receivable_status == "paid":
+                return Invoice.STATUS_PAID
+            if receivable_status == "overdue":
+                return Invoice.STATUS_OVERDUE
+        if obj.email_sent_at:
+            return Invoice.STATUS_SENT
+        return obj.status
 
     def _get_loyalty_entries(self, obj):
         return LoyaltyPointEntry.objects.filter(source_reference=obj.invoice_number)

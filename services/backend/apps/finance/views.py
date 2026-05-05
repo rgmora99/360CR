@@ -13,6 +13,8 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.base import ContentFile
 from django.core.mail import send_mail
 from django.db import transaction
+from django.db.models import Count, Sum
+from django.db.models.functions import TruncDate, TruncMonth
 from django.http import FileResponse, HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -22,7 +24,7 @@ from rest_framework.response import Response
 
 from apps.configuration.models import OrganizationEmailInbox
 from apps.customers.models import Customer
-from apps.finance.models import Invoice, Product, Purchase, PurchaseInboxAttachment, PurchaseInboxInvoice, TaxReport
+from apps.finance.models import Invoice, InvoiceAuditLog, InvoiceItem, Product, Purchase, PurchaseInboxAttachment, PurchaseInboxInvoice, TaxReport
 from apps.finance.serializers import (
     build_customer_credit_summary,
     build_customer_shipping_summary,
@@ -1064,6 +1066,242 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         return Response({"detail": "Las facturas emitidas no se pueden eliminar."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
+    @action(detail=True, methods=["post"], url_path="void")
+    def void_invoice(self, request, pk=None):
+        invoice = self.get_object()
+        reason = str(request.data.get("reason") or "").strip()
+        if len(reason) < 10:
+            return Response({"detail": "Indica un motivo de anulacion de al menos 10 caracteres."}, status=400)
+        if invoice.status == Invoice.STATUS_VOID:
+            return Response({"detail": "La factura ya esta anulada."}, status=400)
+        if invoice.receivable_payments.exists():
+            return Response({"detail": "No se puede anular una factura con pagos registrados. Reversa los pagos o usa una nota de credito."}, status=400)
+        if invoice.credit_notes.exists():
+            return Response({"detail": "No se puede anular una factura que ya tiene notas de credito asociadas."}, status=400)
+
+        with transaction.atomic():
+            invoice = (
+                Invoice.objects.select_for_update()
+                .select_related("customer", "organization")
+                .prefetch_related("items", "items__product", "receivable_payments")
+                .get(pk=invoice.pk)
+            )
+            if invoice.status == Invoice.STATUS_VOID:
+                return Response({"detail": "La factura ya esta anulada."}, status=400)
+            if invoice.receivable_payments.exists() or invoice.credit_notes.exists():
+                return Response({"detail": "La factura ya tiene movimientos relacionados y no puede anularse directamente."}, status=400)
+
+            if invoice.document_type == Invoice.DOCUMENT_INVOICE:
+                for item in invoice.items.select_related("product"):
+                    product = item.product
+                    if product.product_type == Product.TYPE_PHYSICAL:
+                        product.stock += int(item.quantity)
+                        product.save(update_fields=["stock"])
+
+            previous_status = invoice.status
+            invoice.status = Invoice.STATUS_VOID
+            invoice.void_reason = reason
+            invoice.voided_at = timezone.now()
+            invoice.voided_by = request.user
+            invoice.save(update_fields=["status", "void_reason", "voided_at", "voided_by"])
+            InvoiceAuditLog.objects.create(
+                invoice=invoice,
+                action=InvoiceAuditLog.ACTION_VOID,
+                reason=reason,
+                created_by=request.user,
+                metadata={"previous_status": previous_status},
+            )
+
+        invoice.refresh_from_db()
+        return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["post"], url_path="credit-note")
+    def create_credit_note(self, request, pk=None):
+        original = self.get_object()
+        reason = str(request.data.get("reason") or "").strip()
+        if len(reason) < 10:
+            return Response({"detail": "Indica un motivo para la nota de credito de al menos 10 caracteres."}, status=400)
+        if original.document_type != Invoice.DOCUMENT_INVOICE:
+            return Response({"detail": "Solo se pueden generar notas de credito desde facturas."}, status=400)
+        if original.status == Invoice.STATUS_VOID:
+            return Response({"detail": "No se puede generar nota de credito desde una factura anulada."}, status=400)
+        if original.credit_notes.filter(status__in=[Invoice.STATUS_ISSUED, Invoice.STATUS_SENT, Invoice.STATUS_PAID]).exists():
+            return Response({"detail": "La factura ya tiene una nota de credito activa asociada."}, status=400)
+
+        with transaction.atomic():
+            original = (
+                Invoice.objects.select_for_update()
+                .select_related("customer", "organization")
+                .prefetch_related("items", "items__product")
+                .get(pk=original.pk)
+            )
+            sequence_helper = InvoiceCreateSerializer(context={"request": request})
+            invoice_sequence = sequence_helper._get_next_invoice_sequence(original.organization_id, Invoice.DOCUMENT_CREDIT_NOTE)
+            consecutive_number = (
+                f"{original.organization.hacienda_branch_code}{original.organization.hacienda_terminal_code}"
+                f"{Invoice.DOCUMENT_CREDIT_NOTE}{invoice_sequence:010d}"
+            )
+            credit_note = Invoice.objects.create(
+                organization=original.organization,
+                customer=original.customer,
+                invoice_number=f"F-{consecutive_number}",
+                document_type=Invoice.DOCUMENT_CREDIT_NOTE,
+                consecutive_number=consecutive_number,
+                sale_condition=original.sale_condition,
+                payment_method=original.payment_method,
+                tax_regime=original.tax_regime,
+                installment_count=1,
+                installment_interval_days=original.installment_interval_days,
+                currency=original.currency,
+                exchange_rate=original.exchange_rate,
+                subtotal=original.subtotal,
+                discount_total=original.discount_total,
+                tax_total=original.tax_total,
+                total=original.total,
+                status=Invoice.STATUS_ISSUED,
+                notes=reason,
+                original_invoice=original,
+            )
+            for item in original.items.all():
+                InvoiceItem.objects.create(
+                    invoice=credit_note,
+                    product=item.product,
+                    line_number=item.line_number,
+                    description=item.description,
+                    quantity=item.quantity,
+                    unit_price=item.unit_price,
+                    discount_percent=item.discount_percent,
+                    tax_rate=item.tax_rate,
+                    subtotal=item.subtotal,
+                    discount_amount=item.discount_amount,
+                    tax_amount=item.tax_amount,
+                    total=item.total,
+                )
+            InvoiceAuditLog.objects.create(
+                invoice=original,
+                action=InvoiceAuditLog.ACTION_CREDIT_NOTE,
+                reason=reason,
+                created_by=request.user,
+                metadata={"credit_note_id": credit_note.id, "credit_note_number": credit_note.invoice_number},
+            )
+            InvoiceAuditLog.objects.create(
+                invoice=credit_note,
+                action=InvoiceAuditLog.ACTION_CREDIT_NOTE,
+                reason=reason,
+                created_by=request.user,
+                metadata={"original_invoice_id": original.id, "original_invoice_number": original.invoice_number},
+            )
+
+        return Response(InvoiceSerializer(credit_note).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["get"], url_path="overdue-alerts")
+    def overdue_alerts(self, request):
+        organization_id = request.query_params.get("organization_id")
+        try:
+            organization_id_int = int(organization_id)
+        except (TypeError, ValueError):
+            return Response({"detail": "organization_id es requerido y debe ser numerico."}, status=400)
+        self.validate_organization_payload(organization_id_int)
+
+        invoices = (
+            self.get_queryset()
+            .filter(organization_id=organization_id_int, payment_method=Invoice.PAYMENT_INSTALLMENTS, sale_condition="02")
+            .exclude(status=Invoice.STATUS_VOID)
+            .order_by("issue_date", "id")
+        )
+        alerts = []
+        for invoice in invoices:
+            summary = build_receivable_summary(invoice)
+            if summary["is_overdue"] and summary["amount_due"] > Decimal("0.00"):
+                alerts.append(
+                    {
+                        "invoice_id": invoice.id,
+                        "invoice_number": invoice.invoice_number,
+                        "customer_id": invoice.customer_id,
+                        "customer_name": invoice.customer.legal_name,
+                        "amount_due": summary["amount_due"],
+                        "days_overdue": summary["days_overdue"],
+                        "overdue_installments": summary["overdue_installments"],
+                        "next_due_date": summary["next_due_date"],
+                    }
+                )
+        return Response({"count": len(alerts), "alerts": alerts})
+
+    @action(detail=False, methods=["get"], url_path="sales-dashboard")
+    def sales_dashboard(self, request):
+        organization_id = request.query_params.get("organization_id")
+        try:
+            organization_id_int = int(organization_id)
+        except (TypeError, ValueError):
+            return Response({"detail": "organization_id es requerido y debe ser numerico."}, status=400)
+        self.validate_organization_payload(organization_id_int)
+
+        period = (request.query_params.get("period") or "month").strip().lower()
+        trunc = TruncDate("issue_date") if period == "day" else TruncMonth("issue_date")
+        invoices = self.get_queryset().filter(organization_id=organization_id_int).exclude(status=Invoice.STATUS_VOID)
+        date_from = request.query_params.get("date_from")
+        date_to = request.query_params.get("date_to")
+        if date_from:
+            invoices = invoices.filter(issue_date__date__gte=date_from)
+        if date_to:
+            invoices = invoices.filter(issue_date__date__lte=date_to)
+
+        totals = invoices.aggregate(total_sales=Sum("total"), invoice_count=Count("id"))
+        by_period = (
+            invoices.annotate(period=trunc)
+            .values("period")
+            .annotate(total=Sum("total"), count=Count("id"))
+            .order_by("period")
+        )
+        by_customer = (
+            invoices.values("customer_id", "customer__legal_name")
+            .annotate(total=Sum("total"), count=Count("id"))
+            .order_by("-total")[:10]
+        )
+        line_items = InvoiceItem.objects.filter(invoice__in=invoices).select_related("product", "invoice")
+        by_service = (
+            line_items.values("product_id", "product__name", "product__product_type")
+            .annotate(total=Sum("total"), quantity=Sum("quantity"), count=Count("id"))
+            .order_by("-total")[:10]
+        )
+        by_collaborator = (
+            invoices.filter(agenda_event__collaborator__isnull=False)
+            .values("agenda_event__collaborator_id", "agenda_event__collaborator__email", "agenda_event__collaborator__username")
+            .annotate(total=Sum("total"), count=Count("id"))
+            .order_by("-total")[:10]
+        )
+        return Response(
+            {
+                "total_sales": totals["total_sales"] or Decimal("0.00"),
+                "invoice_count": totals["invoice_count"] or 0,
+                "by_period": list(by_period),
+                "by_customer": [
+                    {"customer_id": row["customer_id"], "customer_name": row["customer__legal_name"], "total": row["total"], "count": row["count"]}
+                    for row in by_customer
+                ],
+                "by_service": [
+                    {
+                        "product_id": row["product_id"],
+                        "product_name": row["product__name"],
+                        "product_type": row["product__product_type"],
+                        "total": row["total"],
+                        "quantity": row["quantity"],
+                        "count": row["count"],
+                    }
+                    for row in by_service
+                ],
+                "by_collaborator": [
+                    {
+                        "collaborator_id": row["agenda_event__collaborator_id"],
+                        "collaborator": row["agenda_event__collaborator__email"] or row["agenda_event__collaborator__username"],
+                        "total": row["total"],
+                        "count": row["count"],
+                    }
+                    for row in by_collaborator
+                ],
+            }
+        )
+
     @action(detail=False, methods=["get"], url_path="customer-autocomplete")
     def customer_autocomplete(self, request):
         term = request.query_params.get("q", "").strip()
@@ -1213,6 +1451,7 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             self.get_queryset()
             .filter(organization_id=organization_id_int)
             .filter(payment_method=Invoice.PAYMENT_INSTALLMENTS, sale_condition="02")
+            .exclude(status=Invoice.STATUS_VOID)
             .order_by("-issue_date", "-id")
         )
         status_filter = (request.query_params.get("status") or "").strip().lower()
@@ -1245,6 +1484,20 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             Invoice.objects.select_related("customer", "organization")
             .prefetch_related("items", "items__product", "receivable_payments", "receivable_payments__created_by")
             .get(id=invoice.id)
+        )
+        summary = build_receivable_summary(refreshed)
+        if summary["status"] == "paid" and refreshed.status != Invoice.STATUS_PAID:
+            refreshed.status = Invoice.STATUS_PAID
+            refreshed.save(update_fields=["status"])
+        elif summary["status"] == "overdue" and refreshed.status in [Invoice.STATUS_ISSUED, Invoice.STATUS_SENT]:
+            refreshed.status = Invoice.STATUS_OVERDUE
+            refreshed.save(update_fields=["status"])
+        InvoiceAuditLog.objects.create(
+            invoice=refreshed,
+            action=InvoiceAuditLog.ACTION_PAYMENT,
+            reason="Abono registrado en cuentas por cobrar.",
+            created_by=request.user,
+            metadata={"payment_id": payment.id, "amount": str(payment.amount), "payment_date": payment.payment_date.isoformat()},
         )
         return Response(
             {
@@ -1306,7 +1559,18 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
             fail_silently=False,
         )
         invoice.email_sent_at = timezone.now()
-        invoice.save(update_fields=["email_sent_at"])
+        update_fields = ["email_sent_at"]
+        if invoice.status == Invoice.STATUS_ISSUED:
+            invoice.status = Invoice.STATUS_SENT
+            update_fields.append("status")
+        invoice.save(update_fields=update_fields)
+        InvoiceAuditLog.objects.create(
+            invoice=invoice,
+            action=InvoiceAuditLog.ACTION_EMAIL_SENT,
+            reason="Factura enviada por correo al cliente.",
+            created_by=request.user,
+            metadata={"recipient": invoice.customer.email},
+        )
         return Response({"detail": "Correo enviado."})
 
 
