@@ -7,8 +7,8 @@ from rest_framework.test import APIClient
 
 from apps.agenda.models import AgendaEvent, AgendaEventType, CollaboratorAvailability
 from apps.customers.models import Customer, CustomerType
-from apps.finance.models import Product
-from apps.tenants.models import Membership, Organization
+from apps.finance.models import Invoice, Product
+from apps.tenants.models import Membership, Organization, SaaSModule, Subscription, SubscriptionModule
 
 
 class PublicSelfBookingSecurityTests(TestCase):
@@ -20,6 +20,9 @@ class PublicSelfBookingSecurityTests(TestCase):
             hacienda_branch_code="001",
             hacienda_terminal_code="00010",
         )
+        agenda_module, _ = SaaSModule.objects.get_or_create(code="agenda", defaults={"name": "Agenda"})
+        subscription = Subscription.objects.create(organization=self.organization, status=Subscription.STATUS_TRIAL)
+        SubscriptionModule.objects.create(subscription=subscription, module=agenda_module, is_enabled=True)
         self.customer_type = CustomerType.objects.create(code="general-agenda", name="General Agenda")
         self.customer = Customer.objects.create(
             organization=self.organization,
@@ -106,3 +109,37 @@ class PublicSelfBookingSecurityTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.appointment.refresh_from_db()
         self.assertEqual(self.appointment.status, AgendaEvent.STATUS_CANCELLED)
+
+    def test_invoiced_appointment_is_marked_done(self):
+        invoice = Invoice.objects.create(
+            organization=self.organization,
+            customer=self.customer,
+            invoice_number="F-00100010010000000001",
+            consecutive_number="00100010010000000001",
+            sale_condition="01",
+            payment_method=Invoice.PAYMENT_CASH,
+            tax_regime=Invoice.REGIME_SIMPLIFIED,
+            status=Invoice.STATUS_ISSUED,
+        )
+
+        self.appointment.status = AgendaEvent.STATUS_PENDING
+        self.appointment.invoice = invoice
+        self.appointment.save(update_fields=["invoice", "updated_at"])
+
+        self.appointment.refresh_from_db()
+        self.assertEqual(self.appointment.status, AgendaEvent.STATUS_DONE)
+
+    def test_final_appointment_cannot_be_edited(self):
+        self.client.force_authenticate(user=self.collaborator)
+        self.appointment.status = AgendaEvent.STATUS_DONE
+        self.appointment.save(update_fields=["status", "updated_at"])
+
+        response = self.client.patch(
+            f"/api/agenda-events/{self.appointment.id}/?organization_id={self.organization.id}",
+            {"title": "Cambio no permitido"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.appointment.refresh_from_db()
+        self.assertEqual(self.appointment.title, "Cita Cliente Agenda")

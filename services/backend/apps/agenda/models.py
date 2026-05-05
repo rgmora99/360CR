@@ -113,6 +113,12 @@ class AgendaEvent(models.Model):
 
     class Meta:
         ordering = ["starts_at", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(invoice__isnull=True) | ~Q(status="pending"),
+                name="ck_agenda_event_invoice_not_pending",
+            )
+        ]
 
     def clean(self):
         if self.ends_at <= self.starts_at:
@@ -181,6 +187,11 @@ class AgendaEvent(models.Model):
                 if not AgendaEvent.objects.filter(public_reference=candidate).exclude(pk=self.pk).exists():
                     self.public_reference = candidate
                     break
+        if self.invoice_id and self.status != self.STATUS_DONE:
+            self.status = self.STATUS_DONE
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields).union({"status"})
         self.full_clean()
         super().save(*args, **kwargs)
 

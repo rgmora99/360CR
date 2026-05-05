@@ -120,6 +120,10 @@
     }
   }
 
+  function buildSyncCompletionMessage(result) {
+    return `Sincronización completada. Nuevas: ${result?.created || 0}. Actualizadas: ${result?.updated || 0}. Procesadas: ${result?.processed_messages || 0}.`;
+  }
+
   function currencySymbol(code) {
     return code === 'USD' ? '$' : 'CRC ';
   }
@@ -190,10 +194,14 @@
     if (syncScannedCount) syncScannedCount.textContent = `Leídas: ${result?.scanned_messages || 0}`;
     if (syncSkippedCount) syncSkippedCount.textContent = `Descartadas: ${(result?.skipped_non_invoice || 0) + (result?.skipped_out_of_range || 0)}`;
     if (syncMeta) {
-      const message = result?.message ? ` · ${result.message}` : '';
-      syncMeta.textContent =
-        `Estado: ${result?.status || 'idle'} · Rango ${result?.date_from || '2026-01-01'} a ${result?.date_to || '2026-12-31'} · ` +
-        `Candidatos: ${result?.total_candidates || 0}${message}`;
+      if (result?.status === 'completed') {
+        syncMeta.textContent = buildSyncCompletionMessage(result);
+      } else {
+        const message = result?.message ? ` · ${result.message}` : '';
+        syncMeta.textContent =
+          `Estado: ${result?.status || 'idle'} · Rango ${result?.date_from || '2026-01-01'} a ${result?.date_to || '2026-12-31'} · ` +
+          `Candidatos: ${result?.total_candidates || 0}${message}`;
+      }
     }
   }
 
@@ -208,11 +216,7 @@
         if (result?.status === 'completed') {
           finishSyncProgress(result);
           await loadInbox(false);
-          feedback(
-            `Sync completada. Nuevas: ${result?.created || 0}. Actualizadas: ${result?.updated || 0}. Procesadas: ${result?.processed_messages || 0}.`,
-            false
-          );
-          showToast('Sincronización terminada correctamente.', false);
+          feedback('');
         } else if (result?.status === 'error') {
           finishSyncProgress(result);
           const errors = Array.isArray(result?.errors) ? result.errors.filter(Boolean) : [];

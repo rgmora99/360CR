@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.db import IntegrityError
 from django.utils import timezone
 
+from apps.core.party_validation import PHYSICAL_TYPE_CODE, clean_party_identity
 from apps.core.tax_registry import lookup_hacienda_taxpayer, normalize_tax_id
 from apps.suppliers.models import Supplier, SupplierAddress, SupplierContact, SupplierType
 
@@ -40,12 +41,15 @@ def enrich_party_with_hacienda(validated_data, instance=None, type_field_name="s
     tax_id = validated_data.get("tax_id", getattr(instance, "tax_id", ""))
     normalized_tax_id = normalize_tax_id(tax_id)
 
-    if not party_type or party_type.code == "fisico" or len(normalized_tax_id) != 10:
+    if not party_type or party_type.code == PHYSICAL_TYPE_CODE:
         return validated_data
 
-    taxpayer = lookup_hacienda_taxpayer(normalized_tax_id)
+    try:
+        taxpayer = lookup_hacienda_taxpayer(normalized_tax_id)
+    except Exception as exc:
+        raise serializers.ValidationError({"tax_id": "No se pudo validar la cedula juridica en Hacienda."}) from exc
     if not taxpayer:
-        return validated_data
+        raise serializers.ValidationError({"tax_id": "No se encontro informacion tributaria para esa cedula juridica."})
 
     regime = taxpayer.get("regimen") or {}
     situation = taxpayer.get("situacion") or {}
@@ -119,9 +123,10 @@ class SupplierSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        attrs = clean_party_identity(attrs, instance=self.instance, type_field_name="supplier_type", party_label="proveedor")
         organization = attrs.get("organization") or getattr(self.instance, "organization", None)
         tax_id = (attrs.get("tax_id") if "tax_id" in attrs else getattr(self.instance, "tax_id", "")) or ""
-        normalized_tax_id = tax_id.strip()
+        normalized_tax_id = normalize_tax_id(tax_id)
 
         if organization and normalized_tax_id:
             queryset = Supplier.objects.filter(organization=organization, tax_id=normalized_tax_id)

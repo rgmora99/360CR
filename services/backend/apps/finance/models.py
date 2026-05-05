@@ -3,6 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
@@ -285,6 +286,8 @@ class PurchaseInboxInvoice(models.Model):
         (STATUS_REGISTERED, "Registrada"),
         (STATUS_REJECTED, "Rechazada"),
     ]
+    ACTIVE_STATUSES = {STATUS_PENDING, STATUS_IN_PROCESS}
+    FINAL_STATUSES = {STATUS_REGISTERED, STATUS_REJECTED}
 
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="purchase_inbox")
     supplier_name = models.CharField(max_length=200)
@@ -315,6 +318,40 @@ class PurchaseInboxInvoice(models.Model):
                 name="uq_purchase_inbox_org_numeric_key",
             )
         ]
+
+    def ensure_can_register(self):
+        if self.status == self.STATUS_REGISTERED:
+            raise ValidationError("La factura ya fue registrada.")
+        if self.status == self.STATUS_REJECTED:
+            raise ValidationError("La factura fue rechazada y ya esta en el historico.")
+        if self.status not in self.ACTIVE_STATUSES:
+            raise ValidationError("La factura no esta en un estado valido para registrarse.")
+
+    def ensure_can_reject(self):
+        if self.status == self.STATUS_REGISTERED:
+            raise ValidationError("La factura ya fue aprobada y movida al historico.")
+        if self.status == self.STATUS_REJECTED:
+            raise ValidationError("La factura ya fue rechazada.")
+        if self.status not in self.ACTIVE_STATUSES:
+            raise ValidationError("La factura no esta en un estado valido para rechazarse.")
+
+    def mark_registered(self, purchase, processed_at=None):
+        if not purchase:
+            raise ValidationError("Debe asociar una compra para registrar la factura.")
+        self.ensure_can_register()
+        self.status = self.STATUS_REGISTERED
+        self.purchase = purchase
+        self.processed_at = processed_at or timezone.now()
+        self.rejection_reason = ""
+
+    def mark_rejected(self, reason, processed_at=None):
+        clean_reason = str(reason or "").strip()
+        if not clean_reason:
+            raise ValidationError("Debe indicar el motivo del rechazo.")
+        self.ensure_can_reject()
+        self.status = self.STATUS_REJECTED
+        self.rejection_reason = clean_reason
+        self.processed_at = processed_at or timezone.now()
 
 
 class PurchaseInboxAttachment(models.Model):

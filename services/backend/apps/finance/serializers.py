@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -224,6 +225,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "cost_price",
             "tax_rate",
             "stock",
+            "reorder_level",
             "item_status",
             "is_active",
             "service_duration_minutes",
@@ -235,26 +237,53 @@ class ProductSerializer(serializers.ModelSerializer):
         clean_name = value.strip()
         if len(clean_name) < 2:
             raise serializers.ValidationError("El nombre debe tener al menos 2 caracteres.")
+        if not any(character.isalpha() for character in clean_name):
+            raise serializers.ValidationError("El nombre debe contener letras.")
         return clean_name
+
+    def validate_description(self, value):
+        return (value or "").strip()
+
+    def validate_physical_location(self, value):
+        return (value or "").strip()
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         product_type = attrs.get("product_type") or getattr(self.instance, "product_type", Product.TYPE_PHYSICAL)
         stock_value = attrs.get("stock", getattr(self.instance, "stock", 0))
+        reorder_level = attrs.get("reorder_level", getattr(self.instance, "reorder_level", 0))
+        unit_price = attrs.get("unit_price", getattr(self.instance, "unit_price", None))
+        cost_price = attrs.get("cost_price", getattr(self.instance, "cost_price", None))
         organization = attrs.get("organization") or getattr(self.instance, "organization", None)
         supplier = attrs.get("supplier", getattr(self.instance, "supplier", None))
+
+        if self.instance and product_type != self.instance.product_type and self.instance.invoiceitem_set.exists():
+            raise serializers.ValidationError({"product_type": "No se puede cambiar el tipo de un producto que ya fue facturado."})
+        if unit_price is not None and cost_price is not None and cost_price > unit_price:
+            raise serializers.ValidationError({"cost_price": "El costo no puede ser mayor al precio de venta."})
+        if reorder_level is None or reorder_level < 0:
+            raise serializers.ValidationError({"reorder_level": "El minimo de alerta debe ser un entero mayor o igual a 0."})
+
         if product_type == Product.TYPE_SERVICE:
             attrs["stock"] = 0
-            duration = attrs.get("service_duration_minutes", getattr(self.instance, "service_duration_minutes", 30))
-            if duration < 1:
-                raise serializers.ValidationError({"service_duration_minutes": "La duración del servicio debe ser mayor a 0 minutos."})
-        elif stock_value is None or stock_value < 0:
-            raise serializers.ValidationError({"stock": "El stock debe ser un entero mayor o igual a 0."})
+            attrs["reorder_level"] = 0
+            attrs["physical_location"] = ""
+            attrs["item_status"] = Product.STATUS_OK
+            duration = attrs.get("service_duration_minutes", getattr(self.instance, "service_duration_minutes", 0))
+            if duration < 0 or duration > 1440:
+                raise serializers.ValidationError({"service_duration_minutes": "La duracion del servicio debe estar entre 0 y 1440 minutos."})
+        else:
+            if stock_value is None or stock_value < 0 or stock_value != int(stock_value):
+                raise serializers.ValidationError({"stock": "El stock debe ser un entero mayor o igual a 0."})
+            if reorder_level != int(reorder_level):
+                raise serializers.ValidationError({"reorder_level": "El minimo de alerta debe ser un entero mayor o igual a 0."})
+            item_status = attrs.get("item_status", getattr(self.instance, "item_status", Product.STATUS_OK))
+            if item_status == Product.STATUS_RAW_MATERIAL and not supplier:
+                raise serializers.ValidationError({"supplier": "La materia prima debe tener proveedor asociado."})
 
         if supplier and organization and not Supplier.objects.filter(id=supplier.id, organization_id=organization.id).exists():
-            raise serializers.ValidationError({"supplier": "El proveedor debe pertenecer a la misma organización del producto."})
+            raise serializers.ValidationError({"supplier": "El proveedor debe pertenecer a la misma organizacion del producto."})
         return attrs
-
     def _get_next_product_sequence(self, organization_id, product_type):
         Organization.objects.select_for_update().filter(id=organization_id).first()
         prefix = "SVC" if product_type == Product.TYPE_SERVICE else "PRD"
@@ -284,6 +313,9 @@ class ProductSerializer(serializers.ModelSerializer):
         explicit_sku = (validated_data.get("sku") or "").strip()
 
         if explicit_sku:
+            explicit_sku = explicit_sku.upper()
+            if not re.fullmatch(r"[A-Z0-9][A-Z0-9-]{2,39}", explicit_sku):
+                raise serializers.ValidationError({"sku": "El SKU debe tener 3 a 40 caracteres y usar solo letras, numeros o guiones."})
             exists = Product.objects.filter(organization_id=organization.id, sku=explicit_sku).exclude(id=getattr(instance, "id", None)).exists()
             if exists:
                 raise serializers.ValidationError({"sku": "Ya existe un producto con ese SKU en la organización."})
@@ -292,7 +324,8 @@ class ProductSerializer(serializers.ModelSerializer):
         if instance and instance.sku:
             name_changed = "name" in validated_data and validated_data["name"] != instance.name
             organization_changed = "organization" in validated_data and validated_data["organization"].id != instance.organization.id
-            if not name_changed and not organization_changed:
+            product_type_changed = "product_type" in validated_data and validated_data["product_type"] != instance.product_type
+            if not name_changed and not organization_changed and not product_type_changed:
                 return instance.sku
 
         return self._generate_sku(organization.id, product_type)
@@ -919,115 +952,117 @@ class InvoiceCreateSerializer(serializers.Serializer):
         )
         return current_max + 1
 
-    @transaction.atomic
     def create(self, validated_data):
+        from apps.agenda.models import AgendaEvent
+
         agenda_event = validated_data.pop("agenda_event_instance", None)
         validated_data.pop("agenda_event", None)
-        invoice_breakdown = validated_data.pop("invoice_breakdown", None)
+        validated_data.pop("invoice_breakdown", None)
         organization_id = validated_data["organization"]
-        customer = Customer.objects.select_for_update().get(id=validated_data["customer"], organization_id=organization_id)
-        if invoice_breakdown is None:
-            invoice_breakdown = self._build_invoice_lines(
-                organization_id=organization_id,
-                tax_regime=validated_data["tax_regime"],
-                items=validated_data["items"],
-                lock=True,
-            )
-        if self._is_credit_sale(validated_data):
-            self._validate_customer_credit(
-                customer=customer,
-                organization_id=organization_id,
-                invoice_total=invoice_breakdown["total"],
-            )
-
-        invoice = None
         for attempt in range(MAX_CREATE_RETRIES):
             try:
-                organization = Organization.objects.get(id=organization_id)
-                invoice_sequence = self._get_next_invoice_sequence(organization_id, validated_data["document_type"])
-                consecutive_number = (
-                    f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}"
-                    f"{validated_data['document_type']}{invoice_sequence:010d}"
-                )
-                invoice_number = f"F-{consecutive_number}"
+                with transaction.atomic():
+                    customer = Customer.objects.select_for_update().get(
+                        id=validated_data["customer"],
+                        organization_id=organization_id,
+                    )
+                    invoice_breakdown = self._build_invoice_lines(
+                        organization_id=organization_id,
+                        tax_regime=validated_data["tax_regime"],
+                        items=validated_data["items"],
+                        lock=True,
+                    )
+                    if self._is_credit_sale(validated_data):
+                        self._validate_customer_credit(
+                            customer=customer,
+                            organization_id=organization_id,
+                            invoice_total=invoice_breakdown["total"],
+                        )
 
-                invoice = Invoice.objects.create(
-                    organization_id=organization_id,
-                    customer_id=customer.id,
-                    invoice_number=invoice_number,
-                    document_type=validated_data["document_type"],
-                    consecutive_number=consecutive_number,
-                    sale_condition=validated_data["sale_condition"],
-                    payment_method=validated_data["payment_method"],
-                    tax_regime=validated_data["tax_regime"],
-                    installment_count=validated_data.get("installment_count", 1),
-                    installment_interval_days=validated_data.get("installment_interval_days", 30),
-                    currency=validated_data["currency"],
-                    exchange_rate=validated_data["exchange_rate"],
-                    shipment_required=validated_data.get("shipment_required", False),
-                    shipment_details=validated_data.get("shipment_details", {}),
-                    notes=validated_data.get("notes", ""),
-                    status=Invoice.STATUS_ISSUED,
-                )
-                break
+                    organization = Organization.objects.select_for_update().get(id=organization_id)
+                    invoice_sequence = self._get_next_invoice_sequence(organization_id, validated_data["document_type"])
+                    consecutive_number = (
+                        f"{organization.hacienda_branch_code}{organization.hacienda_terminal_code}"
+                        f"{validated_data['document_type']}{invoice_sequence:010d}"
+                    )
+                    invoice_number = f"F-{consecutive_number}"
+
+                    invoice = Invoice.objects.create(
+                        organization_id=organization_id,
+                        customer_id=customer.id,
+                        invoice_number=invoice_number,
+                        document_type=validated_data["document_type"],
+                        consecutive_number=consecutive_number,
+                        sale_condition=validated_data["sale_condition"],
+                        payment_method=validated_data["payment_method"],
+                        tax_regime=validated_data["tax_regime"],
+                        installment_count=validated_data.get("installment_count", 1),
+                        installment_interval_days=validated_data.get("installment_interval_days", 30),
+                        currency=validated_data["currency"],
+                        exchange_rate=validated_data["exchange_rate"],
+                        shipment_required=validated_data.get("shipment_required", False),
+                        shipment_details=validated_data.get("shipment_details", {}),
+                        notes=validated_data.get("notes", ""),
+                        status=Invoice.STATUS_ISSUED,
+                    )
+
+                    for line in invoice_breakdown["lines"]:
+                        InvoiceItem.objects.create(
+                            invoice=invoice,
+                            product=line["product"],
+                            line_number=line["line_number"],
+                            description=line["description"],
+                            quantity=line["quantity"],
+                            unit_price=line["unit_price"],
+                            discount_percent=line["discount_percent"],
+                            tax_rate=line["tax_rate"],
+                            subtotal=line["subtotal"],
+                            discount_amount=line["discount_amount"],
+                            tax_amount=line["tax_amount"],
+                            total=line["total"],
+                        )
+
+                        if line["product"].product_type == Product.TYPE_PHYSICAL:
+                            line["product"].stock -= int(line["quantity"])
+                            line["product"].save(update_fields=["stock"])
+
+                    invoice.subtotal = invoice_breakdown["subtotal"]
+                    invoice.discount_total = invoice_breakdown["discount_total"]
+                    invoice.tax_total = invoice_breakdown["tax_total"]
+                    invoice.total = invoice_breakdown["total"]
+                    invoice.save(update_fields=["subtotal", "discount_total", "tax_total", "total"])
+
+                    redeemed_points = 0
+                    if validated_data.get("use_loyalty_points"):
+                        redeemed_points = self._redeem_loyalty_points_for_invoice(
+                            organization_id=organization_id,
+                            customer_id=validated_data["customer"],
+                            invoice=invoice,
+                        )
+
+                    invoice.loyalty_redeemed_points = redeemed_points
+                    invoice.loyalty_awarded_points = (
+                        0
+                        if redeemed_points > 0 or not validated_data.get("loyalty_enabled")
+                        else self._accrue_loyalty_points(
+                            organization_id=organization_id,
+                            customer_id=validated_data["customer"],
+                            invoice=invoice,
+                        )
+                    )
+
+                    if agenda_event:
+                        agenda_event.invoice = invoice
+                        agenda_event.status = AgendaEvent.STATUS_DONE
+                        agenda_event.save(update_fields=["invoice", "status", "updated_at"])
+
+                    return invoice
             except IntegrityError:
                 if attempt == MAX_CREATE_RETRIES - 1:
                     raise serializers.ValidationError(
                         {"invoice_number": "No fue posible generar un número de factura único. Intente nuevamente."}
                     )
-        if invoice is None:
-            raise serializers.ValidationError({"invoice_number": "No fue posible generar un número de factura único. Intente nuevamente."})
-
-        for line in invoice_breakdown["lines"]:
-            InvoiceItem.objects.create(
-                invoice=invoice,
-                product=line["product"],
-                line_number=line["line_number"],
-                description=line["description"],
-                quantity=line["quantity"],
-                unit_price=line["unit_price"],
-                discount_percent=line["discount_percent"],
-                tax_rate=line["tax_rate"],
-                subtotal=line["subtotal"],
-                discount_amount=line["discount_amount"],
-                tax_amount=line["tax_amount"],
-                total=line["total"],
-            )
-
-            if line["product"].product_type == Product.TYPE_PHYSICAL:
-                line["product"].stock -= int(line["quantity"])
-                line["product"].save(update_fields=["stock"])
-
-        invoice.subtotal = invoice_breakdown["subtotal"]
-        invoice.discount_total = invoice_breakdown["discount_total"]
-        invoice.tax_total = invoice_breakdown["tax_total"]
-        invoice.total = invoice_breakdown["total"]
-        invoice.save(update_fields=["subtotal", "discount_total", "tax_total", "total"])
-
-        redeemed_points = 0
-        if validated_data.get("use_loyalty_points"):
-            redeemed_points = self._redeem_loyalty_points_for_invoice(
-                organization_id=organization_id,
-                customer_id=validated_data["customer"],
-                invoice=invoice,
-            )
-
-        invoice.loyalty_redeemed_points = redeemed_points
-        invoice.loyalty_awarded_points = (
-            0
-            if redeemed_points > 0 or not validated_data.get("loyalty_enabled")
-            else self._accrue_loyalty_points(
-                organization_id=organization_id,
-                customer_id=validated_data["customer"],
-                invoice=invoice,
-            )
-        )
-
-        if agenda_event:
-            agenda_event.invoice = invoice
-            agenda_event.save(update_fields=["invoice", "updated_at"])
-
-        return invoice
+        raise serializers.ValidationError({"invoice_number": "No fue posible generar un numero de factura unico. Intente nuevamente."})
 
     def _redeem_loyalty_points_for_invoice(self, organization_id, customer_id, invoice):
         member = (

@@ -9,8 +9,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from email.header import decode_header, make_header
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.base import ContentFile
 from django.core.mail import send_mail
+from django.db import transaction
 from django.http import FileResponse, HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -643,6 +645,8 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
                     numeric_key=payload["numeric_key"],
                     defaults=defaults,
                 )
+                if not was_created and invoice.status in PurchaseInboxInvoice.FINAL_STATUSES:
+                    continue
                 if pdf_content:
                     for old_attachment in invoice.attachments.filter(attachment_type=PurchaseInboxAttachment.TYPE_PDF):
                         if old_attachment.file:
@@ -669,9 +673,6 @@ def _sync_email_invoices_for_organization(organization_id, date_from, date_to, l
                     created += 1
                     if progress_key:
                         _set_sync_progress(progress_key, created=created, message=f"Factura nueva detectada: {payload['invoice_number'][:40]}")
-                    continue
-
-                if invoice.status == PurchaseInboxInvoice.STATUS_REGISTERED:
                     continue
 
                 changed_fields = []
@@ -1022,8 +1023,17 @@ class ProductViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     tenant_access_paths = ("organization", "supplier.organization_id")
 
     def get_queryset(self):
-        queryset = Product.objects.all()
+        queryset = Product.objects.select_related("supplier", "organization").all()
         return self.scope_queryset(queryset)
+
+    def destroy(self, request, *args, **kwargs):
+        product = self.get_object()
+        if product.invoiceitem_set.exists() or product.agendaevent_set.exists():
+            return Response(
+                {"detail": "No se puede eliminar un producto o servicio con facturas, citas o eventos asociados. Desactivalo para conservar el historial."},
+                status=400,
+            )
+        return super().destroy(request, *args, **kwargs)
 
 class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer
@@ -1044,6 +1054,15 @@ class InvoiceViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         invoice = serializer.save()
         return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        return Response({"detail": "Las facturas emitidas no se pueden editar."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def partial_update(self, request, *args, **kwargs):
+        return Response({"detail": "Las facturas emitidas no se pueden editar."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response({"detail": "Las facturas emitidas no se pueden eliminar."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     @action(detail=False, methods=["get"], url_path="customer-autocomplete")
     def customer_autocomplete(self, request):
@@ -1319,6 +1338,8 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = PurchaseInboxInvoice.objects.select_related("purchase").prefetch_related("attachments")
         queryset = self.scope_queryset(queryset)
+        if getattr(self, "action", None) in {"approve", "reject", "attachment"}:
+            return queryset
         bucket = self.request.query_params.get("bucket", "inbox")
         status_filter = self.request.query_params.get("status")
         if status_filter:
@@ -1450,49 +1471,46 @@ class PurchaseInboxViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
         inbox = self.get_object()
-        if inbox.status == PurchaseInboxInvoice.STATUS_REGISTERED:
-            return Response({"detail": "La factura ya fue registrada."}, status=400)
-        if inbox.status == PurchaseInboxInvoice.STATUS_REJECTED:
-            return Response({"detail": "La factura fue rechazada y ya está en el histórico."}, status=400)
-
-        payload = {
-            "organization": inbox.organization_id,
-            "supplier_name": inbox.supplier_name,
-            "supplier_tax_id": inbox.supplier_tax_id,
-            "buyer_name": inbox.buyer_name or "",
-            "buyer_tax_id": inbox.buyer_tax_id or "",
-            "issue_date": inbox.issue_date,
-            "invoice_number": inbox.invoice_number,
-            "numeric_key": inbox.numeric_key,
-            "currency": inbox.currency,
-            "exchange_rate": inbox.exchange_rate,
-            "tax_total": inbox.tax_total,
-            "total": inbox.total,
-            "source": "inbox",
-            "items": _build_inbox_purchase_items(inbox),
-        }
-        serializer = PurchaseCreateSerializer(data=payload, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        purchase = serializer.save()
-        inbox.status = PurchaseInboxInvoice.STATUS_REGISTERED
-        inbox.purchase = purchase
-        inbox.processed_at = timezone.now()
-        inbox.rejection_reason = ""
-        inbox.save(update_fields=["status", "purchase", "processed_at", "rejection_reason"])
+        try:
+            with transaction.atomic():
+                inbox = PurchaseInboxInvoice.objects.select_for_update().get(pk=inbox.pk)
+                inbox.ensure_can_register()
+                payload = {
+                    "organization": inbox.organization_id,
+                    "supplier_name": inbox.supplier_name,
+                    "supplier_tax_id": inbox.supplier_tax_id,
+                    "buyer_name": inbox.buyer_name or "",
+                    "buyer_tax_id": inbox.buyer_tax_id or "",
+                    "issue_date": inbox.issue_date,
+                    "invoice_number": inbox.invoice_number,
+                    "numeric_key": inbox.numeric_key,
+                    "currency": inbox.currency,
+                    "exchange_rate": inbox.exchange_rate,
+                    "tax_total": inbox.tax_total,
+                    "total": inbox.total,
+                    "source": "inbox",
+                    "items": _build_inbox_purchase_items(inbox),
+                }
+                serializer = PurchaseCreateSerializer(data=payload, context={"request": request})
+                serializer.is_valid(raise_exception=True)
+                purchase = serializer.save()
+                inbox.mark_registered(purchase)
+                inbox.save(update_fields=["status", "purchase", "processed_at", "rejection_reason"])
+        except DjangoValidationError as exc:
+            return Response({"detail": exc.messages[0]}, status=400)
         return Response(PurchaseInboxSerializer(inbox).data)
 
     @action(detail=True, methods=["post"], url_path="reject")
     def reject(self, request, pk=None):
         inbox = self.get_object()
-        if inbox.status == PurchaseInboxInvoice.STATUS_REGISTERED:
-            return Response({"detail": "La factura ya fue aprobada y movida al histórico."}, status=400)
         reason = str(request.data.get("reason") or "").strip()
-        if not reason:
-            return Response({"detail": "Debe indicar el motivo del rechazo."}, status=400)
-        inbox.status = PurchaseInboxInvoice.STATUS_REJECTED
-        inbox.rejection_reason = reason
-        inbox.processed_at = timezone.now()
-        inbox.save(update_fields=["status", "rejection_reason", "processed_at"])
+        try:
+            with transaction.atomic():
+                inbox = PurchaseInboxInvoice.objects.select_for_update().get(pk=inbox.pk)
+                inbox.mark_rejected(reason)
+                inbox.save(update_fields=["status", "rejection_reason", "processed_at"])
+        except DjangoValidationError as exc:
+            return Response({"detail": exc.messages[0]}, status=400)
         return Response(PurchaseInboxSerializer(inbox).data)
 
     @action(detail=True, methods=["get"], url_path=r"attachments/(?P<attachment_id>[^/.]+)")

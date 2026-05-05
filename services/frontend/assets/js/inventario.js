@@ -6,7 +6,7 @@
   const productsPager = window.TablePaginator?.create({
     key: 'products',
     tableBody: $('products-body'),
-    totalColumns: 10,
+    totalColumns: 11,
     emptyMessage: 'Sin productos',
     rowRenderer: (product) =>
       `<tr>
@@ -17,6 +17,7 @@
         <td>${formatMoney(product.cost_price)}</td>
         <td>${formatMoney(product.unit_price)}</td>
         <td>${renderStockCell(product)}</td>
+        <td>${product.product_type === 'service' ? 'N/A' : escapeHtml(product.reorder_level ?? 0)}</td>
         <td>${product.product_type === 'service' ? (product.service_duration_minutes > 0 ? `${product.service_duration_minutes} min` : 'No requiere') : 'N/A'}</td>
         <td>${statusLabel(product.item_status)}</td>
         <td><button class='btn btn-secondary' data-edit='${product.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${product.id}'>Eliminar</button></td>
@@ -78,11 +79,14 @@
     const requiresDuration = $('service-requires-duration').value === 'yes';
     $('field-physical-location').style.display = isService ? 'none' : '';
     $('field-stock').style.display = isService ? 'none' : '';
+    $('field-reorder-level').style.display = isService ? 'none' : '';
     $('field-item-status').style.display = isService ? 'none' : '';
     $('field-requires-duration').style.display = isService ? '' : 'none';
     $('field-service-duration').style.display = isService && requiresDuration ? '' : 'none';
     $('stock').value = isService ? 0 : $('stock').value || 0;
+    $('reorder-level').value = isService ? 0 : $('reorder-level').value || 0;
     $('stock').disabled = isService;
+    $('reorder-level').disabled = isService;
     $('service-duration-minutes').disabled = !isService || !requiresDuration;
     if (!isService || !requiresDuration) $('service-duration-minutes').value = 30;
   }
@@ -103,8 +107,20 @@
     if (!payload.name || payload.name.length < 2) {
       throw new Error('El nombre debe tener al menos 2 caracteres.');
     }
+    if (!/[A-Za-z]/.test(payload.name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) {
+      throw new Error('El nombre debe contener letras.');
+    }
+    if (payload.description && payload.description.length > 500) {
+      throw new Error('La descripcion no debe superar 500 caracteres.');
+    }
     if (!Number.isFinite(payload.unit_price) || payload.unit_price <= 0) {
-      throw new Error('El precio debe ser un número mayor a 0.');
+      throw new Error('El precio debe ser un numero mayor a 0.');
+    }
+    if (!Number.isFinite(payload.cost_price) || payload.cost_price <= 0) {
+      throw new Error('El costo debe ser un numero mayor a 0.');
+    }
+    if (payload.cost_price > payload.unit_price) {
+      throw new Error('El costo no puede ser mayor al precio de venta.');
     }
     if (!Number.isFinite(payload.tax_rate) || payload.tax_rate < 0 || payload.tax_rate > 100) {
       throw new Error('El impuesto debe estar entre 0 y 100.');
@@ -112,18 +128,20 @@
     if (payload.product_type === 'physical' && (!Number.isInteger(payload.stock) || payload.stock < 0)) {
       throw new Error('El stock debe ser un entero mayor o igual a 0.');
     }
+    if (payload.product_type === 'physical' && (!Number.isInteger(payload.reorder_level) || payload.reorder_level < 0)) {
+      throw new Error('El minimo de alerta debe ser un entero mayor o igual a 0.');
+    }
+    if (payload.product_type === 'physical' && payload.item_status === 'raw_material' && !payload.supplier) {
+      throw new Error('La materia prima debe tener proveedor asociado.');
+    }
     if (
       payload.product_type === 'service' &&
       payload._requires_duration &&
       (!Number.isInteger(payload.service_duration_minutes) || payload.service_duration_minutes < 1)
     ) {
-      throw new Error('La duración del servicio debe ser mayor o igual a 1 minuto cuando el servicio lo requiere.');
-    }
-    if (!Number.isFinite(payload.cost_price) || payload.cost_price <= 0) {
-      throw new Error('El costo debe ser un número mayor a 0.');
+      throw new Error('La duracion del servicio debe ser mayor o igual a 1 minuto cuando el servicio lo requiere.');
     }
   }
-
   function statusLabel(code) {
     if (code === 'damaged') return 'Dañado';
     if (code === 'raw_material') return 'Materia prima';
@@ -131,7 +149,8 @@
   }
 
   function isLowStock(product) {
-    return product.product_type === 'physical' && Number(product.stock || 0) <= LOW_STOCK_THRESHOLD;
+    const threshold = Number(product.reorder_level ?? LOW_STOCK_THRESHOLD);
+    return product.product_type === 'physical' && threshold > 0 && Number(product.stock || 0) <= threshold;
   }
 
   function renderStockCell(product) {
@@ -155,12 +174,13 @@
               <td>${formatMoney(product.cost_price)}</td>
               <td>${formatMoney(product.unit_price)}</td>
               <td>${renderStockCell(product)}</td>
+              <td>${product.product_type === 'service' ? 'N/A' : escapeHtml(product.reorder_level ?? 0)}</td>
               <td>${product.product_type === 'service' ? (product.service_duration_minutes > 0 ? `${product.service_duration_minutes} min` : 'No requiere') : 'N/A'}</td>
               <td>${statusLabel(product.item_status)}</td>
               <td><button class='btn btn-secondary' data-edit='${product.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${product.id}'>Eliminar</button></td>
             </tr>`,
         )
-        .join('') || '<tr><td colspan="10">Sin productos</td></tr>';
+        .join('') || '<tr><td colspan="11">Sin productos</td></tr>';
   }
 
   function applyProductFilter(resetPager = false) {
@@ -238,6 +258,7 @@
         cost_price: Number($('cost-price').value),
         tax_rate: Number($('tax-rate').value),
         stock: isService ? 0 : Number($('stock').value),
+        reorder_level: isService ? 0 : Number($('reorder-level').value),
         _requires_duration: isService ? $('service-requires-duration').value === 'yes' : false,
         service_duration_minutes: isService && $('service-requires-duration').value === 'yes' ? Number($('service-duration-minutes').value) : 0,
         item_status: isService ? 'ok' : $('item-status').value,
@@ -250,6 +271,7 @@
       $('product-id').value = '';
       $('tax-rate').value = 13;
       $('stock').value = 0;
+      $('reorder-level').value = 0;
       $('cost-price').value = '0.01';
       $('item-status').value = 'ok';
       $('service-requires-duration').value = 'yes';
@@ -285,6 +307,7 @@
       $('cost-price').value = product.cost_price;
       $('tax-rate').value = product.tax_rate;
       $('stock').value = product.stock;
+      $('reorder-level').value = product.reorder_level ?? 0;
       $('service-requires-duration').value = (product.service_duration_minutes || 0) > 0 ? 'yes' : 'no';
       $('service-duration-minutes').value = product.service_duration_minutes || 30;
       $('item-status').value = product.item_status || 'ok';

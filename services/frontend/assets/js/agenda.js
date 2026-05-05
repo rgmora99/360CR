@@ -68,12 +68,27 @@
     return !Number.isNaN(startsAt.getTime()) && startsAt < new Date();
   }
 
+  function getEffectiveStatus(item) {
+    return item.invoice && item.status === 'pending' ? 'done' : item.status;
+  }
+
+  function getEffectiveStatusLabel(item) {
+    if (item.invoice && item.status === 'pending') {
+      return 'Completado';
+    }
+    return item.status_display || item.status;
+  }
+
+  function isFinalStatus(item) {
+    return ['done', 'cancelled'].includes(getEffectiveStatus(item));
+  }
+
   function isOverdueUnbilled(item) {
-    return Boolean(item.service) && item.status !== 'cancelled' && !item.invoice && isPastEvent(item);
+    return Boolean(item.service) && getEffectiveStatus(item) !== 'cancelled' && !item.invoice && isPastEvent(item);
   }
 
   function renderStatus(item) {
-    const label = item.status_display || item.status;
+    const label = getEffectiveStatusLabel(item);
     if (isOverdueUnbilled(item)) {
       return `
         <span class="agenda-status agenda-status--warning">Vencida sin factura</span>
@@ -84,8 +99,9 @@
   }
 
   function renderEventRow(item) {
-    const canInvoice = Boolean(item.service) && item.status !== 'cancelled' && !item.invoice;
+    const canInvoice = Boolean(item.service) && getEffectiveStatus(item) !== 'cancelled' && !item.invoice;
     const isUnbilledPast = isOverdueUnbilled(item);
+    const canEdit = !isFinalStatus(item);
     return `
       <tr class="${isUnbilledPast ? 'agenda-row--overdue-unbilled' : ''}">
         <td>${escapeHtml(item.title)}</td>
@@ -94,7 +110,7 @@
         <td>${escapeHtml(formatDate(item.starts_at))}</td>
         <td>${renderStatus(item)}</td>
         <td>
-          <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
+          ${canEdit ? `<button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>` : ''}
           <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
           ${canInvoice ? `<button class="btn ${isUnbilledPast ? 'btn-primary' : 'btn-secondary'}" data-action="invoice" data-id="${item.id}">${isUnbilledPast ? 'Facturar ahora' : 'Facturar'}</button>` : ''}
           ${item.invoice ? `<button class="btn btn-secondary" data-action="view-invoice" data-id="${item.id}">Ver factura</button>` : ''}
@@ -230,8 +246,9 @@
 
     const filtered = events.filter((item) => {
       const matchText = `${item.title} ${item.description || ''}`.toLowerCase().includes(term);
+      const effectiveStatus = getEffectiveStatus(item);
       const matchStatus = !selectedStatus
-        || (selectedStatus === 'overdue_unbilled' ? isOverdueUnbilled(item) : selectedStatus === item.status);
+        || (selectedStatus === 'overdue_unbilled' ? isOverdueUnbilled(item) : selectedStatus === effectiveStatus);
       const matchService = !selectedService || Number(item.service) === selectedService;
       const matchCollaborator = !selectedCollaborator || Number(item.collaborator) === selectedCollaborator;
       return matchText && matchStatus && matchService && matchCollaborator;

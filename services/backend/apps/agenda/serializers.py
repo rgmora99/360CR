@@ -101,6 +101,10 @@ class AgendaEventSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        if self.instance and self.instance.status in {AgendaEvent.STATUS_DONE, AgendaEvent.STATUS_CANCELLED}:
+            raise serializers.ValidationError(
+                {"status": "No se puede editar una cita con estado final."}
+            )
         starts_at = attrs.get("starts_at", getattr(self.instance, "starts_at", None))
         ends_at = attrs.get("ends_at", getattr(self.instance, "ends_at", None))
         organization = attrs.get("organization", getattr(self.instance, "organization", None))
@@ -109,12 +113,16 @@ class AgendaEventSerializer(serializers.ModelSerializer):
         collaborator = attrs.get("collaborator", getattr(self.instance, "collaborator", None))
         customer = attrs.get("customer", getattr(self.instance, "customer", None))
         supplier = attrs.get("supplier", getattr(self.instance, "supplier", None))
+        invoice = attrs.get("invoice", getattr(self.instance, "invoice", None))
         status = attrs.get("status", getattr(self.instance, "status", AgendaEvent.STATUS_PENDING))
         title = (attrs.get("title", getattr(self.instance, "title", "")) or "").strip()
         reminder_minutes = attrs.get("reminder_minutes", getattr(self.instance, "reminder_minutes", 30))
 
         if "title" in attrs:
             attrs["title"] = title
+        if invoice and status != AgendaEvent.STATUS_DONE:
+            attrs["status"] = AgendaEvent.STATUS_DONE
+            status = AgendaEvent.STATUS_DONE
         if len(title) < 3:
             raise serializers.ValidationError({"title": "El titulo debe tener al menos 3 caracteres."})
 
