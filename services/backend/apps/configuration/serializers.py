@@ -14,6 +14,7 @@ from apps.tenants.models import (
     Subscription,
     SubscriptionModule,
 )
+from apps.tenants.access import is_system_owner, organization_has_other_owner
 
 
 def sync_subscription_modules(subscription):
@@ -198,13 +199,13 @@ class RoleCatalogSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        is_system_owner = bool(user and user.is_authenticated and (user.is_superuser or user.is_staff))
+        user_is_system_owner = is_system_owner(user)
         code = attrs.get("code", getattr(self.instance, "code", ""))
         default_permissions = attrs.get("default_permissions", getattr(self.instance, "default_permissions", []))
 
-        if not is_system_owner and code == "ti-super-admin":
+        if not user_is_system_owner and code == "ti-super-admin":
             raise serializers.ValidationError({"code": "Este rol es exclusivo del dueño del sistema."})
-        if not is_system_owner and "*" in (default_permissions or []):
+        if not user_is_system_owner and "*" in (default_permissions or []):
             raise serializers.ValidationError({"default_permissions": "El permiso total solo puede usarlo el dueño del sistema."})
         return attrs
 
@@ -251,7 +252,7 @@ class UserRoleAssignmentSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        is_system_owner = bool(user and user.is_authenticated and (user.is_superuser or user.is_staff))
+        user_is_system_owner = is_system_owner(user)
         role = attrs.get("role", getattr(self.instance, "role", None))
         assigned_user = attrs.get("user", getattr(self.instance, "user", None))
         organization = attrs.get("organization", getattr(self.instance, "organization", None))
@@ -259,7 +260,7 @@ class UserRoleAssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"role": "No se puede asignar un rol inactivo."})
         if organization and not organization.is_active:
             raise serializers.ValidationError({"organization": "No se pueden asignar roles en una organizacion inactiva."})
-        if role and role.code == "ti-super-admin" and not is_system_owner:
+        if role and role.code == "ti-super-admin" and not user_is_system_owner:
             raise serializers.ValidationError({"role": "Este rol es exclusivo del dueño del sistema."})
         if assigned_user and organization and not Membership.objects.filter(user=assigned_user, organization=organization).exists():
             raise serializers.ValidationError({"user": "Este usuario no pertenece a la organización seleccionada."})
@@ -392,6 +393,24 @@ class SystemAdminUserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Ya existe un usuario con este correo.")
         return normalized
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get("request")
+        actor = getattr(request, "user", None)
+        email = attrs.get("email", getattr(self.instance, "email", "")).strip().lower()
+
+        if not email:
+            raise serializers.ValidationError({"email": "El correo es requerido."})
+
+        attrs["email"] = email
+        attrs["username"] = (attrs.get("username") or email).strip().lower()
+
+        if self.instance and self.instance.is_superuser and attrs.get("is_staff") is False:
+            raise serializers.ValidationError({"is_staff": "Un superusuario debe conservar acceso staff."})
+        if self.instance and actor and actor.id == self.instance.id and attrs.get("is_staff") is False:
+            raise serializers.ValidationError({"is_staff": "No puedes quitarte tu propio acceso staff."})
+        return attrs
+
     def create(self, validated_data):
         email = validated_data["email"]
         validated_data["username"] = validated_data.get("username") or email
@@ -413,6 +432,7 @@ class SystemAdminMembershipSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         user = attrs.get("user", getattr(self.instance, "user", None))
         organization = attrs.get("organization", getattr(self.instance, "organization", None))
+        role = attrs.get("role", getattr(self.instance, "role", Membership.ROLE_VIEWER))
 
         if not user:
             raise serializers.ValidationError({"user": "Selecciona un usuario."})
@@ -427,6 +447,9 @@ class SystemAdminMembershipSerializer(serializers.ModelSerializer):
             queryset = queryset.exclude(id=self.instance.id)
         if queryset.exists():
             raise serializers.ValidationError({"user": "Este usuario ya tiene acceso a esta organizaciÃ³n."})
+        if self.instance and self.instance.role == Membership.ROLE_OWNER and role != Membership.ROLE_OWNER:
+            if not organization_has_other_owner(self.instance.organization_id, membership_id=self.instance.id):
+                raise serializers.ValidationError({"role": "La organizacion debe conservar al menos un owner."})
         return attrs
 
 
@@ -506,6 +529,7 @@ class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         branch = attrs.get("hacienda_branch_code", getattr(self.instance, "hacienda_branch_code", "001"))
         terminal = attrs.get("hacienda_terminal_code", getattr(self.instance, "hacienda_terminal_code", "00001"))
+        parent = attrs.get("parent_organization", getattr(self.instance, "parent_organization", None))
 
         if not str(branch).isdigit() or len(str(branch)) != 3:
             raise serializers.ValidationError({"hacienda_branch_code": "Debe contener exactamente 3 dÃ­gitos."})
@@ -516,6 +540,17 @@ class SystemAdminOrganizationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"hacienda_branch_code": "La sucursal de Hacienda debe estar entre 001 y 999."})
         if terminal == "00000":
             raise serializers.ValidationError({"hacienda_terminal_code": "La terminal de Hacienda debe estar entre 00001 y 99999."})
+
+        if parent:
+            if not parent.is_active:
+                raise serializers.ValidationError({"parent_organization": "La organizacion padre debe estar activa."})
+            if self.instance and parent.id == self.instance.id:
+                raise serializers.ValidationError({"parent_organization": "Una organizacion no puede ser su propio padre."})
+            ancestor = parent
+            while ancestor:
+                if self.instance and ancestor.id == self.instance.id:
+                    raise serializers.ValidationError({"parent_organization": "La jerarquia no puede contener ciclos."})
+                ancestor = ancestor.parent_organization
 
         if self.instance and (
             branch != self.instance.hacienda_branch_code or terminal != self.instance.hacienda_terminal_code
@@ -577,6 +612,8 @@ class SaaSModuleSerializer(serializers.ModelSerializer):
         clean_value = (value or "").strip()
         if clean_value and not clean_value.startswith("/"):
             raise serializers.ValidationError("La ruta debe iniciar con /.")
+        if clean_value and (".." in clean_value or "://" in clean_value or "\\" in clean_value):
+            raise serializers.ValidationError("Usa una ruta interna valida.")
         return clean_value
 
 
@@ -596,6 +633,10 @@ class SaaSPlanModuleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"plan": "Selecciona un plan."})
         if not module:
             raise serializers.ValidationError({"module": "Selecciona un mÃ³dulo."})
+        if plan and not plan.is_active:
+            raise serializers.ValidationError({"plan": "No puedes modificar un plan inactivo."})
+        if module and not module.is_active:
+            raise serializers.ValidationError({"module": "No puedes incluir un modulo inactivo."})
         queryset = SaaSPlanModule.objects.filter(plan=plan, module=module)
         if self.instance:
             queryset = queryset.exclude(id=self.instance.id)
@@ -651,6 +692,10 @@ class SaaSPlanSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"monthly_price": "El precio mensual no puede ser negativo."})
         if annual is not None and annual < 0:
             raise serializers.ValidationError({"annual_price": "El precio anual no puede ser negativo."})
+        if annual and not monthly:
+            raise serializers.ValidationError({"monthly_price": "Define precio mensual antes de usar precio anual."})
+        if monthly and annual and annual > monthly * 12:
+            raise serializers.ValidationError({"annual_price": "El precio anual no debe superar 12 mensualidades."})
         return attrs
 
 
@@ -684,6 +729,13 @@ class SubscriptionModuleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"module": "Selecciona un mÃ³dulo."})
         if source == SubscriptionModule.SOURCE_PLAN and not subscription.plan_catalog_id:
             raise serializers.ValidationError({"source": "Solo los planes sincronizados pueden crear mÃ³dulos con origen Plan."})
+
+        if subscription and not subscription.organization.is_active:
+            raise serializers.ValidationError({"subscription": "La organizacion de la suscripcion debe estar activa."})
+        if module and not module.is_active:
+            raise serializers.ValidationError({"module": "No puedes asignar un modulo inactivo."})
+        if self.instance and self.instance.source == SubscriptionModule.SOURCE_PLAN and source != SubscriptionModule.SOURCE_PLAN:
+            raise serializers.ValidationError({"source": "Los modulos del plan conservan origen Plan."})
 
         queryset = SubscriptionModule.objects.filter(subscription=subscription, module=module)
         if self.instance:
@@ -732,6 +784,10 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"organization": "Selecciona una organizaciÃ³n."})
         if not plan_catalog:
             raise serializers.ValidationError({"plan_catalog": "Selecciona un plan."})
+        if organization and not organization.is_active:
+            raise serializers.ValidationError({"organization": "No puedes activar suscripciones en una organizacion inactiva."})
+        if plan_catalog and not plan_catalog.is_active:
+            raise serializers.ValidationError({"plan_catalog": "No puedes asignar un plan inactivo."})
         if base_price is not None and base_price < 0:
             raise serializers.ValidationError({"base_price": "El precio base no puede ser negativo."})
         if status in [Subscription.STATUS_ACTIVE, Subscription.STATUS_PAST_DUE] and not next_billing_date:
@@ -796,9 +852,17 @@ class OrganizationFeatureFlagSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         organization = attrs.get("organization", getattr(self.instance, "organization", None))
+        module = attrs.get("module", getattr(self.instance, "module", None))
+        config = attrs.get("config", getattr(self.instance, "config", {}))
         key = attrs.get("key", getattr(self.instance, "key", ""))
         if not organization:
             raise serializers.ValidationError({"organization": "Selecciona una organizaciÃ³n."})
+        if organization and not organization.is_active:
+            raise serializers.ValidationError({"organization": "No puedes crear flags para una organizacion inactiva."})
+        if module and not module.is_active:
+            raise serializers.ValidationError({"module": "No puedes asociar flags a un modulo inactivo."})
+        if config is not None and not isinstance(config, dict):
+            raise serializers.ValidationError({"config": "La configuracion debe ser un objeto JSON."})
         queryset = OrganizationFeatureFlag.objects.filter(organization=organization, key=key)
         if self.instance:
             queryset = queryset.exclude(id=self.instance.id)

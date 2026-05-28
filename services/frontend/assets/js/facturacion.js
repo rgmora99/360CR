@@ -89,13 +89,122 @@
       .join(' | ');
   }
 
+  function enhanceBillingLayout() {
+    const form = $('invoice-form');
+    if (!form || form.dataset.posEnhanced === 'true') return;
+
+    const workspace = form.closest('article');
+    const shell = workspace?.parentElement;
+    const customerHeader = workspace?.querySelector('.billing-section-header');
+    const customerLookup = workspace?.querySelector('.customer-lookup-card');
+    const agendaBanner = $('agenda-prefill-banner');
+    const fieldGrid = form.querySelector('.form-grid');
+    const notesField = $('notes')?.closest('label');
+    const options = form.querySelector('.invoice-options');
+    const linePicker = form.querySelector('.line-picker');
+    const linesTable = $('lines-body')?.closest('.table-wrap');
+    const totals = $('totals');
+    const actions = form.querySelector('.actions');
+    const submitButton = actions?.querySelector('button[type="submit"]');
+
+    shell?.classList.remove('grid', 'single-column');
+    shell?.classList.add('billing-pos-shell');
+    workspace?.classList.add('billing-pos-workspace');
+
+    const oldTitle = Array.from(workspace?.children || []).find((node) => node.tagName === 'H2' && node.textContent.includes('Nueva factura'));
+    oldTitle?.remove();
+
+    const layout = document.createElement('div');
+    layout.className = 'billing-pos-layout';
+
+    const main = document.createElement('div');
+    main.className = 'billing-pos-main';
+
+    const customerPanel = document.createElement('section');
+    customerPanel.className = 'billing-panel billing-panel--customer';
+    customerPanel.setAttribute('aria-label', 'Cliente de la factura');
+    if (customerHeader) customerPanel.appendChild(customerHeader);
+    if (customerLookup) customerPanel.appendChild(customerLookup);
+    main.appendChild(customerPanel);
+    if (agendaBanner) main.appendChild(agendaBanner);
+
+    const linesPanel = document.createElement('section');
+    linesPanel.className = 'billing-panel billing-panel--lines';
+    linesPanel.setAttribute('aria-label', 'Lineas de factura');
+    if (linePicker) {
+      linePicker.classList.remove('card');
+      linePicker.querySelector('h3')?.replaceWith(Object.assign(document.createElement('h2'), { textContent: 'Productos y servicios' }));
+      const lineHelp = linePicker.querySelector('.line-picker-header .subtitle');
+      if (lineHelp) lineHelp.textContent = 'Busca, ajusta cantidad/descuento y presiona Enter para agregar.';
+      $('add-line')?.classList.remove('btn-secondary');
+      $('add-line')?.classList.add('btn-primary');
+      linesPanel.appendChild(linePicker);
+    }
+    if (linesTable) {
+      linesTable.classList.add('billing-lines-table');
+      linesPanel.appendChild(linesTable);
+    }
+    main.appendChild(linesPanel);
+
+    const fiscalDetails = document.createElement('details');
+    fiscalDetails.className = 'billing-advanced';
+    fiscalDetails.open = true;
+    fiscalDetails.innerHTML = '<summary>Pago y datos fiscales</summary>';
+    if (fieldGrid) {
+      fieldGrid.classList.add('billing-advanced-grid');
+      fiscalDetails.appendChild(fieldGrid);
+    }
+    if (notesField) fiscalDetails.appendChild(notesField);
+    main.appendChild(fiscalDetails);
+
+    const optionsDetails = document.createElement('details');
+    optionsDetails.className = 'billing-advanced';
+    optionsDetails.innerHTML = '<summary>Envio y fidelizacion</summary>';
+    if (options) optionsDetails.appendChild(options);
+    main.appendChild(optionsDetails);
+
+    const aside = document.createElement('aside');
+    aside.className = 'billing-pos-summary';
+    aside.setAttribute('aria-label', 'Resumen de factura');
+    const summary = document.createElement('div');
+    summary.className = 'billing-summary-card';
+    summary.innerHTML = `
+      <div>
+        <span class="billing-summary-eyebrow">Resumen</span>
+        <strong id="pos-total-subtotal" class="billing-summary-total">CRC 0.00</strong>
+      </div>
+      <div class="billing-summary-grid">
+        <div><span>Lineas</span><strong id="pos-line-count">0</strong></div>
+        <div><span>Cliente</span><strong id="pos-customer-status">Pendiente</strong></div>
+        <div><span>Pago</span><strong id="pos-payment-status">Contado</strong></div>
+        <div><span>Envio</span><strong id="pos-shipment-status">No aplica</strong></div>
+        <div><span>Puntos</span><strong id="pos-points-status">Pendiente</strong></div>
+      </div>
+      <p id="billing-ready-hint" class="billing-ready-hint">Busca un cliente y agrega al menos una linea.</p>
+    `;
+    if (totals) summary.insertBefore(totals, summary.querySelector('.billing-summary-grid'));
+    if (submitButton) {
+      submitButton.id = 'pos-submit-invoice';
+      submitButton.classList.add('billing-submit-button');
+      summary.appendChild(submitButton);
+    }
+    aside.appendChild(summary);
+
+    layout.appendChild(main);
+    layout.appendChild(aside);
+    form.appendChild(layout);
+    actions?.remove();
+    form.dataset.posEnhanced = 'true';
+  }
+
   function setFeedback(msg, error, options = {}) {
     const silentPrefixes = ['Cliente cargado correctamente:', 'Linea agregada:', 'Cliente limpiado.'];
     const shouldSilence = !error && silentPrefixes.some((prefix) => String(msg || '').startsWith(prefix));
-    const { showInline = !shouldSilence, showToast = !shouldSilence } = options;
+    const { showInline = false, showToast = !shouldSilence } = options;
 
     $('feedback').textContent = showInline ? msg : '';
     $('feedback').style.color = error ? '#ff6b6b' : 'var(--muted)';
+    updateBillingSummary();
     if (showToast && window.appAlerts?.toast) {
       window.appAlerts.toast(msg, error ? 'error' : 'success');
     }
@@ -158,22 +267,7 @@
   }
 
   async function loadBillingInsights() {
-    const organizationId = orgId();
-    const dashboard = await request(`/invoices/sales-dashboard/?organization_id=${organizationId}&period=month`);
-    $('billing-dashboard-total').textContent = formatMoney(dashboard?.total_sales || 0);
-    $('billing-dashboard-count').textContent = `${Number(dashboard?.invoice_count || 0)} facturas emitidas`;
-
-    if (hasModule('receivables')) {
-      const overdue = await request(`/invoices/overdue-alerts/?organization_id=${organizationId}`);
-      const count = Number(overdue?.count || 0);
-      $('billing-overdue-count').textContent = String(count);
-      $('billing-overdue-detail').textContent = count
-        ? `${formatMoney((overdue.alerts || []).reduce((sum, item) => sum + Number(item.amount_due || 0), 0))} vencidos por cobrar.`
-        : 'Sin alertas vencidas.';
-    } else {
-      $('billing-overdue-count').textContent = '0';
-      $('billing-overdue-detail').textContent = 'Modulo de CxC no activo.';
-    }
+    return null;
   }
 
   function getBillingPrefill() {
@@ -249,6 +343,7 @@
     const isInstallments = paymentSelect.value === PAYMENT_INSTALLMENTS;
     $('installments-count-wrap').classList.toggle('hidden', !isInstallments);
     $('installments-interval-wrap').classList.toggle('hidden', !isInstallments);
+    updateBillingSummary();
   }
 
   function renderCustomerSelect() {
@@ -326,6 +421,7 @@
     $('customer-select').value = customer ? String(customer.id) : '';
     state.shipment = buildShipmentFromCustomer();
     updateCustomerMeta();
+    updateBillingSummary();
   }
 
   function updateCustomerMeta() {
@@ -337,6 +433,7 @@
       $('customer-meta').classList.add('customer-meta-empty');
       syncPointsPaymentUI();
       syncShipmentUI();
+      updateBillingSummary();
       return;
     }
 
@@ -401,6 +498,7 @@
     $('customer-meta').classList.remove('customer-meta-empty');
     syncPointsPaymentUI();
     syncShipmentUI();
+    updateBillingSummary();
   }
 
   async function searchCustomerByTaxId() {
@@ -415,6 +513,7 @@
     }
 
     selectCustomer(exactMatch);
+    window.setTimeout(() => $('line-product-search')?.focus(), 20);
     setFeedback(`Cliente cargado correctamente: ${exactMatch.legal_name}.`, false, { showInline: false, showToast: false });
   }
 
@@ -561,6 +660,58 @@
       const discountAmount = rawSubtotal * (Number(line.discount_percent || 0) / 100);
       return acc + (rawSubtotal - discountAmount);
     }, 0);
+  }
+
+  function getPaymentStatusLabel() {
+    const saleCondition = $('sale-condition')?.value === CREDIT_SALE_CONDITION ? 'Credito' : 'Contado';
+    const paymentLabel = PAYMENT_METHOD_OPTIONS.find((option) => option.value === $('payment-method')?.value)?.label || 'Pago';
+    return saleCondition === 'Credito' ? `${saleCondition} / ${paymentLabel}` : paymentLabel;
+  }
+
+  function getShipmentStatusLabel() {
+    if (!hasModule('shipping')) return 'Inactivo';
+    if (!hasShippableLines()) return 'No aplica';
+    if (!shipmentRequested()) return 'No solicitado';
+    return shipmentIsComplete() ? 'Listo' : 'Pendiente';
+  }
+
+  function getPointsStatusLabel() {
+    if (!hasModule('loyalty')) return 'Inactivo';
+    if ($('pay-with-points')?.checked) return 'Aplicados';
+    const customer = state.selectedCustomer;
+    if (!customer) return 'Pendiente';
+    if (!customer.loyalty?.program_name) return 'No disponible';
+    const subtotal = calculateSubtotal();
+    if (!subtotal) return 'Sin lineas';
+    const availablePoints = Number(customer.loyalty.available_points || 0);
+    return availablePoints >= Math.round(subtotal) ? 'Disponible' : 'Insuficiente';
+  }
+
+  function updateBillingSummary() {
+    const subtotal = calculateSubtotal();
+    const customerReady = Boolean(state.selectedCustomer?.id || Number($('customer-select')?.value));
+    const lineCount = state.lines.filter((line) => !line.auto_shipment).length;
+    const hasLines = state.lines.length > 0;
+    const shipmentReady = !shipmentRequested() || shipmentIsComplete();
+    const ready = customerReady && hasLines && shipmentReady;
+
+    if ($('pos-total-subtotal')) $('pos-total-subtotal').textContent = formatMoney(subtotal);
+    if ($('pos-line-count')) $('pos-line-count').textContent = String(lineCount);
+    if ($('pos-customer-status')) $('pos-customer-status').textContent = customerReady ? 'Listo' : 'Pendiente';
+    if ($('pos-payment-status')) $('pos-payment-status').textContent = getPaymentStatusLabel();
+    if ($('pos-shipment-status')) $('pos-shipment-status').textContent = getShipmentStatusLabel();
+    if ($('pos-points-status')) $('pos-points-status').textContent = getPointsStatusLabel();
+    if ($('billing-ready-hint')) {
+      $('billing-ready-hint').textContent = ready
+        ? 'Factura lista para revisar y emitir.'
+        : !customerReady
+          ? 'Busca y selecciona un cliente valido.'
+          : !hasLines
+            ? 'Agrega al menos una linea para emitir.'
+            : 'Completa los datos pendientes antes de emitir.';
+      $('billing-ready-hint').classList.toggle('is-ready', ready);
+    }
+    $('pos-submit-invoice')?.classList.toggle('is-ready', ready);
   }
 
   function findShipmentServiceProduct() {
@@ -966,13 +1117,27 @@
           const lineSubtotal = rawSubtotal - discountAmount;
           subtotal += lineSubtotal;
 
-          return `<tr><td>${escapeHtml(product.name)}</td><td>${line.quantity}</td><td>${line.discount_percent}</td><td>${lineSubtotal.toFixed(2)}</td><td><button class="btn btn-secondary" data-rm="${index}">Quitar</button></td></tr>`;
+          const code = product.sku || product.code || `ID ${product.id}`;
+          const autoLabel = line.auto_shipment ? '<span class="line-badge">Envio</span>' : '';
+          return `
+            <tr>
+              <td>
+                <strong class="line-product-name">${escapeHtml(product.name)}</strong>
+                <span class="line-product-meta">${escapeHtml(code)} ${autoLabel}</span>
+              </td>
+              <td>${line.quantity}</td>
+              <td>${line.discount_percent}</td>
+              <td>${formatMoney(lineSubtotal)}</td>
+              <td><button class="btn btn-secondary line-remove-button" type="button" data-rm="${index}" aria-label="Quitar ${escapeHtml(product.name)}">Quitar</button></td>
+            </tr>
+          `;
         })
-        .join('') || '<tr><td colspan="5">Sin lineas</td></tr>';
+        .join('') || '<tr><td colspan="5" class="billing-empty-lines">Sin lineas. Busca un producto y presiona Enter para agregarlo.</td></tr>';
 
-    $('totals').textContent = `Subtotal aproximado: ${subtotal.toFixed(2)} CRC`;
+    $('totals').textContent = `Subtotal aproximado: ${formatMoney(subtotal)}`;
     syncPointsPaymentUI();
     syncShipmentUI();
+    updateBillingSummary();
   }
 
   function buildPayloadLines() {
@@ -1101,10 +1266,7 @@
     $('feedback').textContent = '';
   });
 
-  $('line-product-search').addEventListener('input', filterProducts);
-  $('line-product').addEventListener('change', updateSelectedProductMeta);
-
-  $('add-line').addEventListener('click', () => {
+  function addSelectedLine() {
     const productId = Number($('line-product').value);
     const quantity = Number($('line-qty').value);
     const discountPercent = Number($('line-discount').value);
@@ -1124,8 +1286,27 @@
 
     state.lines.push({ product: productId, quantity, discount_percent: discountPercent });
     renderLines();
+    $('line-product-search').value = '';
+    $('line-qty').value = 1;
+    $('line-discount').value = 0;
+    filterProducts();
+    window.setTimeout(() => $('line-product-search')?.focus(), 20);
     setFeedback(`Linea agregada: ${product.name}.`, false, { showInline: false, showToast: false });
-  });
+  }
+
+  function addLineOnEnter(event) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addSelectedLine();
+  }
+
+  $('line-product-search').addEventListener('input', filterProducts);
+  $('line-product').addEventListener('change', updateSelectedProductMeta);
+  $('line-product-search').addEventListener('keydown', addLineOnEnter);
+  $('line-product').addEventListener('keydown', addLineOnEnter);
+  $('line-qty').addEventListener('keydown', addLineOnEnter);
+  $('line-discount').addEventListener('keydown', addLineOnEnter);
+  $('add-line').addEventListener('click', addSelectedLine);
 
   $('lines-body').addEventListener('click', (event) => {
     const index = event.target.dataset.rm;
@@ -1229,6 +1410,7 @@
     }
   });
 
+  enhanceBillingLayout();
   syncInstallmentsUI();
   renderOrganizations();
   syncModuleVisibility();

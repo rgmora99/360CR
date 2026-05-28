@@ -19,6 +19,11 @@
     annual: 'Anual',
     custom: 'Personalizado',
   };
+  const MEMBERSHIP_ROLE_LABELS = {
+    owner: 'Owner - Responsable principal y accesos criticos',
+    admin: 'Admin - Operacion completa sin ownership critico',
+    viewer: 'Viewer - Acceso segun roles/permisos asignados',
+  };
   const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const ORG_TABS = ['profile', 'subscription', 'list'];
@@ -460,18 +465,24 @@
 
   function renderSummary() {
     const summary = state.overview?.summary || {};
+    const inactiveOrganizations = state.organizations.filter((item) => item.is_active === false).length;
+    const usersWithoutAccess = state.users.filter((user) => !(user.memberships || []).length).length;
+    const subscriptionsAtRisk = state.subscriptions.filter((item) => ['past_due', 'suspended'].includes(item.status)).length;
     const stats = [
-      ['Organizaciones', summary.organizations || 0],
-      ['Suscripciones', summary.subscriptions || 0],
-      ['Activas', summary.active_subscriptions || 0],
-      ['Usuarios', summary.users || 0],
-      ['Modulos', summary.modules || 0],
-      ['Planes', summary.plans || 0],
-      ['Flags', summary.feature_flags || 0],
+      ['Organizaciones', summary.organizations || 0, ''],
+      ['Suscripciones', summary.subscriptions || 0, ''],
+      ['Activas', summary.active_subscriptions || 0, ''],
+      ['Usuarios', summary.users || 0, ''],
+      ['Modulos', summary.modules || 0, ''],
+      ['Planes', summary.plans || 0, ''],
+      ['Flags', summary.feature_flags || 0, ''],
+      ['Org. inactivas', inactiveOrganizations, inactiveOrganizations ? 'is-warning' : 'is-ok'],
+      ['Usuarios sin acceso', usersWithoutAccess, usersWithoutAccess ? 'is-warning' : 'is-ok'],
+      ['Riesgo cobro', subscriptionsAtRisk, subscriptionsAtRisk ? 'is-warning' : 'is-ok'],
     ];
 
     $('system-summary').innerHTML = stats
-      .map(([label, value]) => `<article class="saas-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`)
+      .map(([label, value, className]) => `<article class="saas-stat ${className}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`)
       .join('');
   }
 
@@ -501,6 +512,19 @@
       detail: hasChildren ? 'Organizacion padre' : 'Sin organizaciones hijas',
       className: hasChildren ? 'is-parent' : 'is-root',
     };
+  }
+
+  function isDescendantOrganization(candidateId, ancestorId) {
+    let current = state.organizations.find((item) => Number(item.id) === Number(candidateId));
+    const visited = new Set();
+    while (current?.parent_organization) {
+      const parentId = Number(current.parent_organization);
+      if (parentId === Number(ancestorId)) return true;
+      if (visited.has(parentId)) return true;
+      visited.add(parentId);
+      current = state.organizations.find((item) => Number(item.id) === parentId);
+    }
+    return false;
   }
 
   function renderOrganizationParentOptions(selectedValue = '') {
@@ -555,12 +579,14 @@
     $('users-body').innerHTML =
       rows
         .map((user) => {
-          const memberships = (user.memberships || []).map((membership) => `${membership.organization_name} (${membership.role})`).join(', ') || 'Sin accesos';
+          const memberships = (user.memberships || [])
+            .map((membership) => `${membership.organization_name} (${MEMBERSHIP_ROLE_LABELS[membership.role] || membership.role})`)
+            .join(', ') || 'Sin accesos';
           return `
             <tr data-user-id="${user.id}">
               <td>${escapeHtml(user.email || user.username)}</td>
               <td>${user.is_active ? 'Activo' : 'Inactivo'}</td>
-              <td>${user.is_staff ? 'Si' : 'No'}</td>
+              <td>${user.is_staff ? 'Si, Django/admin interno' : 'No'}</td>
               <td>${escapeHtml(memberships)}</td>
             </tr>
           `;
@@ -578,7 +604,7 @@
             <tr data-membership-id="${membership.id}">
               <td>${escapeHtml(membership.user_email)}</td>
               <td>${escapeHtml(membership.organization_name)}</td>
-              <td>${escapeHtml(membership.role)}</td>
+              <td>${escapeHtml(MEMBERSHIP_ROLE_LABELS[membership.role] || membership.role)}</td>
             </tr>
           `,
         )
@@ -736,7 +762,7 @@
   }
 
   function validateOrganizationForm() {
-    const fields = ['org-name', 'org-slug', 'org-branch', 'org-terminal'];
+    const fields = ['org-name', 'org-slug', 'org-branch', 'org-terminal', 'org-parent'];
     clearFieldErrors(fields);
     const recordId = Number($('org-record-id').value || 0);
     const currentOrganization = state.organizations.find((item) => Number(item.id) === recordId);
@@ -752,6 +778,8 @@
     const slug = $('org-slug').value.trim().toLowerCase();
     const branch = $('org-branch').value.trim();
     const terminal = $('org-terminal').value.trim();
+    const parentId = Number($('org-parent').value || 0);
+    const parent = state.organizations.find((item) => Number(item.id) === parentId);
     if (state.organizations.some((item) => Number(item.id) !== recordId && item.name.toLowerCase() === name)) {
       isValid = setFieldError('org-name', 'Ya existe una organizacion con este nombre.') && isValid;
     }
@@ -760,6 +788,15 @@
     }
     if (state.organizations.some((item) => Number(item.id) !== recordId && item.hacienda_branch_code === branch && item.hacienda_terminal_code === terminal)) {
       isValid = setFieldError('org-terminal', 'Esta sucursal y terminal ya estan asignadas a otra organizacion.') && isValid;
+    }
+    if (parentId && parentId === recordId) {
+      isValid = setFieldError('org-parent', 'Una organizacion no puede ser su propio padre.') && isValid;
+    }
+    if (parentId && parent && parent.is_active === false) {
+      isValid = setFieldError('org-parent', 'Selecciona una organizacion padre activa.') && isValid;
+    }
+    if (recordId && parentId && isDescendantOrganization(parentId, recordId)) {
+      isValid = setFieldError('org-parent', 'La jerarquia no puede contener ciclos.') && isValid;
     }
     if (
       currentOrganization?.invoice_count > 0 &&
@@ -779,6 +816,14 @@
     isValid = requireSelect('subscription-status', 'Selecciona un estado.') && isValid;
     isValid = requireSelect('subscription-cycle', 'Selecciona un ciclo.') && isValid;
     isValid = validateMoneyField('subscription-base-price') && isValid;
+    const organization = state.organizations.find((item) => Number(item.id) === Number($('subscription-organization').value));
+    const plan = state.plans.find((item) => Number(item.id) === Number($('subscription-plan').value));
+    if (organization?.is_active === false) {
+      isValid = setFieldError('subscription-organization', 'Selecciona una organizacion activa.') && isValid;
+    }
+    if (plan?.is_active === false) {
+      isValid = setFieldError('subscription-plan', 'Selecciona un plan activo.') && isValid;
+    }
     if (['active', 'past_due'].includes($('subscription-status').value) && !$('subscription-next-billing').value) {
       isValid = setFieldError('subscription-next-billing', 'Indica el proximo cobro para estados activos o pendientes.') && isValid;
     }
@@ -786,13 +831,16 @@
   }
 
   function validateUserForm() {
-    const fields = ['user-email', 'user-first-name', 'user-last-name'];
+    const fields = ['user-email', 'user-first-name', 'user-last-name', 'user-is-staff'];
     clearFieldErrors(fields);
     const recordId = Number($('user-record-id').value || 0);
     let isValid = validateEmailField('user-email');
     const email = $('user-email').value.trim().toLowerCase();
     if (state.users.some((item) => Number(item.id) !== recordId && String(item.email || item.username).toLowerCase() === email)) {
       isValid = setFieldError('user-email', 'Ya existe un usuario con este correo.') && isValid;
+    }
+    if (recordId && Number(state.session?.user?.id) === recordId && $('user-is-staff').value !== 'true') {
+      isValid = setFieldError('user-is-staff', 'No puedes quitarte tu propio staff Django/admin interno.') && isValid;
     }
     return isValid;
   }
@@ -806,8 +854,21 @@
     let isValid = true;
     isValid = requireSelect('membership-user', 'Selecciona un usuario.') && isValid;
     isValid = requireSelect('membership-organization', 'Selecciona una organizacion.') && isValid;
+    const organization = state.organizations.find((item) => Number(item.id) === organizationId);
+    const currentMembership = state.memberships.find((item) => Number(item.id) === recordId);
+    if (organization?.is_active === false) {
+      isValid = setFieldError('membership-organization', 'Selecciona una organizacion activa.') && isValid;
+    }
     if (state.memberships.some((item) => Number(item.id) !== recordId && Number(item.user) === userId && Number(item.organization) === organizationId)) {
       isValid = setFieldError('membership-user', 'Este usuario ya tiene acceso a esa organizacion.') && isValid;
+    }
+    if (currentMembership?.role === 'owner' && $('membership-role').value !== 'owner') {
+      const hasAnotherOwner = state.memberships.some(
+        (item) => Number(item.id) !== recordId && Number(item.organization) === Number(currentMembership.organization) && item.role === 'owner',
+      );
+      if (!hasAnotherOwner) {
+        isValid = setFieldError('membership-role', 'La organizacion debe conservar al menos un owner.') && isValid;
+      }
     }
     return isValid;
   }
@@ -819,8 +880,12 @@
     let isValid = true;
     isValid = validateSlugField('module-code') && isValid;
     isValid = requireText('module-name', 'Ingresa un nombre de al menos 3 caracteres.', 3) && isValid;
-    if ($('module-route').value.trim() && !$('module-route').value.trim().startsWith('/')) {
+    const route = $('module-route').value.trim();
+    if (route && !route.startsWith('/')) {
       isValid = setFieldError('module-route', 'La ruta debe iniciar con /.') && isValid;
+    }
+    if (route && (route.includes('..') || route.includes('://') || route.includes('\\'))) {
+      isValid = setFieldError('module-route', 'Usa una ruta interna valida.') && isValid;
     }
     if (state.modules.some((item) => Number(item.id) !== recordId && item.code === $('module-code').value.trim().toLowerCase())) {
       isValid = setFieldError('module-code', 'Ya existe un modulo con este codigo.') && isValid;
@@ -837,6 +902,14 @@
     isValid = requireText('plan-name', 'Ingresa un nombre de al menos 3 caracteres.', 3) && isValid;
     isValid = validateMoneyField('plan-monthly-price') && isValid;
     isValid = validateMoneyField('plan-annual-price') && isValid;
+    const monthly = Number($('plan-monthly-price').value || 0);
+    const annual = Number($('plan-annual-price').value || 0);
+    if (annual > 0 && monthly <= 0) {
+      isValid = setFieldError('plan-monthly-price', 'Define precio mensual antes de usar precio anual.') && isValid;
+    }
+    if (monthly > 0 && annual > monthly * 12) {
+      isValid = setFieldError('plan-annual-price', 'El precio anual no debe superar 12 mensualidades.') && isValid;
+    }
     if (state.plans.some((item) => Number(item.id) !== recordId && item.code === $('plan-code').value.trim().toLowerCase())) {
       isValid = setFieldError('plan-code', 'Ya existe un plan con este codigo.') && isValid;
     }
@@ -844,15 +917,24 @@
   }
 
   function validateFlagForm() {
-    const fields = ['flag-organization', 'flag-key', 'flag-label'];
+    const fields = ['flag-organization', 'flag-module', 'flag-key', 'flag-label'];
     clearFieldErrors(fields);
     const recordId = Number($('flag-record-id').value || 0);
     const organizationId = Number($('flag-organization').value);
+    const moduleId = Number($('flag-module').value || 0);
     const key = $('flag-key').value.trim().toLowerCase();
+    const organization = state.organizations.find((item) => Number(item.id) === organizationId);
+    const module = state.modules.find((item) => Number(item.id) === moduleId);
     let isValid = true;
     isValid = requireSelect('flag-organization', 'Selecciona una organizacion.') && isValid;
     isValid = validateSlugField('flag-key') && isValid;
     isValid = requireText('flag-label', 'Ingresa una etiqueta de al menos 3 caracteres.', 3) && isValid;
+    if (organization?.is_active === false) {
+      isValid = setFieldError('flag-organization', 'Selecciona una organizacion activa.') && isValid;
+    }
+    if (module?.is_active === false) {
+      isValid = setFieldError('flag-module', 'Selecciona un modulo activo.') && isValid;
+    }
     if (state.flags.some((item) => Number(item.id) !== recordId && Number(item.organization) === organizationId && item.key === key)) {
       isValid = setFieldError('flag-key', 'Esta organizacion ya tiene una flag con esa key.') && isValid;
     }
@@ -904,7 +986,7 @@
   }
 
   function resetUserForm() {
-    clearFieldErrors(['user-email', 'user-first-name', 'user-last-name']);
+    clearFieldErrors(['user-email', 'user-first-name', 'user-last-name', 'user-is-staff']);
     $('user-record-id').value = '';
     $('user-email').value = '';
     $('user-first-name').value = '';
@@ -1156,6 +1238,11 @@
     }
     if (!moduleId) {
       setFieldError('subscription-module-select', 'Selecciona un modulo disponible.');
+      return;
+    }
+    const selectedModule = state.modules.find((item) => Number(item.id) === moduleId);
+    if (selectedModule?.is_active === false) {
+      setFieldError('subscription-module-select', 'Selecciona un modulo activo.');
       return;
     }
     if ((subscription.active_modules || []).some((item) => Number(item.module) === moduleId)) {
@@ -1410,6 +1497,15 @@
         const planId = Number($('plan-module-plan').value);
         const existingPlan = state.plans.find((plan) => Number(plan.id) === planId);
         const moduleId = Number($('plan-module-module').value);
+        const selectedModule = state.modules.find((item) => Number(item.id) === moduleId);
+        if (existingPlan?.is_active === false) {
+          setFieldError('plan-module-plan', 'Selecciona un plan activo.');
+          return;
+        }
+        if (selectedModule?.is_active === false) {
+          setFieldError('plan-module-module', 'Selecciona un modulo activo.');
+          return;
+        }
         if (existingPlan?.modules_detail?.some((item) => Number(item.module) === moduleId)) {
           setFieldError('plan-module-module', 'Este modulo ya esta incluido en el plan.');
           return;

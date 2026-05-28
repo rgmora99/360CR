@@ -89,6 +89,124 @@
         border-bottom: 0;
       }
 
+      .invoice-actions-cell {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .invoice-action-primary,
+      .invoice-actions-trigger {
+        min-height: 34px;
+        padding: 0.42rem 0.7rem;
+        white-space: nowrap;
+      }
+
+      .invoice-actions-menu {
+        position: relative;
+        display: inline-flex;
+      }
+
+      .invoice-actions-trigger::after {
+        content: '...';
+        margin-left: 6px;
+        color: var(--muted);
+      }
+
+      .invoice-actions-dropdown {
+        position: fixed;
+        top: var(--menu-top, 0);
+        left: var(--menu-left, 0);
+        z-index: 20;
+        display: none;
+        min-width: 178px;
+        padding: 6px;
+        border-radius: 12px;
+        border: 1px solid rgba(122, 162, 255, 0.22);
+        background: #0f172a;
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.36);
+      }
+
+      .invoice-actions-dropdown.is-open {
+        display: grid;
+        gap: 3px;
+      }
+
+      .invoice-actions-dropdown a,
+      .invoice-actions-dropdown button {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 9px 10px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--txt);
+        font: inherit;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+      }
+
+      .invoice-actions-dropdown a:hover,
+      .invoice-actions-dropdown button:hover {
+        background: rgba(122, 162, 255, 0.12);
+      }
+
+      .invoice-actions-dropdown button:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
+      }
+
+      .invoice-actions-dropdown .is-danger {
+        color: #ff9c9c;
+      }
+
+      .invoice-status-badge {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.26);
+        background: rgba(15, 23, 42, 0.72);
+        color: var(--color-text);
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .invoice-status-badge--sent,
+      .invoice-status-badge--paid {
+        border-color: rgba(122, 247, 215, 0.35);
+        color: var(--color-accent-2);
+      }
+
+      .invoice-status-badge--overdue,
+      .invoice-status-badge--void {
+        border-color: rgba(255, 156, 156, 0.38);
+        color: var(--color-danger);
+      }
+
+      .invoice-detail-audit {
+        display: grid;
+        gap: 8px;
+      }
+
+      .invoice-detail-audit__item {
+        padding: 10px;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+      }
+
+      .invoice-detail-audit__item small {
+        display: block;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+
       @media (max-width: 900px) {
         .invoice-detail-grid {
           grid-template-columns: 1fr;
@@ -105,7 +223,10 @@
           <section class="module-header card">
             <div>
               <h1>Listado de facturas emitidas</h1>
-              <p class="subtitle">Vista mensual con filtros rápidos, resumen de ingresos y acceso completo al detalle de cada factura.</p>
+              <p class="subtitle">Consulta facturas con filtros rápidos y acceso completo al detalle de cada documento.</p>
+            </div>
+            <div class="quick-actions">
+              <a class="btn btn-secondary" href="/reporteria.html" data-module-code="reports">Ir a reportería</a>
             </div>
           </section>
 
@@ -137,6 +258,16 @@
                   <option value="03">Nota de crédito</option>
                 </select>
               </label>
+              <label>Estado
+                <select id="status-filter">
+                  <option value="">Todos</option>
+                  <option value="issued">Emitida</option>
+                  <option value="sent">Enviada</option>
+                  <option value="paid">Pagada</option>
+                  <option value="overdue">Vencida</option>
+                  <option value="void">Anulada</option>
+                </select>
+              </label>
               <label>Con puntos
                 <select id="points-filter">
                   <option value="">Todos</option>
@@ -153,21 +284,8 @@
             </div>
           </section>
 
-          <section class="invoice-summary-grid">
-            <article class="card invoice-summary-card invoice-summary-card--primary">
-              <span class="invoice-summary-card__eyebrow">Ingreso del mes</span>
-              <strong id="month-income-total" class="invoice-summary-card__value">CRC 0.00</strong>
-              <p id="month-income-caption" class="subtitle">Calculado con los filtros actuales.</p>
-            </article>
-            <article class="card invoice-summary-card">
-              <span class="invoice-summary-card__eyebrow">Facturas visibles</span>
-              <strong id="month-income-count" class="invoice-summary-card__value">0</strong>
-              <p id="month-income-average" class="subtitle">Promedio: CRC 0.00</p>
-            </article>
-          </section>
-
           <section class="card">
-            <div class="table-wrap"><table><thead><tr><th>Número</th><th>Cliente</th><th>Total</th><th>Saldo pendiente</th><th>Fecha</th><th>Acciones</th></tr></thead><tbody id="invoices-body"></tbody></table></div>
+            <div class="table-wrap"><table><thead><tr><th>Numero</th><th>Cliente</th><th>Estado</th><th>Total</th><th>Saldo pendiente</th><th>Fecha</th><th>Acciones</th></tr></thead><tbody id="invoices-body"></tbody></table></div>
             <p id="feedback" class="subtitle"></p>
           </section>
         </div>
@@ -199,6 +317,10 @@
           <section class="invoice-detail-card">
             <h3>Acciones rápidas</h3>
             <div id="invoice-detail-actions" class="actions"></div>
+          </section>
+          <section class="invoice-detail-card">
+            <h3>Bitacora</h3>
+            <div id="invoice-detail-audit" class="invoice-detail-audit"></div>
           </section>
         </div>
       </div>

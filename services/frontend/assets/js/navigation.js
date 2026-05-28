@@ -252,6 +252,7 @@
           { key: 'facturacion-cxc', label: 'Cuentas x cobrar', href: '/cuentas-cobrar.html', moduleCode: 'receivables' },
         ],
       },
+      { key: 'reporteria', label: 'Reporteria', href: '/reporteria.html', moduleCode: 'reports' },
       {
         key: 'compras-menu',
         label: 'Compras',

@@ -1,7 +1,7 @@
 (function initCompras() {
   const $ = (id) => document.getElementById(id);
   const state = { lines: [], purchases: [] };
-  const padronTimers = {};
+  const lookupTimers = {};
   const pageView = document.querySelector('.dashboard-layout')?.dataset.purchasesView || 'register';
   const purchaseSearchInput = $('purchase-search');
   const purchaseDateFromInput = $('purchase-date-from');
@@ -18,30 +18,22 @@
   const purchaseSummaryCount = $('purchase-summary-count');
   const purchaseSummaryAverage = $('purchase-summary-average');
   const purchaseSummaryCaption = $('purchase-summary-caption');
+  const supplierTaxStatus = $('supplier-tax-status');
+  const buyerTaxStatus = $('buyer-tax-status');
+  const purchaseSubtotalNode = $('purchase-subtotal');
+  const purchaseTaxPreviewNode = $('purchase-tax-preview');
+  const purchaseGrandTotalNode = $('purchase-grand-total');
   const purchasesPager = window.TablePaginator?.create({
     key: 'purchases',
     tableBody: $('purchases-body'),
     totalColumns: 7,
     emptyMessage: 'Sin compras registradas.',
-    rowRenderer: (item) => {
-      const currency = item.currency || 'CRC';
-      return `
-        <tr>
-          <td>${escapeHtml(item.issue_date)}</td>
-          <td>${escapeHtml(item.supplier_name)}</td>
-          <td>${escapeHtml(item.invoice_number)}</td>
-          <td>${escapeHtml(formatMoney(item.subtotal, currency))}</td>
-          <td>${escapeHtml(formatMoney(item.tax_total, currency))}</td>
-          <td>${escapeHtml(formatMoney(item.total, currency))}</td>
-          <td><button class="btn btn-secondary" data-detail="${item.id}">Ver detalles</button></td>
-        </tr>
-      `;
-    },
+    rowRenderer: renderPurchaseRow,
   });
 
   function orgId() {
     const id = Number($('organization-id')?.value || window.AppSession?.getActiveOrganizationId?.());
-    if (!id || id < 1) throw new Error('No hay organización activa.');
+    if (!id || id < 1) throw new Error('No hay organizacion activa.');
     return id;
   }
 
@@ -61,6 +53,7 @@
     if (!feedbackNode) return;
     feedbackNode.textContent = message;
     feedbackNode.style.color = isError ? '#ff7d7d' : 'var(--muted)';
+    window.appAlerts?.toast?.(message, isError ? 'error' : 'success');
   }
 
   function currencySymbol(code) {
@@ -82,6 +75,33 @@
       .replaceAll("'", '&#39;');
   }
 
+  function normalizeTaxId(value) {
+    if (window.CedulaPadron?.normalizeCedula) return window.CedulaPadron.normalizeCedula(value || '');
+    return String(value || '').replace(/\D/g, '');
+  }
+
+  function setLookupStatus(node, label, stateName = 'pending') {
+    if (!node) return;
+    node.textContent = label;
+    node.classList.remove('is-loading', 'is-valid', 'is-missing');
+    if (stateName !== 'pending') node.classList.add(`is-${stateName}`);
+  }
+
+  function renderPurchaseRow(item) {
+    const currency = item.currency || 'CRC';
+    return `
+      <tr>
+        <td>${escapeHtml(item.issue_date)}</td>
+        <td>${escapeHtml(item.supplier_name)}</td>
+        <td>${escapeHtml(item.invoice_number)}</td>
+        <td>${escapeHtml(formatMoney(item.subtotal, currency))}</td>
+        <td>${escapeHtml(formatMoney(item.tax_total, currency))}</td>
+        <td>${escapeHtml(formatMoney(item.total, currency))}</td>
+        <td><button class="btn btn-secondary" data-detail="${item.id}">Ver detalles</button></td>
+      </tr>
+    `;
+  }
+
   function renderMeta(container, entries) {
     if (!container) return;
     container.innerHTML = entries
@@ -91,11 +111,9 @@
 
   function applyPurchaseFilters() {
     if (!$('purchases-body')) return;
-
     const searchTerm = purchaseSearchInput?.value.trim().toLowerCase() || '';
     const dateFrom = purchaseDateFromInput?.value || '';
     const dateTo = purchaseDateToInput?.value || '';
-
     const filtered = state.purchases.filter((item) => {
       const haystack = `${item.supplier_name || ''} ${item.invoice_number || ''} ${item.numeric_key || ''}`.toLowerCase();
       const matchesText = !searchTerm || haystack.includes(searchTerm);
@@ -105,38 +123,18 @@
     });
 
     updatePurchaseSummary(filtered);
-
     if (purchasesPager) {
       purchasesPager.update(filtered);
-    } else {
-      $('purchases-body').innerHTML =
-        filtered
-          .map((item) => {
-            const currency = item.currency || 'CRC';
-            return `
-              <tr>
-                <td>${escapeHtml(item.issue_date)}</td>
-                <td>${escapeHtml(item.supplier_name)}</td>
-                <td>${escapeHtml(item.invoice_number)}</td>
-                <td>${escapeHtml(formatMoney(item.subtotal, currency))}</td>
-                <td>${escapeHtml(formatMoney(item.tax_total, currency))}</td>
-                <td>${escapeHtml(formatMoney(item.total, currency))}</td>
-                <td><button class="btn btn-secondary" data-detail="${item.id}">Ver detalles</button></td>
-              </tr>
-            `;
-          })
-          .join('') || '<tr><td colspan="7">Sin compras registradas.</td></tr>';
+      return;
     }
-
+    $('purchases-body').innerHTML = filtered.map(renderPurchaseRow).join('') || '<tr><td colspan="7">Sin compras registradas.</td></tr>';
   }
 
   function updatePurchaseSummary(rows) {
     if (!purchaseSummaryTotal || !purchaseSummaryTax || !purchaseSummaryCount || !purchaseSummaryAverage) return;
     const totalsByCurrency = rows.reduce((acc, item) => {
       const currency = item.currency || 'CRC';
-      if (!acc[currency]) {
-        acc[currency] = { total: 0, tax: 0, count: 0 };
-      }
+      acc[currency] ||= { total: 0, tax: 0, count: 0 };
       acc[currency].total += Number(item.total || 0);
       acc[currency].tax += Number(item.tax_total || 0);
       acc[currency].count += 1;
@@ -162,12 +160,12 @@
     if (!purchaseDetailModal || !purchase) return;
     const currency = purchase.currency || 'CRC';
     purchaseDetailTitle.textContent = `Compra ${purchase.invoice_number}`;
-    purchaseDetailSubtitle.textContent = `${purchase.supplier_name} · ${purchase.issue_date}`;
+    purchaseDetailSubtitle.textContent = `${purchase.supplier_name} - ${purchase.issue_date}`;
     renderMeta(purchaseDetailMeta, [
       ['Proveedor', purchase.supplier_name],
-      ['Cédula proveedor', purchase.supplier_tax_id || 'No disponible'],
+      ['Cedula proveedor', purchase.supplier_tax_id || 'No disponible'],
       ['Factura', purchase.invoice_number],
-      ['Fecha de emisión', purchase.issue_date],
+      ['Fecha de emision', purchase.issue_date],
       ['Subtotal', formatMoney(purchase.subtotal, currency)],
       ['IVA', formatMoney(purchase.tax_total, currency)],
       ['Total', formatMoney(purchase.total, currency)],
@@ -175,8 +173,8 @@
     ]);
     renderMeta(purchaseDetailExtra, [
       ['Comprador', purchase.buyer_name || 'No disponible'],
-      ['Cédula comprador', purchase.buyer_tax_id || 'No disponible'],
-      ['Clave numérica', purchase.numeric_key || 'No disponible'],
+      ['Cedula comprador', purchase.buyer_tax_id || 'No disponible'],
+      ['Clave numerica', purchase.numeric_key || 'No disponible'],
       ['Moneda', currency],
       ['Tipo de cambio', purchase.exchange_rate || '1.0000'],
       ['Origen', purchase.source || 'manual'],
@@ -188,16 +186,16 @@
             <div class="purchase-detail-line">
               <div>
                 <strong>${escapeHtml(line.description)}</strong><br />
-                <span>${escapeHtml(line.quantity)} × ${escapeHtml(line.unit_price)}</span>
+                <span>${escapeHtml(line.quantity)} x ${escapeHtml(line.unit_price)}</span>
               </div>
               <strong>${escapeHtml(formatMoney(line.subtotal, currency))}</strong>
             </div>
-          `
+          `,
         )
-        .join('') || '<p class="subtitle">Esta compra no tiene líneas cargadas.</p>';
+        .join('') || '<p class="subtitle">Esta compra no tiene lineas cargadas.</p>';
     renderMeta(purchaseDetailDocument, [
       ['PDF', 'No disponible para compras registradas manualmente'],
-      ['Observación', 'Si necesitas respaldo visual, puedes usar la bandeja de facturas recibidas cuando el documento venga por correo.'],
+      ['Observacion', 'Si necesitas respaldo visual, puedes usar la bandeja de facturas recibidas cuando el documento venga por correo.'],
     ]);
     purchaseDetailModal.classList.add('is-open');
     purchaseDetailModal.setAttribute('aria-hidden', 'false');
@@ -209,55 +207,108 @@
     purchaseDetailModal.setAttribute('aria-hidden', 'true');
   }
 
-  async function syncNameFromPadron(taxInputId, nameInputId, actorLabel) {
-    if (!window.CedulaPadron || !$(taxInputId) || !$(nameInputId)) {
-      return;
-    }
-
-    const taxId = $(taxInputId).value.trim();
-    if (!taxId) return;
-    const normalizedTaxId = window.CedulaPadron.normalizeCedula(taxId);
-    if (normalizedTaxId.length < 9) return;
-
+  async function lookupPadronName(taxId) {
+    if (!window.CedulaPadron) return null;
     const record = await window.CedulaPadron.resolveByCedula(taxId);
-    if (!record) {
-      setFeedback(`La cédula de ${actorLabel} (${taxId}) no existe en el padrón electoral.`, true);
-      return;
-    }
+    return record?.fullName || null;
+  }
 
+  async function lookupSupplierTaxRegistryName(taxId) {
+    const record = await request(`/suppliers/tax-registry/?tax_id=${taxId}`);
+    return record?.nombre || record?.name || record?.legal_name || null;
+  }
+
+  async function syncIdentityFromTaxId({ taxInputId, nameInputId, statusNode, actorLabel, allowLegal = false, overwriteName = false, showFeedback = true }) {
+    const taxInput = $(taxInputId);
     const nameInput = $(nameInputId);
-    if (!nameInput.value.trim()) {
-      nameInput.value = record.fullName;
-      setFeedback(`Nombre de ${actorLabel} autocompletado desde padrón.`);
-      return;
+    if (!taxInput || !nameInput) return null;
+    const normalizedTaxId = normalizeTaxId(taxInput.value);
+    taxInput.value = normalizedTaxId;
+
+    if (!normalizedTaxId || normalizedTaxId.length < 9) {
+      setLookupStatus(statusNode, 'Pendiente');
+      return null;
     }
 
-    const isSameName = window.CedulaPadron.compareName(nameInput.value, record);
-    if (isSameName === false) {
-      setFeedback(`La cédula de ${actorLabel} corresponde a "${record.fullName}". Verifica el nombre digitado.`, true);
+    if (![9, 10].includes(normalizedTaxId.length) || (normalizedTaxId.length === 10 && !allowLegal)) {
+      setLookupStatus(statusNode, 'No encontrado', 'missing');
+      return null;
     }
+
+    setLookupStatus(statusNode, 'Validando', 'loading');
+    try {
+      const resolvedName =
+        normalizedTaxId.length === 10
+          ? await lookupSupplierTaxRegistryName(normalizedTaxId)
+          : await lookupPadronName(normalizedTaxId);
+      const source = normalizedTaxId.length === 10 ? 'Hacienda' : 'padron';
+
+      if (!resolvedName) {
+        setLookupStatus(statusNode, 'No encontrado', 'missing');
+        if (showFeedback) setFeedback(`No se encontro ${actorLabel}. Puedes digitar el nombre manualmente.`, true);
+        return null;
+      }
+
+      if (overwriteName || !nameInput.value.trim()) {
+        nameInput.value = resolvedName;
+      } else if (normalizedTaxId.length === 9 && window.CedulaPadron?.compareName) {
+        const record = await window.CedulaPadron.resolveByCedula(normalizedTaxId);
+        const isSameName = window.CedulaPadron.compareName(nameInput.value, record);
+        if (isSameName === false && showFeedback) {
+          setFeedback(`La cedula de ${actorLabel} corresponde a "${resolvedName}". Verifica el nombre digitado.`, true);
+        }
+      }
+
+      setLookupStatus(statusNode, normalizedTaxId.length === 10 ? 'Validado en Hacienda' : 'Validado en padron', 'valid');
+      if (showFeedback) setFeedback(`${actorLabel} validado en ${source}.`);
+      return resolvedName;
+    } catch (_error) {
+      setLookupStatus(statusNode, 'No encontrado', 'missing');
+      if (showFeedback) setFeedback(`No se pudo validar ${actorLabel}. Puedes continuar digitando manualmente.`, true);
+      return null;
+    }
+  }
+
+  function queueIdentityLookup(timerKey, options) {
+    if (lookupTimers[timerKey]) clearTimeout(lookupTimers[timerKey]);
+    const normalizedTaxId = normalizeTaxId($(options.taxInputId)?.value || '');
+    if (!normalizedTaxId || normalizedTaxId.length < 9) {
+      setLookupStatus(options.statusNode, 'Pendiente');
+      return;
+    }
+    lookupTimers[timerKey] = setTimeout(() => {
+      syncIdentityFromTaxId({ ...options, showFeedback: false }).catch(() => null);
+    }, 250);
   }
 
   function renderOrganizations() {
     if (!$('organization-id')) return;
     const organizations = window.AppSession?.getOrganizations?.() || [];
     const activeId = Number(window.AppSession?.getActiveOrganizationId?.());
-    $('organization-id').innerHTML = organizations.map((org) => `<option value="${org.id}">${org.name}</option>`).join('');
+    $('organization-id').innerHTML = organizations.map((org) => `<option value="${org.id}">${escapeHtml(org.name)}</option>`).join('');
     if (activeId) $('organization-id').value = String(activeId);
   }
 
+  function getLinesSubtotal() {
+    return state.lines.reduce((total, line) => total + Number(line.quantity) * Number(line.unit_price), 0);
+  }
+
   function renderLines() {
-    if (!$('lines-body') || !$('purchase-total')) return;
-    let total = 0;
+    if (!$('lines-body')) return;
+    const subtotal = getLinesSubtotal();
+    const taxTotal = Number($('tax-total')?.value || 0);
+    const grandTotal = subtotal + (Number.isFinite(taxTotal) ? taxTotal : 0);
     $('lines-body').innerHTML =
       state.lines
         .map((line, idx) => {
-          const subtotal = Number(line.quantity) * Number(line.unit_price);
-          total += subtotal;
-          return `<tr><td>${line.description}</td><td>${line.quantity}</td><td>${line.unit_price}</td><td>${subtotal.toFixed(2)}</td><td><button class="btn btn-secondary" data-rm="${idx}">Quitar</button></td></tr>`;
+          const lineSubtotal = Number(line.quantity) * Number(line.unit_price);
+          return `<tr><td>${escapeHtml(line.description)}</td><td>${escapeHtml(line.quantity)}</td><td>${escapeHtml(formatMoney(line.unit_price))}</td><td>${escapeHtml(formatMoney(lineSubtotal))}</td><td><button class="btn btn-secondary" data-rm="${idx}">Quitar</button></td></tr>`;
         })
-        .join('') || '<tr><td colspan="5">Sin líneas</td></tr>';
-    $('purchase-total').textContent = `Subtotal compra: ₡${total.toFixed(2)}`;
+        .join('') || '<tr><td colspan="5">Sin lineas</td></tr>';
+    if ($('purchase-total')) $('purchase-total').textContent = state.lines.length ? `${state.lines.length} linea(s) agregada(s).` : '';
+    if (purchaseSubtotalNode) purchaseSubtotalNode.textContent = formatMoney(subtotal);
+    if (purchaseTaxPreviewNode) purchaseTaxPreviewNode.textContent = formatMoney(taxTotal);
+    if (purchaseGrandTotalNode) purchaseGrandTotalNode.textContent = formatMoney(grandTotal);
   }
 
   async function loadPurchases() {
@@ -267,95 +318,126 @@
     applyPurchaseFilters();
   }
 
-  if ($('add-line')) {
-    $('add-line').addEventListener('click', () => {
-      const description = $('line-description').value.trim();
-      const unit_price = Number($('line-unit-price').value);
-      const quantity = Number($('line-qty').value || 1);
-      if (!description) return setFeedback('Ingresa la descripción del producto/servicio.', true);
-      if (!Number.isFinite(unit_price) || unit_price <= 0) return setFeedback('Precio unitario inválido.', true);
-      if (!Number.isFinite(quantity) || quantity <= 0) return setFeedback('Cantidad inválida.', true);
-      state.lines.push({ description, unit_price, quantity });
-      $('line-description').value = '';
-      $('line-unit-price').value = '';
-      $('line-qty').value = '1';
-      renderLines();
-    });
+  function resetPurchaseForm() {
+    state.lines = [];
+    $('purchase-form')?.reset();
+    renderOrganizations();
+    if ($('issue-date')) $('issue-date').valueAsDate = new Date();
+    setLookupStatus(supplierTaxStatus, 'Pendiente');
+    setLookupStatus(buyerTaxStatus, 'Pendiente');
+    renderLines();
   }
 
-  if ($('lines-body')) {
-    $('lines-body').addEventListener('click', (event) => {
-      const idx = event.target.dataset.rm;
-      if (idx === undefined) return;
-      state.lines.splice(Number(idx), 1);
-      renderLines();
-    });
-  }
+  $('add-line')?.addEventListener('click', () => {
+    const description = $('line-description').value.trim();
+    const unit_price = Number($('line-unit-price').value);
+    const quantity = Number($('line-qty').value || 1);
+    if (!description) {
+      setFeedback('Ingresa la descripcion del producto/servicio.', true);
+      $('line-description')?.focus();
+      return;
+    }
+    if (!Number.isFinite(unit_price) || unit_price <= 0) return setFeedback('Precio unitario invalido.', true);
+    if (!Number.isFinite(quantity) || quantity <= 0) return setFeedback('Cantidad invalida.', true);
+    state.lines.push({ description, unit_price, quantity });
+    $('line-description').value = '';
+    $('line-unit-price').value = '';
+    $('line-qty').value = '1';
+    renderLines();
+    $('line-description')?.focus();
+  });
 
-  if ($('purchase-form')) {
-    $('purchase-form').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      try {
-        await syncNameFromPadron('supplier-tax-id', 'supplier-name', 'proveedor');
-        await syncNameFromPadron('buyer-tax-id', 'buyer-name', 'comprador');
-        if (!state.lines.length) return setFeedback('Debe agregar al menos una línea de compra.', true);
-        const numericKey = $('numeric-key').value.trim();
-        if (!/^\d{50}$/.test(numericKey)) return setFeedback('La clave numérica debe tener exactamente 50 dígitos.', true);
-        const payload = {
-          organization: orgId(),
-          supplier_name: $('supplier-name').value.trim(),
-          supplier_tax_id: $('supplier-tax-id').value.trim(),
-          buyer_name: $('buyer-name').value.trim(),
-          buyer_tax_id: $('buyer-tax-id').value.trim(),
-          issue_date: $('issue-date').value,
-          invoice_number: $('invoice-number').value.trim(),
-          numeric_key: numericKey,
-          tax_total: Number($('tax-total').value || 0),
-          items: state.lines,
-        };
-        await request('/purchases/', { method: 'POST', body: JSON.stringify(payload) });
-        state.lines = [];
-        renderLines();
-        $('purchase-form').reset();
-        renderOrganizations();
-        if ($('issue-date')) {
-          $('issue-date').valueAsDate = new Date();
-        }
-        setFeedback('Compra registrada correctamente.');
-      } catch (error) {
-        setFeedback(error.message, true);
-      }
-    });
-  }
+  $('lines-body')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-rm]');
+    if (!button) return;
+    state.lines.splice(Number(button.dataset.rm), 1);
+    renderLines();
+  });
 
-  if ($('organization-id')) {
-    $('organization-id').addEventListener('change', () => {
-      window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
-      if (pageView === 'list') {
-        loadPurchases().catch((error) => setFeedback(error.message, true));
-      }
-    });
-  }
+  $('tax-total')?.addEventListener('input', renderLines);
 
-  if ($('supplier-tax-id')) {
-    $('supplier-tax-id').addEventListener('blur', () => syncNameFromPadron('supplier-tax-id', 'supplier-name', 'proveedor').catch(() => null));
-    $('supplier-tax-id').addEventListener('input', () => {
-      if (padronTimers.supplier) clearTimeout(padronTimers.supplier);
-      padronTimers.supplier = setTimeout(() => {
-        syncNameFromPadron('supplier-tax-id', 'supplier-name', 'proveedor').catch(() => null);
-      }, 250);
-    });
-  }
+  $('purchase-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await syncIdentityFromTaxId({
+        taxInputId: 'supplier-tax-id',
+        nameInputId: 'supplier-name',
+        statusNode: supplierTaxStatus,
+        actorLabel: 'proveedor',
+        allowLegal: true,
+        overwriteName: true,
+      });
+      await syncIdentityFromTaxId({
+        taxInputId: 'buyer-tax-id',
+        nameInputId: 'buyer-name',
+        statusNode: buyerTaxStatus,
+        actorLabel: 'comprador',
+      });
+      if (!state.lines.length) return setFeedback('Debe agregar al menos una linea de compra.', true);
+      const numericKey = $('numeric-key').value.trim();
+      if (!/^\d{50}$/.test(numericKey)) return setFeedback('La clave numerica debe tener exactamente 50 digitos.', true);
+      const payload = {
+        organization: orgId(),
+        supplier_name: $('supplier-name').value.trim(),
+        supplier_tax_id: normalizeTaxId($('supplier-tax-id').value),
+        buyer_name: $('buyer-name').value.trim(),
+        buyer_tax_id: normalizeTaxId($('buyer-tax-id').value),
+        issue_date: $('issue-date').value,
+        invoice_number: $('invoice-number').value.trim(),
+        numeric_key: numericKey,
+        tax_total: Number($('tax-total').value || 0),
+        items: state.lines,
+      };
+      await request('/purchases/', { method: 'POST', body: JSON.stringify(payload) });
+      resetPurchaseForm();
+      setFeedback('Compra registrada correctamente.');
+    } catch (error) {
+      setFeedback(error.message, true);
+    }
+  });
 
-  if ($('buyer-tax-id')) {
-    $('buyer-tax-id').addEventListener('blur', () => syncNameFromPadron('buyer-tax-id', 'buyer-name', 'comprador').catch(() => null));
-    $('buyer-tax-id').addEventListener('input', () => {
-      if (padronTimers.buyer) clearTimeout(padronTimers.buyer);
-      padronTimers.buyer = setTimeout(() => {
-        syncNameFromPadron('buyer-tax-id', 'buyer-name', 'comprador').catch(() => null);
-      }, 250);
+  $('organization-id')?.addEventListener('change', () => {
+    window.AppSession?.setActiveOrganizationId?.($('organization-id').value);
+    if (pageView === 'list') loadPurchases().catch((error) => setFeedback(error.message, true));
+  });
+
+  $('supplier-tax-id')?.addEventListener('blur', () => {
+    syncIdentityFromTaxId({
+      taxInputId: 'supplier-tax-id',
+      nameInputId: 'supplier-name',
+      statusNode: supplierTaxStatus,
+      actorLabel: 'proveedor',
+      allowLegal: true,
+      overwriteName: true,
+    }).catch(() => null);
+  });
+  $('supplier-tax-id')?.addEventListener('input', () => {
+    queueIdentityLookup('supplier', {
+      taxInputId: 'supplier-tax-id',
+      nameInputId: 'supplier-name',
+      statusNode: supplierTaxStatus,
+      actorLabel: 'proveedor',
+      allowLegal: true,
+      overwriteName: true,
     });
-  }
+  });
+
+  $('buyer-tax-id')?.addEventListener('blur', () => {
+    syncIdentityFromTaxId({
+      taxInputId: 'buyer-tax-id',
+      nameInputId: 'buyer-name',
+      statusNode: buyerTaxStatus,
+      actorLabel: 'comprador',
+    }).catch(() => null);
+  });
+  $('buyer-tax-id')?.addEventListener('input', () => {
+    queueIdentityLookup('buyer', {
+      taxInputId: 'buyer-tax-id',
+      nameInputId: 'buyer-name',
+      statusNode: buyerTaxStatus,
+      actorLabel: 'comprador',
+    });
+  });
 
   purchaseSearchInput?.addEventListener('input', applyPurchaseFilters);
   purchaseDateFromInput?.addEventListener('change', applyPurchaseFilters);
@@ -365,24 +447,16 @@
     const button = event.target.closest('[data-detail]');
     if (!button) return;
     const target = state.purchases.find((item) => String(item.id) === String(button.dataset.detail));
-    if (target) {
-      openPurchaseDetail(target);
-    }
+    if (target) openPurchaseDetail(target);
   });
 
   $('purchase-detail-close')?.addEventListener('click', closePurchaseDetail);
   purchaseDetailModal?.addEventListener('click', (event) => {
-    if (event.target === purchaseDetailModal) {
-      closePurchaseDetail();
-    }
+    if (event.target === purchaseDetailModal) closePurchaseDetail();
   });
 
   renderOrganizations();
   renderLines();
-  if ($('issue-date')) {
-    $('issue-date').valueAsDate = new Date();
-  }
-  if (pageView === 'list') {
-    loadPurchases().catch((error) => setFeedback(error.message, true));
-  }
+  if ($('issue-date')) $('issue-date').valueAsDate = new Date();
+  if (pageView === 'list') loadPurchases().catch((error) => setFeedback(error.message, true));
 })();

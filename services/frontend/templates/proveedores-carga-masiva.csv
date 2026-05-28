@@ -1,0 +1,3 @@
+tipo,cedula,nombre,nombre_comercial,estado,correo,telefono,limite_credito,dias_pago,notas
+fisico,101110111,Ana Gomez,,active,ana@example.com,88880000,0,0,Proveedor local
+juridico,3101123456,Insumos Demo S.A.,Insumos Demo,active,compras@insumos.cr,22220000,750000,30,Proveedor con credito

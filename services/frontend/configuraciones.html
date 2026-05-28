@@ -153,7 +153,7 @@
               <article class="card">
                 <h2>Horarios de colaboradores</h2>
                 <p class="section-help">Configura disponibilidad para agenda por colaborador y día de la semana.</p>
-                <div class="org-tools team-tools">
+                <div class="org-tools availability-tools">
                   <label>
                     Colaborador
                     <select id="availability-collaborator"></select>
@@ -170,6 +170,23 @@
                       <option value="0">Domingo</option>
                     </select>
                   </label>
+                  <div class="availability-day-picker" aria-label="Dias de disponibilidad">
+                    <div class="availability-presets" aria-label="Atajos de dias">
+                      <button class="btn btn-secondary" type="button" data-availability-preset="weekdays">L-V</button>
+                      <button class="btn btn-secondary" type="button" data-availability-preset="weekend">Fin de semana</button>
+                      <button class="btn btn-secondary" type="button" data-availability-preset="all">Todos</button>
+                      <button class="btn btn-secondary" type="button" data-availability-preset="clear">Limpiar</button>
+                    </div>
+                    <div class="availability-days">
+                      <label><input type="checkbox" value="1" data-availability-day checked /><span>Lun</span></label>
+                      <label><input type="checkbox" value="2" data-availability-day checked /><span>Mar</span></label>
+                      <label><input type="checkbox" value="3" data-availability-day checked /><span>Mie</span></label>
+                      <label><input type="checkbox" value="4" data-availability-day checked /><span>Jue</span></label>
+                      <label><input type="checkbox" value="5" data-availability-day checked /><span>Vie</span></label>
+                      <label><input type="checkbox" value="6" data-availability-day /><span>Sab</span></label>
+                      <label><input type="checkbox" value="0" data-availability-day /><span>Dom</span></label>
+                    </div>
+                  </div>
                   <label>
                     Hora inicio
                     <input id="availability-start" type="time" value="08:00" />
@@ -178,11 +195,14 @@
                     Hora fin
                     <input id="availability-end" type="time" value="17:00" />
                   </label>
-                  <label class="checkbox-field">
+                  <label class="switch-field availability-active-switch">
                     <input id="availability-active" type="checkbox" checked />
-                    Disponible
+                    <span class="switch-field__control"></span>
+                    <span><strong>Disponible</strong><small>Desactivalo para bloquear esos dias.</small></span>
                   </label>
-                  <button id="save-availability-rule" class="btn btn-primary" type="button">Guardar horario</button>
+                  <div class="availability-actions">
+                    <button id="save-availability-rule" class="btn btn-primary" type="button">Aplicar horario</button>
+                  </div>
                 </div>
                 <p id="availability-feedback" class="section-help">Sin cambios recientes.</p>
               </article>
@@ -206,7 +226,7 @@
             <article class="card">
               <h2>Configuración de correos para facturas electrónicas</h2>
               <p class="section-help">Puedes registrar varios correos IMAP por organización, marcando uno como principal y otro(s) secundarios.</p>
-              <div class="org-tools team-tools">
+              <div class="org-tools email-settings-form">
                 <label>Organización
                   <select id="email-org"></select>
                 </label>
@@ -231,21 +251,28 @@
                 <label>Carpeta
                   <input id="email-folder" type="text" value="INBOX" />
                 </label>
-                <label class="checkbox-field">
+                <div class="email-toggle-row">
+                <label class="switch-field">
                   <input id="email-imap-ssl" type="checkbox" checked />
-                  IMAP SSL
+                  <span class="switch-field__control"></span>
+                  <span><strong>IMAP SSL</strong><small>Conexion segura al servidor.</small></span>
                 </label>
-                <label class="checkbox-field">
+                <label class="switch-field">
                   <input id="email-is-primary" type="checkbox" />
-                  Correo principal
+                  <span class="switch-field__control"></span>
+                  <span><strong>Correo principal</strong><small>Usarlo como buzon principal.</small></span>
                 </label>
-                <label class="checkbox-field">
+                <label class="switch-field">
                   <input id="email-is-active" type="checkbox" checked />
-                  Activo
+                  <span class="switch-field__control"></span>
+                  <span><strong>Activo</strong><small>Disponible para sincronizar.</small></span>
                 </label>
+                </div>
+                <div class="email-form-actions">
                 <button id="test-email-inbox" class="btn btn-secondary" type="button">Probar conexión</button>
                 <button id="save-email-inbox" class="btn btn-primary" type="button">Guardar correo</button>
                 <button id="cancel-email-edit" class="btn btn-secondary" type="button" hidden>Cancelar edición</button>
+              </div>
               </div>
               <p id="email-feedback" class="section-help">Sin configuraciones recientes.</p>
               <ul id="email-inboxes-list" class="settings-list"></ul>

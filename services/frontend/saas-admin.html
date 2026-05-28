@@ -178,7 +178,7 @@
                 <div class="section-heading">
                   <div>
                     <h2>Usuarios globales</h2>
-                    <p class="subtitle">Crea usuarios del sistema y, si hace falta, marcalos como staff para soporte o administracion interna.</p>
+                    <p class="subtitle">Crea usuarios globales. Staff es solo para Django/admin interno y no otorga acceso SaaS a tenants.</p>
                   </div>
                 </div>
                 <input id="user-record-id" type="hidden" />
@@ -192,7 +192,7 @@
                   <label>Apellido
                     <input id="user-last-name" type="text" placeholder="Apellido" />
                   </label>
-                  <label>Es staff del sistema
+                  <label>Staff Django/admin interno
                     <select id="user-is-staff">
                       <option value="false">No</option>
                       <option value="true">Si</option>
@@ -209,7 +209,7 @@
                 <div class="section-heading">
                   <div>
                     <h2>Accesos por organizacion</h2>
-                    <p class="subtitle">Asigna o actualiza el rol del usuario dentro del tenant seleccionado.</p>
+                    <p class="subtitle">Owner administra accesos criticos; Admin opera los modulos; Viewer usa permisos asignados.</p>
                   </div>
                 </div>
                 <input id="membership-record-id" type="hidden" />
@@ -222,9 +222,9 @@
                   </label>
                   <label>Rol
                     <select id="membership-role">
-                      <option value="owner">Owner</option>
-                      <option value="admin">Admin</option>
-                      <option value="viewer">Viewer</option>
+                      <option value="owner">Owner - Responsable principal y accesos criticos</option>
+                      <option value="admin">Admin - Operacion completa sin ownership critico</option>
+                      <option value="viewer">Viewer - Acceso segun roles/permisos asignados</option>
                     </select>
                   </label>
                 </div>

@@ -24,6 +24,9 @@
               <h1>Control de envios</h1>
               <p class="subtitle">Visualiza los despachos registrados y actualiza si estan pendientes, en ruta o entregados.</p>
             </div>
+            <div class="quick-actions">
+              <a class="btn btn-secondary" href="/reporteria.html" data-module-code="reports">Reporteria</a>
+            </div>
           </section>
 
           <section class="card filters">
@@ -52,28 +55,40 @@
             </div>
           </section>
 
-          <section class="invoice-summary-grid">
-            <article class="card invoice-summary-card invoice-summary-card--primary">
-              <span class="invoice-summary-card__eyebrow">Envios visibles</span>
-              <strong id="shipment-count" class="invoice-summary-card__value">0</strong>
-              <p id="shipment-caption" class="subtitle">Despachos segun filtros actuales.</p>
+          <section class="shipment-summary-grid" aria-label="Resumen de envios">
+            <article class="shipment-summary-card">
+              <span>Pendientes</span>
+              <strong id="shipments-pending-count">0</strong>
             </article>
-            <article class="card invoice-summary-card">
-              <span class="invoice-summary-card__eyebrow">Entregados</span>
-              <strong id="shipment-delivered-count" class="invoice-summary-card__value">0</strong>
-              <p id="shipment-pending-count" class="subtitle">Pendientes: 0</p>
+            <article class="shipment-summary-card">
+              <span>En ruta</span>
+              <strong id="shipments-transit-count">0</strong>
+            </article>
+            <article class="shipment-summary-card">
+              <span>Entregados</span>
+              <strong id="shipments-delivered-count">0</strong>
+            </article>
+            <article class="shipment-summary-card">
+              <span>Cancelados</span>
+              <strong id="shipments-cancelled-count">0</strong>
             </article>
           </section>
 
-          <section class="card">
+          <section class="card shipment-table-card">
+            <div class="report-table-header">
+              <div>
+                <h2>Despachos</h2>
+                <p class="subtitle">Actualiza estados desde acciones controladas y revisa destino, contacto y guia antes de cerrar entregas.</p>
+              </div>
+              <strong id="shipments-visible-count" class="report-row-count">0 envios visibles</strong>
+            </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Factura</th>
-                    <th>Cliente</th>
+                    <th>Envio</th>
+                    <th>Cliente y destino</th>
                     <th>Metodo</th>
-                    <th>Destino</th>
                     <th>Estado</th>
                     <th>Acciones</th>
                   </tr>
@@ -85,6 +100,46 @@
           </section>
         </div>
       </section>
+    </div>
+
+    <div id="shipment-status-modal" class="receivable-detail-modal" aria-hidden="true">
+      <div class="receivable-detail-panel shipment-status-modal-panel" role="dialog" aria-modal="true" aria-labelledby="shipment-status-modal-title">
+        <div class="receivable-detail-header">
+          <div>
+            <h2 id="shipment-status-modal-title">Actualizar envio</h2>
+            <p id="shipment-status-modal-subtitle" class="subtitle"></p>
+          </div>
+          <button id="shipment-status-close" class="btn btn-secondary" type="button">Cerrar</button>
+        </div>
+        <div class="shipment-status-modal-grid">
+          <section class="receivable-detail-card">
+            <h3>Detalle</h3>
+            <div id="shipment-status-detail" class="receivable-detail-meta"></div>
+          </section>
+          <section class="receivable-detail-card">
+            <h3>Cambio de estado</h3>
+            <form id="shipment-status-form" class="receivable-payment-form">
+              <input id="shipment-status-invoice-id" type="hidden" />
+              <label>Estado
+                <select id="shipment-status-value">
+                  <option value="pending">Pendiente</option>
+                  <option value="in_transit">En ruta</option>
+                  <option value="delivered">Entregado</option>
+                  <option value="cancelled">Cancelado</option>
+                </select>
+              </label>
+              <label>Nota operativa
+                <textarea id="shipment-status-note" rows="3" maxlength="300" placeholder="Referencia interna, contacto, incidencia o confirmacion"></textarea>
+              </label>
+              <p id="shipment-status-help" class="subtitle shipment-status-help"></p>
+              <div class="actions">
+                <button id="shipment-status-save" class="btn btn-primary" type="submit">Guardar estado</button>
+                <button id="shipment-status-cancel" class="btn btn-secondary" type="button">Cancelar</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

@@ -27,6 +27,8 @@
               <p class="subtitle">Administra clientes por organización con una experiencia unificada para personas físicas y jurídicas. Crea y filtra en tiempo real sin mezclar la edición dentro del formulario principal.</p>
             </div>
             <div class="quick-actions">
+              <a class="btn btn-secondary" href="/templates/clientes-carga-masiva.csv" download>Descargar plantilla</a>
+              <button class="btn btn-secondary" type="button" id="customer-import-csv-button">Cargar CSV</button>
               <a class="btn btn-primary" href="/customers-list.html">Ver listado</a>
             </div>
           </section>
@@ -34,6 +36,7 @@
           <div class="organization-inline-field visually-hidden" aria-hidden="true">
             <select id="organization-id" tabindex="-1"></select>
           </div>
+          <input id="customer-import-csv-input" class="visually-hidden" type="file" accept=".csv,text/csv" />
           <p id="feedback" class="module-inline-feedback"></p>
 
           <section class="management-stack">

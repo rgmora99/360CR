@@ -47,6 +47,15 @@
   line-height: 1;
 }
 
+.saas-stat.is-ok {
+  border-color: rgba(69, 204, 133, 0.26);
+}
+
+.saas-stat.is-warning {
+  border-color: rgba(255, 196, 87, 0.36);
+  background: linear-gradient(180deg, rgba(60, 45, 13, 0.42), rgba(10, 16, 30, 0.94));
+}
+
 .saas-admin-panels {
   min-width: 0;
 }

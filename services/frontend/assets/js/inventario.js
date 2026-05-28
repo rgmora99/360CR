@@ -20,7 +20,7 @@
         <td>${product.product_type === 'service' ? 'N/A' : escapeHtml(product.reorder_level ?? 0)}</td>
         <td>${product.product_type === 'service' ? (product.service_duration_minutes > 0 ? `${product.service_duration_minutes} min` : 'No requiere') : 'N/A'}</td>
         <td>${statusLabel(product.item_status)}</td>
-        <td><button class='btn btn-secondary' data-edit='${product.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${product.id}'>Eliminar</button></td>
+        <td>${renderRowActions(product)}</td>
       </tr>`,
   });
 
@@ -161,6 +161,35 @@
     return `<span class="${toneClass}">${escapeHtml(product.stock)}</span>${helperText}`;
   }
 
+  function renderRowActions(product) {
+    return `
+      <div class="row-actions-cell">
+        <button class="btn btn-secondary row-action-primary" type="button" data-edit="${product.id}">Editar</button>
+        <div class="row-actions-menu">
+          <button class="btn btn-secondary row-actions-trigger" type="button" data-product-actions-toggle="${product.id}" aria-haspopup="true" aria-expanded="false">Mas</button>
+          <div class="row-actions-dropdown" data-product-actions-menu="${product.id}" role="menu">
+            <button type="button" class="is-danger" data-delete="${product.id}" role="menuitem">Eliminar producto</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function positionActionMenu(toggle, menu) {
+    const rect = toggle.getBoundingClientRect();
+    const menuWidth = 178;
+    const margin = 10;
+    const left = Math.min(window.innerWidth - menuWidth - margin, Math.max(margin, rect.right - menuWidth));
+    const top = Math.min(window.innerHeight - margin, rect.bottom + 6);
+    menu.style.setProperty('--menu-left', `${left}px`);
+    menu.style.setProperty('--menu-top', `${top}px`);
+  }
+
+  function closeActionMenus() {
+    document.querySelectorAll('.row-actions-dropdown.is-open').forEach((node) => node.classList.remove('is-open'));
+    document.querySelectorAll('[data-product-actions-toggle][aria-expanded="true"]').forEach((node) => node.setAttribute('aria-expanded', 'false'));
+  }
+
   function renderRowsWithoutPager(items) {
     $('products-body').innerHTML =
       items
@@ -177,7 +206,7 @@
               <td>${product.product_type === 'service' ? 'N/A' : escapeHtml(product.reorder_level ?? 0)}</td>
               <td>${product.product_type === 'service' ? (product.service_duration_minutes > 0 ? `${product.service_duration_minutes} min` : 'No requiere') : 'N/A'}</td>
               <td>${statusLabel(product.item_status)}</td>
-              <td><button class='btn btn-secondary' data-edit='${product.id}'>Editar</button> <button class='btn btn-secondary' data-delete='${product.id}'>Eliminar</button></td>
+              <td>${renderRowActions(product)}</td>
             </tr>`,
         )
         .join('') || '<tr><td colspan="11">Sin productos</td></tr>';
@@ -287,10 +316,24 @@
   });
 
   $('products-body').addEventListener('click', async (event) => {
+    const toggle = event.target.closest('[data-product-actions-toggle]');
+    if (toggle) {
+      const menu = document.querySelector(`[data-product-actions-menu="${toggle.dataset.productActionsToggle}"]`);
+      const isOpen = menu?.classList.contains('is-open');
+      closeActionMenus();
+      if (menu && !isOpen) {
+        positionActionMenu(toggle, menu);
+        menu.classList.add('is-open');
+        toggle.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
+
     const editId = event.target.dataset.edit;
     const delId = event.target.dataset.delete;
 
     if (editId) {
+      closeActionMenus();
       const product = state.products.find((item) => item.id === Number(editId));
       if (!product) {
         feedback('No se encontró el producto seleccionado.', true);
@@ -315,6 +358,7 @@
     }
 
     if (delId) {
+      closeActionMenus();
       await request(`/products/${delId}/`, { method: 'DELETE' });
       await loadProducts();
       feedback('Producto eliminado.');
@@ -331,6 +375,9 @@
   });
 
   $('product-search').addEventListener('input', () => applyProductFilter(true));
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.row-actions-menu')) closeActionMenus();
+  });
   $('product-type').addEventListener('change', updateStockState);
   $('service-requires-duration').addEventListener('change', updateStockState);
   $('sku').value = 'Se generará automáticamente';

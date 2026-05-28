@@ -37,10 +37,45 @@ def get_module_codes_for_permissions(permissions):
     return module_codes
 
 
+def is_system_owner(user):
+    return bool(user and user.is_authenticated and user.is_superuser)
+
+
+def is_tenant_owner(membership):
+    return bool(membership and membership.role == Membership.ROLE_OWNER)
+
+
+def is_tenant_admin(membership):
+    return bool(membership and membership.role == Membership.ROLE_ADMIN)
+
+
+def has_operational_tenant_access(membership):
+    return is_tenant_owner(membership) or is_tenant_admin(membership)
+
+
+def organization_has_other_owner(organization_id, membership_id=None):
+    queryset = Membership.objects.filter(
+        organization_id=organization_id,
+        role=Membership.ROLE_OWNER,
+    )
+    if membership_id:
+        queryset = queryset.exclude(id=membership_id)
+    return queryset.exists()
+
+
+def can_manage_memberships(user, organization_id):
+    if is_system_owner(user):
+        return True
+    if not user or not user.is_authenticated:
+        return False
+    membership = Membership.objects.filter(user=user, organization_id=organization_id).first()
+    return is_tenant_owner(membership)
+
+
 def get_allowed_organization_ids(user):
     if not user.is_authenticated:
         return []
-    if user.is_superuser or user.is_staff:
+    if is_system_owner(user):
         return list(Organization.objects.values_list("id", flat=True))
 
     direct_ids = set(
@@ -93,13 +128,13 @@ def user_has_module_access(user, organization_id, module_code):
         return True
     if not user or not user.is_authenticated:
         return False
-    if user.is_superuser or user.is_staff:
+    if is_system_owner(user):
         return True
 
     membership = Membership.objects.filter(user=user, organization_id=organization_id).first()
     if not membership:
         return False
-    if membership.role in [Membership.ROLE_OWNER, Membership.ROLE_ADMIN]:
+    if has_operational_tenant_access(membership):
         return True
 
     assignments = UserRoleAssignment.objects.filter(
@@ -197,7 +232,7 @@ class OrganizationScopedViewMixin:
         if not allowed_ids:
             return queryset.none()
 
-        if self.required_module_code and not (self.request.user.is_superuser or self.request.user.is_staff):
+        if self.required_module_code and not is_system_owner(self.request.user):
             allowed_ids = get_enabled_module_organization_ids(allowed_ids, self.required_module_code)
             allowed_ids = [
                 organization_id
@@ -229,7 +264,7 @@ class OrganizationScopedViewMixin:
 
         if selected_id not in self.get_allowed_organization_ids():
             raise PermissionDenied("No tiene acceso a la organizacion solicitada")
-        if self.request.user.is_superuser or self.request.user.is_staff:
+        if is_system_owner(self.request.user):
             return selected_id
         if self.required_module_code and not organization_has_enabled_module(selected_id, self.required_module_code):
             raise PermissionDenied("El modulo requerido no esta activo para esta organizacion")

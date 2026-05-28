@@ -59,6 +59,8 @@
   const cancelEmailEditButton = document.getElementById('cancel-email-edit');
   const emailInboxesList = document.getElementById('email-inboxes-list');
   const emailFeedback = document.getElementById('email-feedback');
+  const availabilityDayInputs = Array.from(document.querySelectorAll('[data-availability-day]'));
+  const availabilityPresetButtons = Array.from(document.querySelectorAll('[data-availability-preset]'));
   const API_BASE = '/api';
   const USER_ROLE_FALLBACK = 'colaborador';
   let rolesCache = [];
@@ -768,11 +770,21 @@
     }
     emailInboxesList.innerHTML = inboxes
       .map(
-        (inbox) => `<li>
-          <strong>${inbox.label}</strong>
-          <span>${inbox.email} - ${inbox.is_primary ? 'Principal' : 'Secundario'} - ${inbox.is_active ? 'Activo' : 'Inactivo'}</span>
-          <small>${inbox.imap_host}:${inbox.imap_port} - Carpeta ${inbox.folder} - ${inbox.imap_ssl ? 'SSL' : 'Sin SSL'}</small>
-          <div class="actions">
+        (inbox) => `<li class="email-inbox-row">
+          <div class="email-inbox-main">
+            <div class="email-inbox-heading">
+              <strong>${escapeHtml(inbox.label || inbox.email)}</strong>
+              <span class="settings-chip ${inbox.is_primary ? 'is-success' : 'is-muted'}">${inbox.is_primary ? 'Principal' : 'Secundario'}</span>
+              <span class="settings-chip ${inbox.is_active ? 'is-success' : 'is-muted'}">${inbox.is_active ? 'Activo' : 'Inactivo'}</span>
+              <span class="settings-chip ${inbox.imap_ssl ? 'is-success' : 'is-muted'}">${inbox.imap_ssl ? 'SSL' : 'Sin SSL'}</span>
+            </div>
+            <span>${escapeHtml(inbox.email)}</span>
+            <div class="email-inbox-meta">
+              <small>${escapeHtml(inbox.imap_host)}:${escapeHtml(inbox.imap_port)}</small>
+              <small>Carpeta ${escapeHtml(inbox.folder)}</small>
+            </div>
+          </div>
+          <div class="email-inbox-actions">
             <button class="btn btn-secondary" type="button" data-email-edit="${inbox.id}">Editar</button>
             <button class="btn btn-secondary" type="button" data-email-delete="${inbox.id}">Eliminar</button>
           </div>
@@ -922,6 +934,35 @@
       setOrgFeedback(parseApiError(error) || 'No fue posible guardar la organizacion.', true);
     }
   };
+  const renderUserActions = (user) => `
+    <div class="row-actions-cell settings-user-actions">
+      <button class="btn btn-secondary row-action-primary" type="button" data-user-edit="${user.id}">Editar</button>
+      <div class="row-actions-menu">
+        <button class="btn btn-secondary row-actions-trigger" type="button" data-user-actions-toggle="${user.id}" aria-haspopup="true" aria-expanded="false">Mas</button>
+        <div class="row-actions-dropdown" data-user-actions-menu="${user.id}" role="menu">
+          <button type="button" data-user-toggle="${user.id}" data-next-active="${user.is_active ? 'false' : 'true'}" role="menuitem">${user.is_active ? 'Inactivar usuario' : 'Reactivar usuario'}</button>
+          <div class="row-actions-divider"></div>
+          <button type="button" class="is-danger" data-user-delete="${user.id}" role="menuitem">Eliminar usuario</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const positionSettingsActionMenu = (toggle, menu) => {
+    const rect = toggle.getBoundingClientRect();
+    const menuWidth = 178;
+    const margin = 10;
+    const left = Math.min(window.innerWidth - menuWidth - margin, Math.max(margin, rect.right - menuWidth));
+    const top = Math.min(window.innerHeight - margin, rect.bottom + 6);
+    menu.style.setProperty('--menu-left', `${left}px`);
+    menu.style.setProperty('--menu-top', `${top}px`);
+  };
+
+  const closeSettingsActionMenus = () => {
+    document.querySelectorAll('.row-actions-dropdown.is-open').forEach((node) => node.classList.remove('is-open'));
+    document.querySelectorAll('[data-user-actions-toggle][aria-expanded="true"]').forEach((node) => node.setAttribute('aria-expanded', 'false'));
+  };
+
   const renderUsers = (users) => {
     if (!users.length) {
       usersList.innerHTML = '<li>Sin usuarios registrados para este negocio.</li>';
@@ -964,11 +1005,7 @@
             </div>
             <div class="settings-user-roles">${assignedRoles}</div>
           </div>
-          <div class="actions settings-user-actions">
-            <button class="btn btn-secondary" type="button" data-user-edit="${user.id}">Editar</button>
-            <button class="btn btn-secondary" type="button" data-user-toggle="${user.id}" data-next-active="${user.is_active ? 'false' : 'true'}">${user.is_active ? 'Inactivar' : 'Reactivar'}</button>
-            <button class="btn btn-secondary" type="button" data-user-delete="${user.id}">Eliminar</button>
-          </div>
+          ${renderUserActions(user)}
         </li>`;
       })
       .join('');
@@ -1429,7 +1466,9 @@
   const saveAvailabilityRule = async () => {
     const organizationId = Number(window.AppSession?.getActiveOrganizationId?.());
     const collaboratorId = Number(availabilityCollaborator.value);
-    const weekday = Number(availabilityWeekday.value);
+    const selectedWeekdays = availabilityDayInputs
+      .filter((input) => input.checked)
+      .map((input) => Number(input.value));
     const start = availabilityStart.value;
     const end = availabilityEnd.value;
     const active = availabilityActive.checked;
@@ -1442,37 +1481,59 @@
       setAvailabilityFeedback('Selecciona un colaborador para guardar la disponibilidad.', true);
       return;
     }
+    if (!selectedWeekdays.length) {
+      setAvailabilityFeedback('Selecciona al menos un dia para aplicar el horario.', true);
+      return;
+    }
     if (!start || !end || start >= end) {
       setAvailabilityFeedback('Define una franja horaria válida (hora inicio menor a hora fin).', true);
       return;
     }
 
     try {
-      const existing = availabilityRulesCache.find(
-        (rule) =>
-          Number(rule.organization) === organizationId &&
-          Number(rule.collaborator) === collaboratorId &&
-          Number(rule.weekday) === weekday,
-      );
+      await Promise.all(selectedWeekdays.map((weekday) => {
+        const existing = availabilityRulesCache.find(
+          (rule) =>
+            Number(rule.organization) === organizationId &&
+            Number(rule.collaborator) === collaboratorId &&
+            Number(rule.weekday) === weekday,
+        );
 
-      await orgRequest(existing ? `/agenda-availability/${existing.id}/` : '/agenda-availability/', {
-        method: existing ? 'PATCH' : 'POST',
-        body: JSON.stringify({
-          organization: organizationId,
-          collaborator: collaboratorId,
-          weekday,
-          start_time: start,
-          end_time: end,
-          is_active: active,
-        }),
-      });
-      setAvailabilityFeedback(
-        `Horario guardado para ${getCollaboratorLabel(collaboratorId)} (${weekdayLabels[weekday]} ${start}-${end}).`,
-      );
+        return orgRequest(existing ? `/agenda-availability/${existing.id}/` : '/agenda-availability/', {
+          method: existing ? 'PATCH' : 'POST',
+          body: JSON.stringify({
+            organization: organizationId,
+            collaborator: collaboratorId,
+            weekday,
+            start_time: start,
+            end_time: end,
+            is_active: active,
+          }),
+        });
+      }));
+      const dayLabel = selectedWeekdays
+        .slice()
+        .sort((left, right) => left - right)
+        .map((weekday) => weekdayLabels[weekday])
+        .join(', ');
+      setAvailabilityFeedback(`Horario aplicado a ${getCollaboratorLabel(collaboratorId)}: ${dayLabel} ${start}-${end}.`);
       await loadAvailabilityRules();
     } catch (error) {
       setAvailabilityFeedback(parseApiError(error) || 'No fue posible guardar la disponibilidad.', true);
     }
+  };
+
+  const applyAvailabilityPreset = (preset) => {
+    const presetDays = {
+      weekdays: new Set([1, 2, 3, 4, 5]),
+      weekend: new Set([0, 6]),
+      all: new Set([0, 1, 2, 3, 4, 5, 6]),
+      clear: new Set(),
+    }[preset] || new Set();
+
+    availabilityDayInputs.forEach((input) => {
+      input.checked = presetDays.has(Number(input.value));
+    });
   };
 
   const loadCollaborators = async () => {
@@ -1619,10 +1680,24 @@
     if (deleteId) deleteOrganization(deleteId).catch(() => null);
   });
   usersList.addEventListener('click', (event) => {
+    const actionToggle = event.target.closest?.('[data-user-actions-toggle]');
+    if (actionToggle) {
+      const menu = document.querySelector(`[data-user-actions-menu="${actionToggle.dataset.userActionsToggle}"]`);
+      const isOpen = menu?.classList.contains('is-open');
+      closeSettingsActionMenus();
+      if (menu && !isOpen) {
+        positionSettingsActionMenu(actionToggle, menu);
+        menu.classList.add('is-open');
+        actionToggle.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
+
     const editId = event.target?.dataset?.userEdit;
     const toggleId = event.target?.dataset?.userToggle;
     const deleteId = event.target?.dataset?.userDelete;
     const removeRoleId = event.target?.dataset?.userRoleRemove;
+    if (editId || toggleId || deleteId) closeSettingsActionMenus();
     if (removeRoleId) removeRoleAssignment(removeRoleId).catch(() => null);
     if (editId) startUserEdit(editId);
     if (toggleId) setUserActive(toggleId, event.target.dataset.nextActive === 'true').catch(() => null);
@@ -1658,6 +1733,9 @@
   saveAvailabilityRuleButton.addEventListener('click', () => {
     saveAvailabilityRule().catch(() => null);
   });
+  availabilityPresetButtons.forEach((button) => {
+    button.addEventListener('click', () => applyAvailabilityPreset(button.dataset.availabilityPreset));
+  });
   testEmailInboxButton.addEventListener('click', () => {
     runEmailInboxConnectionTest().catch(() => null);
   });
@@ -1678,6 +1756,9 @@
     }
   });
   availabilityViewCollaborator.addEventListener('change', renderAvailabilityRules);
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest?.('.row-actions-menu')) closeSettingsActionMenus();
+  });
   document.addEventListener('change', (event) => {
     if (event.target?.id === 'organization-switcher') {
       loadCollaborators();

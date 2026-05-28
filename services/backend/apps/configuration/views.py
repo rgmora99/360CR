@@ -29,7 +29,13 @@ from apps.configuration.serializers import (
     UserRoleAssignmentSerializer,
     sync_subscription_modules,
 )
-from apps.tenants.access import OrganizationScopedViewMixin
+from apps.tenants.access import (
+    OrganizationScopedViewMixin,
+    can_manage_memberships,
+    is_system_owner,
+    organization_has_other_owner,
+)
+from apps.tenants.catalog import ensure_default_saas_catalog
 from apps.tenants.models import (
     Membership,
     Organization,
@@ -40,6 +46,12 @@ from apps.tenants.models import (
     Subscription,
     SubscriptionModule,
 )
+
+
+def ensure_saas_catalog_and_subscriptions():
+    ensure_default_saas_catalog()
+    for subscription in Subscription.objects.select_related("plan_catalog").filter(plan_catalog__isnull=False):
+        sync_subscription_modules(subscription)
 
 
 def build_unique_slug(name):
@@ -54,8 +66,7 @@ def build_unique_slug(name):
 
 class IsSystemOwner(permissions.BasePermission):
     def has_permission(self, request, view):
-        user = request.user
-        return bool(user and user.is_authenticated and (user.is_superuser or user.is_staff))
+        return is_system_owner(request.user)
 
 
 class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSet):
@@ -78,11 +89,24 @@ class ConfigurationUserViewSet(OrganizationScopedViewMixin, viewsets.ModelViewSe
             queryset = queryset.filter(membership__organization_id=selected_id)
         return queryset
 
+    def _validate_membership_management(self, organization_id):
+        if not can_manage_memberships(self.request.user, organization_id):
+            raise PermissionDenied("Solo el owner de la organizacion puede administrar accesos.")
+
+    def perform_create(self, serializer):
+        organization_ids = self.validate_serializer_tenant_access(serializer)
+        for organization_id in organization_ids:
+            self._validate_membership_management(organization_id)
+        serializer.save()
+
     def perform_destroy(self, instance):
         if instance.id == self.request.user.id:
             raise PermissionDenied("No puedes eliminar tu propio usuario desde esta pantalla.")
-        if instance.is_staff and not self.request.user.is_staff:
+        if instance.is_superuser and not is_system_owner(self.request.user):
             raise PermissionDenied("No puedes eliminar un usuario administrador del sistema.")
+        if not is_system_owner(self.request.user):
+            for membership in instance.membership_set.all():
+                self._validate_membership_management(membership.organization_id)
         instance.delete()
 
 
@@ -104,7 +128,7 @@ class RoleCatalogViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
-        if not (user.is_superuser or user.is_staff):
+        if not is_system_owner(user):
             queryset = queryset.exclude(code="ti-super-admin")
         return queryset
 
@@ -136,18 +160,48 @@ class UserRoleAssignmentViewSet(OrganizationScopedViewMixin, viewsets.ModelViewS
     def get_queryset(self):
         queryset = UserRoleAssignment.objects.select_related("user", "role", "organization").all()
         user = self.request.user
-        if not (user.is_superuser or user.is_staff):
+        if not is_system_owner(user):
             queryset = queryset.exclude(role__code="ti-super-admin")
         return self.scope_queryset(queryset)
 
+    def _validate_role_management(self, organization_id):
+        if not organization_id:
+            if not is_system_owner(self.request.user):
+                raise PermissionDenied("Solo el dueÃ±o del sistema puede administrar roles globales.")
+            return
+        if not can_manage_memberships(self.request.user, organization_id):
+            raise PermissionDenied("Solo el owner de la organizacion puede administrar roles de usuarios.")
+
     def perform_create(self, serializer):
-        self.validate_serializer_tenant_access(serializer)
+        organization_ids = self.validate_serializer_tenant_access(serializer)
+        if not organization_ids:
+            organization = serializer.validated_data.get("organization")
+            organization_ids = [getattr(organization, "id", None)]
+        for organization_id in organization_ids:
+            self._validate_role_management(organization_id)
         serializer.save(assigned_by=self.request.user)
+
+    def perform_update(self, serializer):
+        organization_ids = self.validate_serializer_tenant_access(serializer)
+        if not organization_ids:
+            organization = serializer.validated_data.get("organization") or getattr(serializer.instance, "organization", None)
+            organization_ids = [getattr(organization, "id", None)]
+        for organization_id in organization_ids:
+            self._validate_role_management(organization_id)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._validate_role_management(instance.organization_id)
+        instance.delete()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.validate_serializer_tenant_access(serializer)
+        organization_ids = self.validate_serializer_tenant_access(serializer)
+        if not organization_ids:
+            organization_ids = [getattr(serializer.validated_data.get("organization"), "id", None)]
+        for organization_id in organization_ids:
+            self._validate_role_management(organization_id)
         user = serializer.validated_data["user"]
         role = serializer.validated_data["role"]
         organization = serializer.validated_data.get("organization")
@@ -238,6 +292,7 @@ class SystemAdminOverviewView(APIView):
     permission_classes = [IsSystemOwner]
 
     def get(self, request):
+        ensure_saas_catalog_and_subscriptions()
         organizations = Organization.objects.count()
         subscriptions = Subscription.objects.count()
         active_subscriptions = Subscription.objects.filter(status__in=[Subscription.STATUS_TRIAL, Subscription.STATUS_ACTIVE]).count()
@@ -268,11 +323,26 @@ class SystemAdminUserViewSet(viewsets.ModelViewSet):
     serializer_class = SystemAdminUserSerializer
     permission_classes = [IsSystemOwner]
 
+    def perform_destroy(self, instance):
+        if instance.id == self.request.user.id:
+            raise ValidationError("No puedes eliminar tu propio usuario administrador.")
+        if instance.is_superuser:
+            raise ValidationError("Los superusuarios no se eliminan desde la consola SaaS.")
+        if instance.membership_set.exists():
+            raise ValidationError("Este usuario tiene accesos asignados. Retira sus accesos antes de eliminarlo.")
+        instance.delete()
+
 
 class SystemAdminMembershipViewSet(viewsets.ModelViewSet):
     queryset = Membership.objects.select_related("user", "organization").all().order_by("organization__name", "user__email")
     serializer_class = SystemAdminMembershipSerializer
     permission_classes = [IsSystemOwner]
+
+    def perform_destroy(self, instance):
+        if instance.role == Membership.ROLE_OWNER:
+            if not organization_has_other_owner(instance.organization_id, membership_id=instance.id):
+                raise ValidationError("La organizacion debe conservar al menos un owner.")
+        instance.delete()
 
 
 class SystemAdminOrganizationViewSet(viewsets.ModelViewSet):
@@ -306,17 +376,40 @@ class SaaSModuleViewSet(viewsets.ModelViewSet):
     serializer_class = SaaSModuleSerializer
     permission_classes = [IsSystemOwner]
 
+    def list(self, request, *args, **kwargs):
+        ensure_saas_catalog_and_subscriptions()
+        return super().list(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        if instance.module_plans.exists() or instance.subscription_links.exists() or instance.feature_flags.exists():
+            raise ValidationError("Este modulo ya tiene relaciones. Inactivalo para conservar integridad historica.")
+        instance.delete()
+
 
 class SaaSPlanViewSet(viewsets.ModelViewSet):
     queryset = SaaSPlan.objects.prefetch_related("plan_modules__module").all().order_by("sort_order", "name")
     serializer_class = SaaSPlanSerializer
     permission_classes = [IsSystemOwner]
 
+    def list(self, request, *args, **kwargs):
+        ensure_saas_catalog_and_subscriptions()
+        return super().list(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        if instance.subscriptions.exists():
+            raise ValidationError("Este plan tiene suscripciones asociadas. Inactivalo en lugar de eliminarlo.")
+        instance.delete()
+
 
 class SaaSPlanModuleViewSet(viewsets.ModelViewSet):
     queryset = SaaSPlanModule.objects.select_related("plan", "module").all().order_by("plan__sort_order", "sort_order", "module__name")
     serializer_class = SaaSPlanModuleSerializer
     permission_classes = [IsSystemOwner]
+
+    def perform_destroy(self, instance):
+        if instance.plan.subscriptions.exists():
+            raise ValidationError("No puedes eliminar modulos de un plan con suscripciones. Desactiva la inclusion o crea una version nueva del plan.")
+        instance.delete()
 
 
 class SubscriptionViewSet(viewsets.ModelViewSet):
@@ -340,6 +433,11 @@ class SubscriptionModuleViewSet(viewsets.ModelViewSet):
     queryset = SubscriptionModule.objects.select_related("subscription", "module").all().order_by("subscription__organization__name", "module__group", "module__name")
     serializer_class = SubscriptionModuleSerializer
     permission_classes = [IsSystemOwner]
+
+    def perform_destroy(self, instance):
+        if instance.source == SubscriptionModule.SOURCE_PLAN:
+            raise ValidationError("Los modulos originados por el plan no se eliminan manualmente; cambia el plan o desactiva el modulo.")
+        instance.delete()
 
 
 class OrganizationFeatureFlagViewSet(viewsets.ModelViewSet):

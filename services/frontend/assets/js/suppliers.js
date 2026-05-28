@@ -8,6 +8,8 @@
   const editForm = document.getElementById('supplier-edit-form');
   const editCloseButton = document.getElementById('supplier-edit-close');
   const editCancelButton = document.getElementById('supplier-edit-cancel');
+  const importCsvButton = document.getElementById('supplier-import-csv-button');
+  const importCsvInput = document.getElementById('supplier-import-csv-input');
 
   const suppliersPager = window.TablePaginator?.create({
     key: 'suppliers',
@@ -62,12 +64,38 @@
         <td>${escapeHtml(item.tax_id || '-')}</td>
         <td>${escapeHtml(item.legal_name)}</td>
         <td><span class="status status-${item.status}">${escapeHtml(formatSupplierStatus(item.status))}</span></td>
-        <td>
-          <button class="btn btn-secondary" data-action="edit" data-id="${item.id}">Editar</button>
-          <button class="btn btn-secondary" data-action="delete" data-id="${item.id}">Eliminar</button>
-        </td>
+        <td>${renderSupplierActions(item)}</td>
       </tr>
     `;
+  }
+
+  function renderSupplierActions(item) {
+    return `
+      <div class="row-actions-cell">
+        <button class="btn btn-secondary row-action-primary" type="button" data-action="edit" data-id="${item.id}">Editar</button>
+        <div class="row-actions-menu">
+          <button class="btn btn-secondary row-actions-trigger" type="button" data-supplier-actions-toggle="${item.id}" aria-haspopup="true" aria-expanded="false">Mas</button>
+          <div class="row-actions-dropdown" data-supplier-actions-menu="${item.id}" role="menu">
+            <button type="button" class="is-danger" data-action="delete" data-id="${item.id}" role="menuitem">Eliminar proveedor</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function positionActionMenu(toggle, menu) {
+    const rect = toggle.getBoundingClientRect();
+    const menuWidth = 178;
+    const margin = 10;
+    const left = Math.min(window.innerWidth - menuWidth - margin, Math.max(margin, rect.right - menuWidth));
+    const top = Math.min(window.innerHeight - margin, rect.bottom + 6);
+    menu.style.setProperty('--menu-left', `${left}px`);
+    menu.style.setProperty('--menu-top', `${top}px`);
+  }
+
+  function closeActionMenus() {
+    document.querySelectorAll('.row-actions-dropdown.is-open').forEach((node) => node.classList.remove('is-open'));
+    document.querySelectorAll('[data-supplier-actions-toggle][aria-expanded="true"]').forEach((node) => node.setAttribute('aria-expanded', 'false'));
   }
 
   function escapeHtml(value) {
@@ -132,6 +160,171 @@
       .filter(([, value]) => value !== undefined && value !== null)
       .map(([field, value]) => `${toFriendlyFieldName(field)}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
       .join(' | ');
+  }
+
+  function normalizeHeader(value) {
+    return String(value || '')
+      .trim()
+      .replace(/^\uFEFF/, '')
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+  }
+
+  function parseCsv(text) {
+    const normalizedText = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    if (!normalizedText) return [];
+
+    const firstLine = normalizedText.split('\n')[0] || '';
+    const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let inQuotes = false;
+
+    for (let index = 0; index < normalizedText.length; index += 1) {
+      const char = normalizedText[index];
+      const nextChar = normalizedText[index + 1];
+
+      if (char === '"' && inQuotes && nextChar === '"') {
+        cell += '"';
+        index += 1;
+        continue;
+      }
+      if (char === '"') {
+        inQuotes = !inQuotes;
+        continue;
+      }
+      if (char === delimiter && !inQuotes) {
+        row.push(cell);
+        cell = '';
+        continue;
+      }
+      if (char === '\n' && !inQuotes) {
+        row.push(cell);
+        if (row.some((value) => String(value).trim())) rows.push(row);
+        row = [];
+        cell = '';
+        continue;
+      }
+      cell += char;
+    }
+
+    row.push(cell);
+    if (row.some((value) => String(value).trim())) rows.push(row);
+    if (!rows.length) return [];
+
+    const headers = rows[0].map(normalizeHeader);
+    return rows.slice(1).map((values, index) => {
+      const item = { rowNumber: index + 2 };
+      headers.forEach((header, headerIndex) => {
+        item[header] = String(values[headerIndex] || '').trim();
+      });
+      return item;
+    });
+  }
+
+  function readCsvValue(row, aliases) {
+    for (const alias of aliases) {
+      const key = normalizeHeader(alias);
+      if (row[key] !== undefined && row[key] !== '') return row[key];
+    }
+    return '';
+  }
+
+  function parseCsvNumber(value) {
+    const normalized = String(value || '').trim().replace(/\s+/g, '').replace(',', '.');
+    const number = Number(normalized || 0);
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function findTypeIdByCsvValue(value) {
+    const normalized = normalizeHeader(value);
+    const aliases = {
+      fisico: ['fisico', 'persona_fisica'],
+      juridico: ['juridico', 'juridica', 'persona_juridica'],
+    };
+    const typeCode = Object.entries(aliases).find(([, values]) => values.includes(normalized))?.[0] || normalized;
+    const type = supplierTypes.find((item) => item.code === typeCode);
+    if (!type) {
+      throw new Error(`Tipo "${value}" no existe. Use fisico o juridico.`);
+    }
+    return type.id;
+  }
+
+  function buildSupplierPayloadFromCsv(row) {
+    const legalName = readCsvValue(row, ['nombre', 'legal_name', 'razon_social']);
+    if (!legalName) throw new Error('La columna nombre es obligatoria.');
+
+    const typeValue = readCsvValue(row, ['tipo', 'type', 'tipo_proveedor']);
+    if (!typeValue) throw new Error('La columna tipo es obligatoria. Use fisico o juridico.');
+
+    const typeId = findTypeIdByCsvValue(typeValue);
+    const typeCode = getTypeCode(typeId);
+    const isLegal = typeCode !== 'fisico';
+
+    return {
+      organization: getOrganizationId(),
+      supplier_type: typeId,
+      legal_name: legalName,
+      trade_name: isLegal ? readCsvValue(row, ['nombre_comercial', 'trade_name']) : '',
+      tax_id: readCsvValue(row, ['cedula', 'tax_id', 'identificacion']),
+      status: readCsvValue(row, ['estado', 'status']) || 'active',
+      email: readCsvValue(row, ['correo', 'email']),
+      phone: readCsvValue(row, ['telefono', 'phone']),
+      credit_limit: parseCsvNumber(readCsvValue(row, ['limite_credito', 'credit_limit'])),
+      payment_terms_days: Math.max(0, Math.trunc(parseCsvNumber(readCsvValue(row, ['dias_pago', 'payment_terms_days'])))),
+      notes: readCsvValue(row, ['notas', 'notes']),
+    };
+  }
+
+  async function confirmSupplierPadronMismatch(payload, rowNumber) {
+    const typeCode = getTypeCode(payload.supplier_type);
+    if (typeCode !== 'fisico' || !window.CedulaPadron) return true;
+
+    const normalizedTaxId = window.CedulaPadron.normalizeCedula(payload.tax_id);
+    const record = await window.CedulaPadron.resolveByCedula(normalizedTaxId);
+    if (!record) {
+      const message = `Fila ${rowNumber}: la cedula ${payload.tax_id} no existe en el padron electoral. Desea guardarla de igual manera?`;
+      return window.appAlerts?.confirm ? window.appAlerts.confirm(message, 'Cedula no encontrada') : window.confirm(message);
+    }
+
+    const matchesName = window.CedulaPadron.compareName(payload.legal_name, record);
+    if (matchesName === false) {
+      const message = `Fila ${rowNumber}: la cedula ${payload.tax_id} corresponde a "${record.fullName}", pero el CSV indica "${payload.legal_name}". Desea guardarlo de igual manera?`;
+      return window.appAlerts?.confirm ? window.appAlerts.confirm(message, 'Nombre no coincide') : window.confirm(message);
+    }
+
+    return true;
+  }
+
+  async function importSuppliersFromCsv(file) {
+    const rows = parseCsv(await file.text());
+    if (!rows.length) throw new Error('El archivo CSV no contiene filas para importar.');
+
+    let created = 0;
+    const errors = [];
+    for (const row of rows) {
+      try {
+        const payload = buildSupplierPayloadFromCsv(row);
+        const shouldSave = await confirmSupplierPadronMismatch(payload, row.rowNumber);
+        if (!shouldSave) {
+          errors.push(`Fila ${row.rowNumber}: omitida para verificar datos de padron.`);
+          continue;
+        }
+        await request(`${getApiBase()}/suppliers/`, { method: 'POST', body: JSON.stringify(payload) });
+        created += 1;
+      } catch (error) {
+        errors.push(`Fila ${row.rowNumber}: ${error.message}`);
+      }
+    }
+
+    await loadSuppliers();
+    if (errors.length) {
+      setFeedback(`Carga CSV finalizada: ${created} creados, ${errors.length} con error. ${errors.slice(0, 3).join(' | ')}`, true);
+      logError('Errores de carga CSV', errors);
+      return;
+    }
+    setFeedback(`Carga CSV finalizada: ${created} proveedores creados correctamente.`);
   }
 
   function nextSupplierCodeFallback() {
@@ -465,8 +658,22 @@
   });
 
   suppliersBody?.addEventListener('click', async (event) => {
+    const toggle = event.target.closest('[data-supplier-actions-toggle]');
+    if (toggle) {
+      const menu = document.querySelector(`[data-supplier-actions-menu="${toggle.dataset.supplierActionsToggle}"]`);
+      const isOpen = menu?.classList.contains('is-open');
+      closeActionMenus();
+      if (menu && !isOpen) {
+        positionActionMenu(toggle, menu);
+        menu.classList.add('is-open');
+        toggle.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
+
     const button = event.target.closest('button[data-action]');
     if (!button) return;
+    closeActionMenus();
 
     const id = Number(button.dataset.id);
     const action = button.dataset.action;
@@ -496,6 +703,27 @@
   });
 
   searchInput?.addEventListener('input', () => renderTable(true));
+  importCsvButton?.addEventListener('click', () => {
+    if (!importCsvInput) return;
+    importCsvInput.value = '';
+    importCsvInput.click();
+  });
+  importCsvInput?.addEventListener('change', async () => {
+    const file = importCsvInput.files?.[0];
+    if (!file) return;
+    try {
+      setFeedback('Importando proveedores desde CSV...');
+      await importSuppliersFromCsv(file);
+    } catch (error) {
+      logError('No se pudo importar CSV', error.message);
+      setFeedback(`No se pudo importar CSV: ${error.message}`, true);
+    } finally {
+      importCsvInput.value = '';
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.row-actions-menu')) closeActionMenus();
+  });
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && editModal && !editModal.classList.contains('hidden')) {
       closeEditModal();

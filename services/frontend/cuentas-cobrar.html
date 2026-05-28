@@ -25,6 +25,7 @@
               <p class="subtitle">Administra ventas a plazo, revisa saldos, detecta vencimientos y registra abonos para que el estado de cobro se refleje en toda la operación.</p>
             </div>
             <div class="quick-actions">
+              <a class="btn btn-secondary" href="/reporteria.html" data-module-code="reports">Reportería</a>
               <a class="btn btn-secondary" href="/facturas.html" data-module-code="billing_basic">Ver facturas</a>
               <a class="btn btn-primary" href="/facturacion.html" data-module-code="billing_basic">Registrar factura</a>
             </div>
@@ -52,24 +53,6 @@
                 <button class="btn btn-secondary" id="clear-filters" type="button">Limpiar filtros</button>
               </div>
             </div>
-          </section>
-
-          <section class="invoice-summary-grid receivable-summary-grid">
-            <article class="card invoice-summary-card invoice-summary-card--primary">
-              <span class="invoice-summary-card__eyebrow">Saldo pendiente</span>
-              <strong id="receivable-balance-total" class="invoice-summary-card__value">₡0,00</strong>
-              <p id="receivable-balance-caption" class="subtitle">Cartera actual según los filtros visibles.</p>
-            </article>
-            <article class="card invoice-summary-card">
-              <span class="invoice-summary-card__eyebrow">Vencidas</span>
-              <strong id="receivable-overdue-count" class="invoice-summary-card__value">0</strong>
-              <p id="receivable-overdue-caption" class="subtitle">Sin cuentas vencidas.</p>
-            </article>
-            <article class="card invoice-summary-card">
-              <span class="invoice-summary-card__eyebrow">Cobrado</span>
-              <strong id="receivable-paid-total" class="invoice-summary-card__value">₡0,00</strong>
-              <p id="receivable-paid-caption" class="subtitle">Abonos aplicados a ventas a plazo.</p>
-            </article>
           </section>
 
           <section class="card">
@@ -105,13 +88,25 @@
           </div>
           <button id="receivable-detail-close" class="btn btn-secondary" type="button">Cerrar</button>
         </div>
-        <div class="receivable-detail-grid">
-          <section class="receivable-detail-card">
+        <section class="receivable-hero">
+          <div>
+            <span class="receivable-hero__label">Saldo pendiente</span>
+            <strong id="receivable-hero-balance">₡0,00</strong>
+            <p id="receivable-hero-status" class="subtitle">Sin estado</p>
+          </div>
+          <div class="receivable-hero__progress" aria-label="Avance cobrado">
+            <div class="receivable-hero__track"><span id="receivable-progress-bar"></span></div>
+            <strong id="receivable-progress-label">0%</strong>
+          </div>
+        </section>
+        <div class="receivable-detail-grid receivable-detail-grid--ux">
+          <section class="receivable-detail-card receivable-summary-panel">
             <h3>Resumen</h3>
             <div id="receivable-detail-meta" class="receivable-detail-meta"></div>
           </section>
-          <section class="receivable-detail-card">
+          <section class="receivable-detail-card receivable-payment-panel">
             <h3>Registrar abono</h3>
+            <p id="receivable-payment-help" class="subtitle receivable-payment-help"></p>
             <form id="receivable-payment-form" class="receivable-payment-form">
               <input id="receivable-payment-invoice-id" type="hidden" />
               <div class="receivable-payment-form__grid">
@@ -132,15 +127,15 @@
                 <textarea id="receivable-payment-notes" rows="3" placeholder="Observaciones del abono"></textarea>
               </label>
               <div class="actions">
-                <button class="btn btn-primary" type="submit">Registrar abono</button>
+                <button id="receivable-payment-submit" class="btn btn-primary" type="submit">Registrar abono</button>
               </div>
             </form>
           </section>
-          <section class="receivable-detail-card">
+          <section class="receivable-detail-card receivable-installments-panel">
             <h3>Plan de cuotas</h3>
             <div id="receivable-installments" class="receivable-installments"></div>
           </section>
-          <section class="receivable-detail-card">
+          <section class="receivable-detail-card receivable-payments-panel">
             <h3>Abonos registrados</h3>
             <div id="receivable-payments" class="receivable-payments"></div>
           </section>

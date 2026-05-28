@@ -33,42 +33,15 @@ from apps.finance.models import Invoice, InvoiceReceivablePayment, Purchase
 from apps.loyalty.models import LoyaltyPointEntry, LoyaltyRedemption
 from apps.suppliers.models import Supplier
 from apps.configuration.models import UserRoleAssignment
+from apps.tenants.access import (
+    PERMISSION_MODULE_MAP,
+    get_module_codes_for_permissions,
+    has_operational_tenant_access,
+    is_system_owner,
+)
 from apps.tenants.models import Membership, Organization, SaaSModule, SaaSPlan, Subscription, SubscriptionModule
 
 logger = logging.getLogger(__name__)
-
-PERMISSION_MODULE_MAP = {
-    "approvals.high": ["dashboard"],
-    "customers.read": ["customers"],
-    "customers.manage": ["customers"],
-    "dashboards.executive": ["dashboard"],
-    "invoices.manage": ["billing_basic"],
-    "credit.manage": ["receivables"],
-    "inventory.manage": ["inventory"],
-    "operations.kpi": ["dashboard", "inventory"],
-    "reports.finance": ["billing_basic", "receivables"],
-    "reports.read": ["dashboard"],
-    "suppliers.manage": ["suppliers", "purchases"],
-    "suppliers.read": ["suppliers"],
-    "tickets.manage": ["dashboard"],
-    "users.lock": ["multiuser_permissions"],
-    "users.read": ["multiuser_permissions"],
-    "users.update": ["multiuser_permissions"],
-    "security.manage": ["multiuser_permissions"],
-    "audit.read": ["audit"],
-}
-
-
-def get_module_codes_for_permissions(permissions):
-    permission_set = set(permissions or [])
-    if "*" in permission_set:
-        return {"*"}
-
-    module_codes = set()
-    for permission in permission_set:
-        module_codes.update(PERMISSION_MODULE_MAP.get(permission, []))
-    return module_codes
-
 
 def build_unique_organization_slug(name):
     base_slug = slugify(name) or "organizacion"
@@ -131,11 +104,11 @@ def sync_subscription_modules(subscription):
 
 
 def build_session_payload(user):
-    is_system_owner = bool(user.is_superuser or user.is_staff)
+    user_is_system_owner = is_system_owner(user)
     memberships = list(Membership.objects.select_related("organization").filter(user=user))
     membership_by_org_id = {membership.organization_id: membership for membership in memberships}
     system_owner_module_codes = []
-    if is_system_owner:
+    if user_is_system_owner:
         organizations_queryset = Organization.objects.all().order_by("name")
         organization_ids = list(organizations_queryset.values_list("id", flat=True))
         mapped_module_codes = {
@@ -188,9 +161,9 @@ def build_session_payload(user):
 
     def get_effective_modules(organization, membership):
         subscribed_modules = set(module_map.get(organization.id, []))
-        if is_system_owner:
+        if user_is_system_owner:
             return system_owner_module_codes
-        if membership and membership.role in [Membership.ROLE_OWNER, Membership.ROLE_ADMIN]:
+        if has_operational_tenant_access(membership):
             return sorted(subscribed_modules)
 
         assigned_roles = role_map.get(organization.id, [])
@@ -215,11 +188,11 @@ def build_session_payload(user):
                 "name": organization.name,
                 "is_active": organization.is_active,
                 "parent_organization": organization.parent_organization_id,
-                "membership_role": membership.role if membership else (Membership.ROLE_OWNER if is_system_owner else ""),
-                "available_modules": system_owner_module_codes if is_system_owner else sorted(module_map.get(organization.id, [])),
+                "membership_role": membership.role if membership else (Membership.ROLE_OWNER if user_is_system_owner else ""),
+                "available_modules": system_owner_module_codes if user_is_system_owner else sorted(module_map.get(organization.id, [])),
                 "active_modules": get_effective_modules(organization, membership),
                 "assigned_roles": role_map.get(organization.id, []),
-                "system_owner_scope": bool(is_system_owner and not membership),
+                "system_owner_scope": bool(user_is_system_owner and not membership),
             }
         )
     active_id = next(
@@ -234,7 +207,7 @@ def build_session_payload(user):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "phone": profile.phone if profile else "",
-            "is_system_owner": is_system_owner,
+            "is_system_owner": user_is_system_owner,
         },
         "organizations": organizations,
         "active_organization_id": active_id,
@@ -471,7 +444,7 @@ class GoogleAuthView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
 
-        if not (user.is_superuser or user.is_staff) and not Membership.objects.filter(user=user).exists():
+        if not is_system_owner(user) and not Membership.objects.filter(user=user).exists():
             return Response({"detail": "Tu cuenta no tiene una organizacion activa. Registrate con el nombre del negocio para continuar."}, status=400)
 
         login(request, user)

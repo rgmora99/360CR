@@ -45,9 +45,23 @@ nav a { color: var(--color-text-muted); margin: 0 12px; text-decoration: none; }
   margin: 0.7rem 0;
 }
 
+.module-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-5);
+  align-items: flex-start;
+}
+
 .module-header .subtitle {
   max-width: 72ch;
   line-height: 1.5;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
 }
 
 .module-inline-feedback {
@@ -129,6 +143,83 @@ td .btn {
   padding: 0.4rem 0.65rem;
   font-size: var(--font-size-sm);
   margin-right: var(--space-2);
+}
+
+.row-actions-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.row-action-primary,
+.row-actions-trigger {
+  min-height: 34px;
+  padding: 0.42rem 0.7rem;
+  white-space: nowrap;
+}
+
+.row-actions-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.row-actions-trigger::after {
+  content: '...';
+  margin-left: 6px;
+  color: var(--color-text-muted);
+}
+
+.row-actions-dropdown {
+  position: fixed;
+  top: var(--menu-top, 0);
+  left: var(--menu-left, 0);
+  z-index: 30;
+  display: none;
+  min-width: 178px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(122, 162, 255, 0.22);
+  background: #0f172a;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.36);
+}
+
+.row-actions-dropdown.is-open {
+  display: grid;
+  gap: 3px;
+}
+
+.row-actions-dropdown a,
+.row-actions-dropdown button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.row-actions-dropdown a:hover,
+.row-actions-dropdown button:hover {
+  background: rgba(122, 162, 255, 0.12);
+}
+
+.row-actions-dropdown .is-danger {
+  color: var(--color-danger);
+}
+
+.row-actions-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: rgba(148, 163, 184, 0.18);
 }
 
 .status {
@@ -275,6 +366,19 @@ body.modal-open {
   .table-paginator__config,
   .table-paginator__actions {
     width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .module-header,
+  .quick-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .quick-actions .btn {
+    width: 100%;
+    text-align: center;
   }
 }
 

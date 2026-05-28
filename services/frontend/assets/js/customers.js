@@ -10,6 +10,8 @@
   const editForm = document.getElementById('customer-edit-form');
   const editCloseButton = document.getElementById('customer-edit-close');
   const editCancelButton = document.getElementById('customer-edit-cancel');
+  const importCsvButton = document.getElementById('customer-import-csv-button');
+  const importCsvInput = document.getElementById('customer-import-csv-input');
 
   const customersPager = window.TablePaginator?.create({
     key: 'customers',
@@ -162,6 +164,177 @@
       .filter(([, value]) => value !== undefined && value !== null)
       .map(([field, value]) => `${toFriendlyFieldName(field)}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
       .join(' | ');
+  }
+
+  function normalizeHeader(value) {
+    return String(value || '')
+      .trim()
+      .replace(/^\uFEFF/, '')
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+  }
+
+  function parseCsv(text) {
+    const normalizedText = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+    if (!normalizedText) return [];
+
+    const firstLine = normalizedText.split('\n')[0] || '';
+    const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let inQuotes = false;
+
+    for (let index = 0; index < normalizedText.length; index += 1) {
+      const char = normalizedText[index];
+      const nextChar = normalizedText[index + 1];
+
+      if (char === '"' && inQuotes && nextChar === '"') {
+        cell += '"';
+        index += 1;
+        continue;
+      }
+      if (char === '"') {
+        inQuotes = !inQuotes;
+        continue;
+      }
+      if (char === delimiter && !inQuotes) {
+        row.push(cell);
+        cell = '';
+        continue;
+      }
+      if (char === '\n' && !inQuotes) {
+        row.push(cell);
+        if (row.some((value) => String(value).trim())) rows.push(row);
+        row = [];
+        cell = '';
+        continue;
+      }
+      cell += char;
+    }
+
+    row.push(cell);
+    if (row.some((value) => String(value).trim())) rows.push(row);
+    if (!rows.length) return [];
+
+    const headers = rows[0].map(normalizeHeader);
+    return rows.slice(1).map((values, index) => {
+      const item = { rowNumber: index + 2 };
+      headers.forEach((header, headerIndex) => {
+        item[header] = String(values[headerIndex] || '').trim();
+      });
+      return item;
+    });
+  }
+
+  function readCsvValue(row, aliases) {
+    for (const alias of aliases) {
+      const key = normalizeHeader(alias);
+      if (row[key] !== undefined && row[key] !== '') return row[key];
+    }
+    return '';
+  }
+
+  function parseCsvBoolean(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['1', 'si', 'true', 'yes', 'y'].includes(normalized);
+  }
+
+  function parseCsvNumber(value) {
+    const normalized = String(value || '').trim().replace(/\s+/g, '').replace(',', '.');
+    const number = Number(normalized || 0);
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function findTypeIdByCsvValue(value) {
+    const normalized = normalizeHeader(value);
+    const aliases = {
+      fisico: ['fisico', 'persona_fisica', 'persona_fisica'],
+      juridico: ['juridico', 'juridica', 'persona_juridica', 'persona_juridica'],
+    };
+    const typeCode = Object.entries(aliases).find(([, values]) => values.includes(normalized))?.[0] || normalized;
+    const type = customerTypes.find((item) => item.code === typeCode);
+    if (!type) {
+      throw new Error(`Tipo "${value}" no existe. Use fisico o juridico.`);
+    }
+    return type.id;
+  }
+
+  function buildCustomerPayloadFromCsv(row) {
+    const legalName = readCsvValue(row, ['nombre', 'legal_name', 'razon_social']);
+    if (!legalName) throw new Error('La columna nombre es obligatoria.');
+
+    const typeValue = readCsvValue(row, ['tipo', 'type', 'tipo_cliente']);
+    if (!typeValue) throw new Error('La columna tipo es obligatoria. Use fisico o juridico.');
+
+    const typeId = findTypeIdByCsvValue(typeValue);
+    const typeCode = getTypeCode(typeId);
+    const isLegal = typeCode !== 'fisico';
+
+    return {
+      organization: getOrganizationId(),
+      customer_type: typeId,
+      legal_name: legalName,
+      trade_name: isLegal ? readCsvValue(row, ['nombre_comercial', 'trade_name']) : '',
+      tax_id: readCsvValue(row, ['cedula', 'tax_id', 'identificacion']),
+      status: readCsvValue(row, ['estado', 'status']) || 'active',
+      email: readCsvValue(row, ['correo', 'email']),
+      phone: readCsvValue(row, ['telefono', 'phone']),
+      credit_approved: parseCsvBoolean(readCsvValue(row, ['credito_aprobado', 'credit_approved'])),
+      credit_limit: parseCsvNumber(readCsvValue(row, ['limite_credito', 'credit_limit'])),
+      payment_terms_days: Math.max(0, Math.trunc(parseCsvNumber(readCsvValue(row, ['dias_pago', 'payment_terms_days'])))),
+      notes: readCsvValue(row, ['notas', 'notes']),
+    };
+  }
+
+  async function confirmCustomerPadronMismatch(payload, rowNumber) {
+    const typeCode = getTypeCode(payload.customer_type);
+    if (typeCode !== 'fisico' || !window.CedulaPadron) return true;
+
+    const normalizedTaxId = window.CedulaPadron.normalizeCedula(payload.tax_id);
+    const record = await window.CedulaPadron.resolveByCedula(normalizedTaxId);
+    if (!record) {
+      const message = `Fila ${rowNumber}: la cedula ${payload.tax_id} no existe en el padron electoral. Desea guardarla de igual manera?`;
+      return window.appAlerts?.confirm ? window.appAlerts.confirm(message, 'Cedula no encontrada') : window.confirm(message);
+    }
+
+    const matchesName = window.CedulaPadron.compareName(payload.legal_name, record);
+    if (matchesName === false) {
+      const message = `Fila ${rowNumber}: la cedula ${payload.tax_id} corresponde a "${record.fullName}", pero el CSV indica "${payload.legal_name}". Desea guardarlo de igual manera?`;
+      return window.appAlerts?.confirm ? window.appAlerts.confirm(message, 'Nombre no coincide') : window.confirm(message);
+    }
+
+    return true;
+  }
+
+  async function importCustomersFromCsv(file) {
+    const rows = parseCsv(await file.text());
+    if (!rows.length) throw new Error('El archivo CSV no contiene filas para importar.');
+
+    let created = 0;
+    const errors = [];
+    for (const row of rows) {
+      try {
+        const payload = buildCustomerPayloadFromCsv(row);
+        const shouldSave = await confirmCustomerPadronMismatch(payload, row.rowNumber);
+        if (!shouldSave) {
+          errors.push(`Fila ${row.rowNumber}: omitida para verificar datos de padron.`);
+          continue;
+        }
+        await request(apiUrl('/customers/'), { method: 'POST', body: JSON.stringify(payload) });
+        created += 1;
+      } catch (error) {
+        errors.push(`Fila ${row.rowNumber}: ${error.message}`);
+      }
+    }
+
+    await loadCustomers();
+    if (errors.length) {
+      setFeedback(`Carga CSV finalizada: ${created} creados, ${errors.length} con error. ${errors.slice(0, 3).join(' | ')}`, true);
+      logError('Errores de carga CSV', errors);
+      return;
+    }
+    setFeedback(`Carga CSV finalizada: ${created} clientes creados correctamente.`);
   }
 
   function nextCustomerCodeFallback() {
@@ -591,6 +764,24 @@
 
   searchInput?.addEventListener('input', () => renderTable(true));
   organizationIdInput?.addEventListener('change', loadCustomers);
+  importCsvButton?.addEventListener('click', () => {
+    if (!importCsvInput) return;
+    importCsvInput.value = '';
+    importCsvInput.click();
+  });
+  importCsvInput?.addEventListener('change', async () => {
+    const file = importCsvInput.files?.[0];
+    if (!file) return;
+    try {
+      setFeedback('Importando clientes desde CSV...');
+      await importCustomersFromCsv(file);
+    } catch (error) {
+      logError('No se pudo importar CSV', error.message);
+      setFeedback(`No se pudo importar CSV: ${error.message}`, true);
+    } finally {
+      importCsvInput.value = '';
+    }
+  });
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && editModal && !editModal.classList.contains('hidden')) {
       closeEditModal();
