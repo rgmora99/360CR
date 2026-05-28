@@ -269,6 +269,7 @@ class UserRoleAssignmentSerializer(serializers.ModelSerializer):
 
 class OrganizationEmailInboxSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    imap_port = serializers.IntegerField(min_value=1, max_value=65535)
 
     class Meta:
         model = OrganizationEmailInbox
@@ -325,8 +326,8 @@ class OrganizationEmailInboxSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"username": "El usuario IMAP es requerido."})
         if not self.instance and not password:
             raise serializers.ValidationError({"password": "La contraseña IMAP es requerida."})
-        if imap_port is None or int(imap_port) <= 0:
-            raise serializers.ValidationError({"imap_port": "El puerto IMAP debe ser mayor a 0."})
+        if imap_port is None:
+            raise serializers.ValidationError({"imap_port": "El puerto IMAP es requerido."})
 
         duplicate_queryset = OrganizationEmailInbox.objects.filter(organization=organization, email=email)
         if self.instance:

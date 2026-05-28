@@ -126,6 +126,25 @@ class FinanceHardeningTests(TestCase):
             },
         }
 
+    def purchase_payload(self, **overrides):
+        data = {
+            "organization": self.organization.id,
+            "supplier_name": "Proveedor",
+            "supplier_tax_id": "3101000000",
+            "buyer_name": "Comprador",
+            "buyer_tax_id": "3102000000",
+            "issue_date": "2026-05-01",
+            "invoice_number": "FAC-001",
+            "numeric_key": "1" * 50,
+            "currency": "CRC",
+            "exchange_rate": "1.0000",
+            "tax_total": "13.00",
+            "total": "113.00",
+            "items": [{"description": "Linea", "unit_price": "100.00", "quantity": "1.000"}],
+        }
+        data.update(overrides)
+        return data
+
     def approve_url(self, inbox):
         return f"/api/purchase-inbox/{inbox.id}/approve/?organization_id={self.organization.id}"
 
@@ -194,6 +213,53 @@ class FinanceHardeningTests(TestCase):
         self.assertEqual(inbox.status, PurchaseInboxInvoice.STATUS_REGISTERED)
         self.assertIsNotNone(inbox.purchase_id)
         self.assertIsNotNone(inbox.processed_at)
+
+    def test_purchase_rejects_unsupported_currency(self):
+        response = self.client.post("/api/purchases/", self.purchase_payload(currency="EUR"), format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("currency", response.data)
+        self.assertEqual(Purchase.objects.count(), 0)
+
+    def test_purchase_rejects_non_positive_exchange_rate(self):
+        response = self.client.post("/api/purchases/", self.purchase_payload(exchange_rate="0.0000"), format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("exchange_rate", response.data)
+        self.assertEqual(Purchase.objects.count(), 0)
+
+    def test_purchase_rejects_empty_supplier_or_buyer_identity(self):
+        response = self.client.post(
+            "/api/purchases/",
+            self.purchase_payload(supplier_name="", supplier_tax_id="", buyer_name="", buyer_tax_id=""),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("supplier_name", response.data)
+        self.assertIn("supplier_tax_id", response.data)
+        self.assertIn("buyer_name", response.data)
+        self.assertIn("buyer_tax_id", response.data)
+        self.assertEqual(Purchase.objects.count(), 0)
+
+    def test_purchase_rejects_unknown_supplier_or_buyer_identity(self):
+        response = self.client.post(
+            "/api/purchases/",
+            self.purchase_payload(
+                supplier_name="Proveedor desconocido",
+                supplier_tax_id="No disponible",
+                buyer_name="Comprador desconocido",
+                buyer_tax_id="unknown",
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("supplier_name", response.data)
+        self.assertIn("supplier_tax_id", response.data)
+        self.assertIn("buyer_name", response.data)
+        self.assertIn("buyer_tax_id", response.data)
+        self.assertEqual(Purchase.objects.count(), 0)
 
     def test_registered_purchase_inbox_cannot_be_approved_twice(self):
         inbox = PurchaseInboxInvoice.objects.create(**self.inbox_payload())

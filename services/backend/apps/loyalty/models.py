@@ -108,7 +108,7 @@ class LoyaltyMember(models.Model):
     enrolled_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
     lifetime_points = models.PositiveIntegerField(default=0)
-    available_points = models.IntegerField(default=0)
+    available_points = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     reserved_points = models.PositiveIntegerField(default=0)
     last_activity_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -119,6 +119,7 @@ class LoyaltyMember(models.Model):
             models.UniqueConstraint(fields=["program", "customer"], name="uq_loyalty_member_program_customer"),
             models.UniqueConstraint(fields=["program", "member_code"], name="uq_loyalty_member_program_code"),
             models.CheckConstraint(condition=models.Q(lifetime_points__gte=0), name="ck_loyalty_member_lifetime_non_negative"),
+            models.CheckConstraint(condition=models.Q(available_points__gte=0), name="ck_loyalty_member_available_non_negative"),
             models.CheckConstraint(condition=models.Q(reserved_points__gte=0), name="ck_loyalty_member_reserved_non_negative"),
         ]
         indexes = [
@@ -168,7 +169,7 @@ class LoyaltyReward(models.Model):
     code = models.SlugField(max_length=40)
     name = models.CharField(max_length=140)
     description = models.TextField(blank=True)
-    points_cost = models.PositiveIntegerField()
+    points_cost = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     stock = models.PositiveIntegerField(default=0)
     is_unlimited_stock = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -179,6 +180,7 @@ class LoyaltyReward(models.Model):
         ordering = ["program_id", "name"]
         constraints = [
             models.UniqueConstraint(fields=["program", "code"], name="uq_loyalty_reward_program_code"),
+            models.CheckConstraint(condition=models.Q(points_cost__gte=1), name="ck_loyalty_reward_points_cost_positive"),
             models.CheckConstraint(
                 condition=models.Q(ends_at__isnull=True) | models.Q(starts_at__isnull=True) | models.Q(ends_at__gte=models.F("starts_at")),
                 name="ck_loyalty_reward_dates",

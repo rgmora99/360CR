@@ -57,6 +57,29 @@ class SupplierValidationTests(TestCase):
         self.assertEqual(supplier.tax_id, "123456789")
         self.assertEqual(supplier.legal_name, "Carlos Vargas Ruiz")
 
+    def test_rejects_negative_credit_limit(self):
+        response = self.client.post("/api/suppliers/", self.payload(credit_limit="-1.00"), format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("credit_limit", response.data)
+        self.assertEqual(Supplier.objects.count(), 0)
+
+    def test_rejects_empty_code_on_update(self):
+        create_response = self.client.post("/api/suppliers/", self.payload(), format="json")
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        supplier = Supplier.objects.get()
+
+        response = self.client.patch(
+            f"/api/suppliers/{supplier.id}/",
+            {"code": "   "},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("code", response.data)
+        supplier.refresh_from_db()
+        self.assertEqual(supplier.code, "P000001")
+
     def test_rejects_legal_supplier_with_invalid_tax_id_length_before_hacienda_lookup(self):
         response = self.client.post(
             "/api/suppliers/",

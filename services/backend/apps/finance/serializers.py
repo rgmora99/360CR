@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.customers.models import Customer, CustomerAddress
+from apps.core.tax_registry import normalize_tax_id
 from apps.finance.models import (
     Invoice,
     InvoiceAuditLog,
@@ -30,14 +31,32 @@ def money(value):
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def is_unknown_purchase_value(value):
+    clean_value = re.sub(r"\s+", " ", str(value or "").strip().lower())
+    return not clean_value or clean_value in PURCHASE_UNKNOWN_VALUES or any(
+        len(token) > 3 and token in clean_value for token in PURCHASE_UNKNOWN_VALUES
+    )
+
+
 MAX_CREATE_RETRIES = 3
 SUPPORTED_INVOICE_SALE_CONDITIONS = {"01", "02"}
 SUPPORTED_INVOICE_CURRENCIES = {"CRC", "USD"}
+SUPPORTED_PURCHASE_CURRENCIES = {"CRC", "USD"}
 MODULE_LOYALTY = "loyalty"
 MODULE_SHIPPING = "shipping"
 MODULE_RECEIVABLES = "receivables"
 MODULE_PURCHASES = "purchases"
 MODULE_BILLING = "billing_basic"
+PURCHASE_UNKNOWN_VALUES = {
+    "desconocido",
+    "desconocida",
+    "no identificado",
+    "no identificada",
+    "no disponible",
+    "n/a",
+    "na",
+    "unknown",
+}
 
 
 def build_installment_amounts(total, installment_count):
@@ -1273,8 +1292,14 @@ class PurchaseCreateSerializer(serializers.Serializer):
     issue_date = serializers.DateField()
     invoice_number = serializers.CharField(max_length=40)
     numeric_key = serializers.RegexField(r"^\d{50}$")
-    currency = serializers.RegexField(r"^[A-Z]{3}$", required=False, default="CRC")
-    exchange_rate = serializers.DecimalField(max_digits=10, decimal_places=4, required=False, default=Decimal("1.0000"))
+    currency = serializers.ChoiceField(choices=sorted(SUPPORTED_PURCHASE_CURRENCIES), required=False, default="CRC")
+    exchange_rate = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        min_value=Decimal("0.0001"),
+        required=False,
+        default=Decimal("1.0000"),
+    )
     tax_total = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, default=Decimal("0.00"), min_value=Decimal("0.00"))
     total = serializers.DecimalField(max_digits=14, decimal_places=2, required=False)
     source = serializers.CharField(max_length=20, required=False, default="manual")
@@ -1289,10 +1314,27 @@ class PurchaseCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("El modulo de compras no esta activo para esta organizacion.")
         if not attrs["items"]:
             raise serializers.ValidationError("Debe incluir al menos una linea.")
-        attrs["supplier_name"] = (attrs.get("supplier_name") or "").strip() or "Proveedor no identificado"
-        attrs["supplier_tax_id"] = (attrs.get("supplier_tax_id") or "").strip() or "No disponible"
+        attrs["supplier_name"] = (attrs.get("supplier_name") or "").strip()
+        attrs["supplier_tax_id"] = normalize_tax_id(attrs.get("supplier_tax_id"))
         attrs["buyer_name"] = (attrs.get("buyer_name") or "").strip()
-        attrs["buyer_tax_id"] = (attrs.get("buyer_tax_id") or "").strip()
+        attrs["buyer_tax_id"] = normalize_tax_id(attrs.get("buyer_tax_id"))
+        identity_errors = {}
+        for field_name, label in (
+            ("supplier_name", "El nombre del proveedor"),
+            ("supplier_tax_id", "La cedula del proveedor"),
+            ("buyer_name", "El nombre del comprador"),
+            ("buyer_tax_id", "La cedula del comprador"),
+        ):
+            if is_unknown_purchase_value(attrs[field_name]):
+                identity_errors[field_name] = f"{label} es obligatorio y no puede ser desconocido."
+        for field_name, label in (
+            ("supplier_tax_id", "La cedula del proveedor"),
+            ("buyer_tax_id", "La cedula del comprador"),
+        ):
+            if attrs[field_name] and len(attrs[field_name]) not in (9, 10):
+                identity_errors[field_name] = f"{label} debe tener 9 o 10 digitos."
+        if identity_errors:
+            raise serializers.ValidationError(identity_errors)
         subtotal = money(sum((item["unit_price"] * item["quantity"] for item in attrs["items"]), Decimal("0.00")))
         tax_total = money(attrs.get("tax_total", Decimal("0.00")))
         calculated_total = money(subtotal + tax_total)

@@ -80,6 +80,33 @@
     return String(value || '').replace(/\D/g, '');
   }
 
+  function isUnknownPurchaseValue(value) {
+    const cleanValue = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!cleanValue) return true;
+    const unknownValues = ['desconocido', 'desconocida', 'no identificado', 'no identificada', 'no disponible', 'n/a', 'na', 'unknown'];
+    return unknownValues.some((token) => cleanValue === token || (token.length > 3 && cleanValue.includes(token)));
+  }
+
+  function validatePurchaseParty({ nameInputId, taxInputId, actorLabel }) {
+    const nameInput = $(nameInputId);
+    const taxInput = $(taxInputId);
+    const name = nameInput?.value.trim() || '';
+    const taxId = normalizeTaxId(taxInput?.value || '');
+    if (taxInput) taxInput.value = taxId;
+    if (isUnknownPurchaseValue(name)) {
+      nameInput?.focus();
+      throw new Error(`El nombre del ${actorLabel} es obligatorio y no puede ser desconocido.`);
+    }
+    if (isUnknownPurchaseValue(taxId)) {
+      taxInput?.focus();
+      throw new Error(`La cedula del ${actorLabel} es obligatoria y no puede ser desconocida.`);
+    }
+    if (![9, 10].includes(taxId.length)) {
+      taxInput?.focus();
+      throw new Error(`La cedula del ${actorLabel} debe tener 9 o 10 digitos.`);
+    }
+  }
+
   function setLookupStatus(node, label, stateName = 'pending') {
     if (!node) return;
     node.textContent = label;
@@ -371,6 +398,16 @@
         taxInputId: 'buyer-tax-id',
         nameInputId: 'buyer-name',
         statusNode: buyerTaxStatus,
+        actorLabel: 'comprador',
+      });
+      validatePurchaseParty({
+        taxInputId: 'supplier-tax-id',
+        nameInputId: 'supplier-name',
+        actorLabel: 'proveedor',
+      });
+      validatePurchaseParty({
+        taxInputId: 'buyer-tax-id',
+        nameInputId: 'buyer-name',
         actorLabel: 'comprador',
       });
       if (!state.lines.length) return setFeedback('Debe agregar al menos una linea de compra.', true);

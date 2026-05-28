@@ -58,6 +58,29 @@ class CustomerValidationTests(TestCase):
         self.assertEqual(customer.tax_id, "123456789")
         self.assertEqual(customer.legal_name, "Maria Solis Mora")
 
+    def test_rejects_negative_credit_limit(self):
+        response = self.client.post("/api/customers/", self.payload(credit_limit="-1.00"), format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("credit_limit", response.data)
+        self.assertEqual(Customer.objects.count(), 0)
+
+    def test_rejects_empty_code_on_update(self):
+        create_response = self.client.post("/api/customers/", self.payload(), format="json")
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        customer = Customer.objects.get()
+
+        response = self.client.patch(
+            f"/api/customers/{customer.id}/",
+            {"code": "   "},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("code", response.data)
+        customer.refresh_from_db()
+        self.assertEqual(customer.code, "C000001")
+
     def test_rejects_legal_customer_with_invalid_tax_id_length_before_hacienda_lookup(self):
         response = self.client.post(
             "/api/customers/",

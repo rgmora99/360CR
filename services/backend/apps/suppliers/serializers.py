@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from django.db import IntegrityError
 from django.utils import timezone
@@ -85,7 +87,8 @@ class SupplierTypeSerializer(serializers.ModelSerializer):
 
 
 class SupplierSerializer(serializers.ModelSerializer):
-    code = serializers.CharField(required=False, allow_blank=True)
+    code = serializers.CharField(required=False, allow_blank=True, max_length=30, trim_whitespace=True)
+    credit_limit = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.00"))
 
     class Meta:
         model = Supplier
@@ -127,6 +130,19 @@ class SupplierSerializer(serializers.ModelSerializer):
         organization = attrs.get("organization") or getattr(self.instance, "organization", None)
         tax_id = (attrs.get("tax_id") if "tax_id" in attrs else getattr(self.instance, "tax_id", "")) or ""
         normalized_tax_id = normalize_tax_id(tax_id)
+        code = attrs.get("code") if "code" in attrs else getattr(self.instance, "code", "")
+
+        if self.instance and ("code" in attrs or "organization" in attrs):
+            code = str(code or "").strip()
+            if not code:
+                raise serializers.ValidationError({"code": "El codigo del proveedor no puede quedar vacio."})
+            attrs["code"] = code
+
+        if self.instance and organization and code:
+            queryset = Supplier.objects.filter(organization=organization, code=code)
+            queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError({"code": "Ya existe un proveedor con ese codigo en esta organizacion."})
 
         if organization and normalized_tax_id:
             queryset = Supplier.objects.filter(organization=organization, tax_id=normalized_tax_id)

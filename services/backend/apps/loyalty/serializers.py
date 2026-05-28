@@ -33,6 +33,14 @@ class LoyaltyProgramSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end_date = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError({"end_date": "La fecha final debe ser posterior o igual a la fecha inicial."})
+        return attrs
+
 
 class LoyaltyTierSerializer(serializers.ModelSerializer):
     class Meta:
@@ -69,14 +77,19 @@ class LoyaltyRuleSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         program = attrs.get("program") or getattr(self.instance, "program", None)
+        starts_at = attrs.get("starts_at", getattr(self.instance, "starts_at", None))
+        ends_at = attrs.get("ends_at", getattr(self.instance, "ends_at", None))
         if not program:
             raise serializers.ValidationError({"program": "El programa es requerido."})
+        if starts_at and ends_at and ends_at < starts_at:
+            raise serializers.ValidationError({"ends_at": "La fecha final debe ser posterior o igual a la fecha inicial."})
         return attrs
 
 
 class LoyaltyMemberSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source="customer.legal_name", read_only=True)
     tier_name = serializers.CharField(source="tier.name", read_only=True)
+    available_points = serializers.IntegerField(min_value=0)
 
     class Meta:
         model = LoyaltyMember
@@ -136,6 +149,8 @@ class LoyaltyPointEntrySerializer(serializers.ModelSerializer):
 
 
 class LoyaltyRewardSerializer(serializers.ModelSerializer):
+    points_cost = serializers.IntegerField(min_value=1)
+
     class Meta:
         model = LoyaltyReward
         fields = [

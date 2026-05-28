@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from apps.tenants.models import Organization
@@ -103,7 +104,7 @@ class OrganizationEmailInbox(models.Model):
     username = models.CharField(max_length=120)
     password = models.CharField(max_length=200)
     imap_host = models.CharField(max_length=120, default="imap.gmail.com")
-    imap_port = models.PositiveIntegerField(default=993)
+    imap_port = models.PositiveIntegerField(default=993, validators=[MinValueValidator(1), MaxValueValidator(65535)])
     imap_ssl = models.BooleanField(default=True)
     folder = models.CharField(max_length=80, default="INBOX")
     is_primary = models.BooleanField(default=False)
@@ -115,6 +116,10 @@ class OrganizationEmailInbox(models.Model):
         ordering = ["organization_id", "-is_primary", "label", "email"]
         constraints = [
             models.UniqueConstraint(fields=["organization", "email"], name="uq_org_email_inbox"),
+            models.CheckConstraint(
+                condition=models.Q(imap_port__gte=1) & models.Q(imap_port__lte=65535),
+                name="ck_org_email_inbox_imap_port_range",
+            ),
             models.UniqueConstraint(
                 fields=["organization"],
                 condition=models.Q(is_primary=True),
